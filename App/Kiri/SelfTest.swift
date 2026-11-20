@@ -1,5 +1,7 @@
 #if DEBUG || KIRI_SELFTEST
 import AppKit
+import KiriKit
+import SwiftUI
 import os
 
 /// A launch-time smoke test for the document plumbing, run with
@@ -122,6 +124,16 @@ import os
                     print("SELFTEST snapshot \(path)")
                 }
                 NSApp.terminate(nil)
+            }
+        }
+        if let path = UserDefaults.standard.string(forKey: "KiriRenderSettings") {
+            // Settings laid out offscreen (no glass), to check nothing truncates.
+            let renderer = ImageRenderer(content: SettingsView().honeyRoot(HoneyAppearance()))
+            renderer.scale = 2
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff) {
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                print("SELFTEST rendered settings \(path)")
             }
         }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
@@ -309,6 +321,20 @@ import os
         guard let ktv = tv as? KiriTextView, let controller = ktv.delegate as? EditorController,
               let window = tv.window else { report(false, "editor found"); NSApp.terminate(nil); return }
         report(window.firstResponder === tv, "editor has keyboard focus at launch")
+
+        // Top bar: 10 pt above the 32 pt row, 10 pt below it; traffic lights
+        // centred on the row (26 pt from the top).
+        let h = window.frame.height
+        if let close = window.standardWindowButton(.closeButton), let sv = close.superview {
+            let r = sv.convert(close.frame, to: nil)
+            let centerFromTop = h - r.midY
+            report(abs(centerFromTop - 26) <= 1.5, "traffic lights centred 26 pt from the top (\(centerFromTop))")
+        }
+        if let container = ktv.enclosingScrollView?.superview {
+            let r = container.convert(container.bounds, to: nil)
+            let topGap = h - r.maxY
+            report(abs(topGap - 52) <= 1, "editor panel starts 52 pt from the top (\(topGap))")
+        }
 
         // Letter fade: each tick must redraw the letter's fragment.
         ktv.setSelectedRange(NSRange(location: 0, length: 0))

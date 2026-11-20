@@ -137,6 +137,9 @@ public struct HoneySegmentedPicker<Value: Hashable>: View {
                 Text(option.label)
                     .font(.honey(.subheadline, weight: .bold))
                     .foregroundStyle(selected ? Color.honeyAccentFg : Color.honeyMuted)
+                    // Segments always fit their labels; never truncate.
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 12)
                     .frame(height: 24)
                     .background {
@@ -150,6 +153,7 @@ public struct HoneySegmentedPicker<Value: Hashable>: View {
             }
         }
         .padding(3)
+        .fixedSize()
         .honeyGlass(.chrome)
     }
 }

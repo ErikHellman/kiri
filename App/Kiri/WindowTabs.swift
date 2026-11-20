@@ -25,6 +25,7 @@ import SwiftUI
         self.window = window
         window.tabbingMode = .preferred
         window.tabbingIdentifier = "se.hellsoft.kiri.document"
+        Self.useTallTitleBar(window)
         // SwiftUI opens each document in a window of its own; join the
         // frontmost document window's tab group instead.
         DispatchQueue.main.async {
@@ -68,6 +69,22 @@ import SwiftUI
         if sel != selected { selected = sel }
         let d = NSDocumentController.shared.document(for: window)?.isDocumentEdited ?? false
         if d != dirty { dirty = d }
+    }
+
+    /// An empty unified toolbar makes the title bar 52 pt tall, and macOS
+    /// keeps the traffic lights centred in it, through resizing, full screen
+    /// and tabs. Kiri's top bar fills that band: 10 pt gap, the 32 pt row,
+    /// 10 pt gap (`EditorScreen.topBar`).
+    static func useTallTitleBar(_ window: NSWindow) {
+        guard window.toolbar == nil else { return }
+        let toolbar = NSToolbar(identifier: "se.hellsoft.kiri.titlebar")
+        toolbar.allowsUserCustomization = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
     }
 
     /// macOS puts the window tab bar in a title bar accessory, and

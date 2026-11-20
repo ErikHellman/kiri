@@ -8,8 +8,10 @@ enum Prefs {
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
     static let typingAnimationsKey = "typingAnimations"
-    /// Letter fade-in is off by default until it's been seen redrawing on a
-    /// real display (see README).
+    /// Letter fade-in: off, and not in Settings yet. TextKit 2 doesn't redraw
+    /// the fading letter's fragment every frame (the behaviour self-test
+    /// fails), so a letter could stay faint. `defaults write se.hellsoft.kiri
+    /// letterFade -bool YES` turns it on for development.
     static let letterFadeKey = "letterFade"
 
     /// Text size steps for ⌘+ / ⌘-.
@@ -36,13 +38,9 @@ struct SettingsView: View {
             row("Motion", detail: "System follows Reduce Motion. Reduced keeps fades only.") {
                 HoneySegmentedPicker(selection: $motion)
             }
-            row("Typing animations", detail: "Letters fade in and the caret glides. Off with Motion Off.") {
+            row("Typing animations", detail: "The caret glides, lines and brackets glow. Off with Motion Off.") {
                 Toggle("", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
                     .disabled(motion == .off)
-            }
-            row("Letters fade in", detail: "Typed letters fade in and settle (experimental).") {
-                Toggle("", isOn: $letterFade).toggleStyle(.switch).labelsHidden()
-                    .disabled(motion == .off || !typingAnimations)
             }
             row("Text size", detail: "⌘+ and ⌘- change it from any window.") {
                 HStack(spacing: 8) {
@@ -59,7 +57,7 @@ struct SettingsView: View {
             }
         }
         .padding(24)
-        .frame(width: 520)
+        .frame(width: 600)
         .honeyPanel()
         .padding(Honey.gap)
         .honeyCanvas()
@@ -70,9 +68,12 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.honey(.body, weight: .bold))
                 Text(detail).font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(0)
             Spacer(minLength: 12)
-            control()
+            // Controls keep their natural size; the text column wraps instead.
+            control().fixedSize().layoutPriority(1)
         }
     }
 }

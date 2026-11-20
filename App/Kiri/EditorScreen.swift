@@ -82,8 +82,9 @@ struct EditorScreen: View {
                 .help("Save (⌘S)")
                 .opacity(tabs.dirty || saveState != .idle ? 1 : 0.55)
         }
-        .padding(.leading, 78) // the traffic lights
+        .padding(.leading, 84) // the traffic lights
         .frame(height: 32)
+        .padding(.top, Honey.gap)
         .background {
             // Empty canvas in the top bar moves the window, as a title bar would.
             Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture())
