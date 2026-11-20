@@ -46,7 +46,7 @@ struct EditorScreen: View {
         .onAppear {
             detectLanguage()
             tabs.resume()
-            #if DEBUG
+            #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openSettings() }
             #endif
         }
@@ -114,6 +114,10 @@ struct EditorScreen: View {
             .help("Language")
 
             HoneyStatusItem(position, systemImage: "text.cursor")
+                // Digits roll to their new values (a fade with Reduce Motion).
+                .contentTransition(reduceMotion || appearance.motion != .full && appearance.motion != .system
+                    ? .opacity : .numericText())
+                .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: position)
                 .accessibilityLabel(positionAccessibility)
 
             Menu {

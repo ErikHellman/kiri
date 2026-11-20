@@ -28,6 +28,30 @@ import os
                 NSApp.terminate(nil)
             }
         }
+        // Screenshot helpers: type into the document (makes it dirty), and
+        // open the find bar searching for a word.
+        if let typed = UserDefaults.standard.string(forKey: "KiriTypeOnLaunch") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+                textView.insertText(typed, replacementRange: textView.selectedRange())
+            }
+        }
+        if let query = UserDefaults.standard.string(forKey: "KiriFind") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                textView.window?.makeFirstResponder(textView)
+                let pb = NSPasteboard(name: .find)
+                pb.clearContents()
+                pb.setString(query, forType: .string)
+                for action in [NSTextFinder.Action.showFindInterface, .setSearchString, .nextMatch] {
+                    let item = NSMenuItem()
+                    item.tag = action.rawValue
+                    textView.performTextFinderAction(item)
+                }
+                let r = (textView.string as NSString).range(of: query)
+                if r.location != NSNotFound { textView.setSelectedRange(r) }
+                textView.performTextFinderAction({ let i = NSMenuItem(); i.tag = NSTextFinder.Action.nextMatch.rawValue; return i }())
+            }
+        }
         if let path = UserDefaults.standard.string(forKey: "KiriSnapshot") {
             KiriTextView.forceCaretActive = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -39,6 +63,41 @@ import os
             }
             // In-process window picture (for when screen capture isn't
             // available): renders the window's layer tree to a PNG, then quits.
+            // -KiriSnapshotTypeAt <seconds>: type "abc" that long before the picture.
+            let typeAt = UserDefaults.standard.double(forKey: "KiriSnapshotTypeAt")
+            if typeAt > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 - typeAt) {
+                    for ch in ["a", "b", "c"] { textView.insertText(ch, replacementRange: textView.selectedRange()) }
+                }
+            }
+            if typeAt > 0 {
+                // Also draw the typed line's fragment directly at that moment
+                // (layer snapshots catch fragments mid-redraw).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    guard let tlm = textView.textLayoutManager,
+                          let loc = tlm.location(tlm.documentRange.location, offsetBy: textView.selectedRange().location - 1),
+                          let fragment = tlm.textLayoutFragment(for: loc) else { return }
+                    let b = fragment.renderingSurfaceBounds
+                    let scale: CGFloat = 2
+                    guard let ctx = CGContext(data: nil, width: Int(b.width * scale) + 20, height: Int(b.height * scale) + 20,
+                                              bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                    ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+                    ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+                    // Flipped, like the text view.
+                    ctx.translateBy(x: 0, y: CGFloat(ctx.height))
+                    ctx.scaleBy(x: scale, y: -scale)
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+                    fragment.draw(at: CGPoint(x: -b.minX + 5, y: -b.minY + 5), in: ctx)
+                    NSGraphicsContext.restoreGraphicsState()
+                    if let image = ctx.makeImage() {
+                        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
+                            .write(to: URL(fileURLWithPath: path + ".fragment.png"))
+                    }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 // SwiftUI's hosting layers don't render this way; the editor
                 // (AppKit) does, which is what these pictures are for.
@@ -91,6 +150,7 @@ import os
         report(!doc.isDocumentEdited, "clean after open")
         let before = (try? Data(contentsOf: url)) ?? Data()
         tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+        let fadingDrawsBefore = FadingLayoutFragment.animatedDraws
         // Type like a person: key events through the window.
         tv.window?.makeFirstResponder(tv)
         for ch in "// added\r" {
@@ -105,6 +165,15 @@ import os
         }
         print("SELFTEST info undo=\(String(describing: tv.undoManager)) docUndo=\(String(describing: doc.undoManager)) canUndo=\(tv.undoManager?.canUndo ?? false)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        do {
+            // Typing animations on: each letter's fragment redraws through its fade.
+            if CGDisplayIsAsleep(CGMainDisplayID()) != 0 {
+                print("SELFTEST SKIP typed letters animate (display asleep: no display-link frames)")
+            } else if (tv as? KiriTextView)?.typingFade.mode ?? .none != .none {
+                report(FadingLayoutFragment.animatedDraws - fadingDrawsBefore >= 3,
+                       "typed letters animate (\(FadingLayoutFragment.animatedDraws - fadingDrawsBefore) fading draws)")
+            }
+        }
         report(doc.isDocumentEdited || doc.hasUnautosavedChanges, "dirty after typing (edited=\(doc.isDocumentEdited) unautosaved=\(doc.hasUnautosavedChanges) windowEdited=\(tv.window?.isDocumentEdited ?? false) level=\(tv.undoManager?.groupingLevel ?? -1))")
         doc.save(nil)
         }
@@ -122,6 +191,7 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 let shown = NSApp.windows.compactMap { findTextView(in: $0.contentView) }.first?.string ?? ""
                 report(!doc.isDocumentEdited, "clean after revert")
+                report(tv.textLayoutManager != nil, "still TextKit 2 at the end")
                 if let tv2 = NSApp.windows.compactMap({ findTextView(in: $0.contentView) }).first,
                    let storage = tv2.textStorage, storage.length > 0 {
                     var colors = Set<ObjectIdentifier>()

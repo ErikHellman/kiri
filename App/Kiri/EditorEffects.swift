@@ -219,7 +219,8 @@ extension KiriTextView {
             steps += 1
         }
         guard depth == 0, i >= 0, i < text.length, i != start,
-              let loc = tlm.location(tlm.documentRange.location, offsetBy: i),
+              let caretLoc = tlm.textSelections.first?.textRanges.first?.location,
+              let loc = tlm.location(caretLoc, offsetBy: i - sel.location),
               let end = tlm.location(loc, offsetBy: 1),
               let range = NSTextRange(location: loc, end: end) else { return nil }
         var rect: NSRect?

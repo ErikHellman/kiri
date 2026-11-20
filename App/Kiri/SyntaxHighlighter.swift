@@ -182,11 +182,23 @@ import KiriSyntax
         #endif
     }
 
+    /// Crossfade recolors (typing animations on) instead of snapping.
+    var crossfade = false
+    /// The latest edit, whose own characters may change color without a crossfade.
+    var lastEdit: NSRange?
+
     private func apply(_ spans: [SyntaxSpan], in range: Range<Int>) {
         guard let storage = textView?.textStorage, range.upperBound <= storage.length else { return }
         let ns = NSRange(location: range.lowerBound, length: range.count)
+        if crossfade, colorsChange(spans, in: range, storage: storage), let layer = textView?.layer {
+            // Fade the text view from its current picture to the new colors.
+            let t = CATransition()
+            t.type = .fade
+            t.duration = 0.12
+            layer.add(t, forKey: "recolor")
+        }
         storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: NSColor.honey(Honey.fg), range: ns)
+        storage.addAttribute(.foregroundColor, value: Self.fgColor, range: ns)
         storage.addAttribute(.font, value: baseFont, range: ns)
         for span in spans {
             let r = span.range.clamped(to: 0..<storage.length)
@@ -198,11 +210,37 @@ import KiriSyntax
         storage.endEditing()
     }
 
+    /// Whether coloring `range` with `spans` changes the color of any
+    /// character outside the latest edit.
+    private func colorsChange(_ spans: [SyntaxSpan], in range: Range<Int>, storage: NSTextStorage) -> Bool {
+        var new = [ObjectIdentifier?](repeating: ObjectIdentifier(Self.fgColor), count: range.count)
+        for span in spans {
+            let r = span.range.clamped(to: range)
+            guard !r.isEmpty else { continue }
+            let id = ObjectIdentifier(Self.color(span.kind))
+            for i in r { new[i - range.lowerBound] = id }
+        }
+        let skip = lastEdit.map { max(0, $0.location - 1)..<(NSMaxRange($0) + 1) } ?? 0..<0
+        var changed = false
+        storage.enumerateAttribute(.foregroundColor, in: NSRange(location: range.lowerBound, length: range.count)) {
+            value, r, stop in
+            let old = (value as AnyObject?).map { ObjectIdentifier($0) }
+            for i in r.location..<NSMaxRange(r) where !skip.contains(i) && new[i - range.lowerBound] != old {
+                // Whitespace has no visible color.
+                if let c = (storage.string as NSString).character(at: i) as unichar?, c == 0x20 || c == 0x0A || c == 0x09 { continue }
+                changed = true
+                stop.pointee = true
+                return
+            }
+        }
+        return changed
+    }
+
     private func clearColors() {
         guard let storage = textView?.textStorage, storage.length > 0 else { return }
         let all = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: NSColor.honey(Honey.fg), range: all)
+        storage.addAttribute(.foregroundColor, value: Self.fgColor, range: all)
         storage.addAttribute(.font, value: baseFont, range: all)
         storage.endEditing()
         colored = IndexSet()
@@ -214,6 +252,7 @@ import KiriSyntax
     #endif
 
     private static var colors: [SyntaxKind: NSColor] = [:]
+    static let fgColor = NSColor.honey(Honey.fg)
 
     static func color(_ kind: SyntaxKind) -> NSColor {
         if let c = colors[kind] { return c }

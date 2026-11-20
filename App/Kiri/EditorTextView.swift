@@ -16,7 +16,19 @@ final class KiriTextView: NSTextView {
     private(set) var effects: EditorEffects?
     private var keyObservers: [NSObjectProtocol] = []
 
+    /// Typed letters fade in (drawn by `FadingLayoutFragment`).
+    private(set) lazy var typingFade = TypingFade(textView: self)
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        let length = (typed as NSString).length
+        guard length > 0, !typed.contains("\n"), selectedRange().length == 0 else { return }
+        typingFade.typed(NSRange(location: selectedRange().location - length, length: length))
+    }
+
     func setAnimation(_ mode: EditorAnimation) {
+        typingFade.mode = mode
         guard mode != (effects?.mode ?? .none) else { return }
         effects?.remove()
         effects = nil
