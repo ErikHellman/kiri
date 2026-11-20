@@ -8,3 +8,4 @@ DerivedData/
 # XcodeGen output
 App/Kiri.xcodeproj/
 App/build/
+App/Kiri/Info.plist

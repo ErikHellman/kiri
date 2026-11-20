@@ -26,19 +26,7 @@ public extension Honey {
 
 public extension Color {
     /// A Honey color token that follows light, dark and increased contrast.
-    static func honey(_ t: Honey.Token) -> Color {
-        Color(nsColor: NSColor(name: nil) { a in
-            let match = a.bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark,
-                                           .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-                                           .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark])
-            let dark: Set<NSAppearance.Name> = [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
-                                                .accessibilityHighContrastVibrantDark]
-            let high: Set<NSAppearance.Name> = [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-                                                .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark]
-            return NSColor(honeyRGB: t.value(dark: match.map(dark.contains) ?? false,
-                                             highContrast: match.map(high.contains) ?? false))
-        })
-    }
+    static func honey(_ t: Honey.Token) -> Color { Color(nsColor: .honey(t)) }
 
     static let honeyCanvas = honey(Honey.canvas)
     static let honeySurface = honey(Honey.surface)
@@ -62,6 +50,22 @@ public extension Color {
 }
 
 public extension NSColor {
+    /// A Honey color token that follows light, dark and increased contrast,
+    /// for AppKit views such as the editor's text view.
+    static func honey(_ t: Honey.Token) -> NSColor {
+        NSColor(name: nil) { a in
+            let match = a.bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark,
+                                           .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                                           .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark])
+            let dark: Set<NSAppearance.Name> = [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
+                                                .accessibilityHighContrastVibrantDark]
+            let high: Set<NSAppearance.Name> = [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                                                .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark]
+            return NSColor(honeyRGB: t.value(dark: match.map(dark.contains) ?? false,
+                                             highContrast: match.map(high.contains) ?? false))
+        }
+    }
+
     /// An sRGB color from 0xRRGGBB.
     convenience init(honeyRGB rgb: UInt32) {
         self.init(srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,

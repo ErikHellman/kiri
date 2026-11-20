@@ -23,6 +23,39 @@ targets:
     type: application
     platform: macOS
     sources: [Kiri]
+    info:
+      path: Kiri/Info.plist
+      properties:
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Text Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.plain-text
+              - public.text
+              - public.source-code
+              - net.daringfireball.markdown
+              - public.json
+              - public.yaml
+              - public.xml
+              - public.comma-separated-values-text
+              - public.shell-script
+              - public.python-script
+              - public.swift-source
+              - com.netscape.javascript-source
+              - public.html
+          - CFBundleTypeName: Any File
+            CFBundleTypeRole: Editor
+            LSHandlerRank: None
+            LSItemContentTypes:
+              - public.data
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown, mdown, mkd]
+              public.mime-type: [text/markdown]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri
