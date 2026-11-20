@@ -57,3 +57,82 @@ struct HoneyMotionTests {
         #expect(Honey.Radius.allCases.map(\.value) == [20, 16, 12, 8])
     }
 }
+
+/// Syntax colors (DESIGN.md §3.1): readable on the editor surface and the
+/// current line in every mode.
+struct SyntaxContrastTests {
+    @Test func syntaxOnEditor() {
+        for m in HoneyContrastTests.modes {
+            let target = m.hc ? 7.0 : 4.5
+            for (name, token) in Honey.syntaxTokens {
+                for bg in [Honey.surface, Honey.currentLine] {
+                    let r = Honey.contrast(token.value(dark: m.dark, highContrast: m.hc),
+                                           bg.value(dark: m.dark, highContrast: m.hc))
+                    #expect(r >= target, "\(name) in \(m): \(r)")
+                }
+            }
+        }
+    }
+
+    @Test func everyKindHasAToken() {
+        for kind in SyntaxKind.allCases { _ = kind.token }
+    }
+}
+
+struct SyntaxCaptureTests {
+    @Test func captureNames() {
+        #expect(SyntaxKind(capture: "keyword") == .keyword)
+        #expect(SyntaxKind(capture: "keyword.control.conditional") == .keyword)
+        #expect(SyntaxKind(capture: "string") == .string)
+        #expect(SyntaxKind(capture: "string.escape") == .escape)
+        #expect(SyntaxKind(capture: "string.special.key") == .property)
+        #expect(SyntaxKind(capture: "number") == .number)
+        #expect(SyntaxKind(capture: "constant.builtin") == .number)
+        #expect(SyntaxKind(capture: "comment.documentation") == .comment)
+        #expect(SyntaxKind(capture: "function.method") == .function)
+        #expect(SyntaxKind(capture: "function.macro") == .keyword)
+        #expect(SyntaxKind(capture: "type.builtin") == .type)
+        #expect(SyntaxKind(capture: "constructor") == .type)
+        #expect(SyntaxKind(capture: "property") == .property)
+        #expect(SyntaxKind(capture: "tag") == .tag)
+        #expect(SyntaxKind(capture: "tag.attribute") == .attribute)
+        #expect(SyntaxKind(capture: "punctuation.bracket") == .punctuation)
+        #expect(SyntaxKind(capture: "text.title") == .heading)
+        #expect(SyntaxKind(capture: "markup.heading.1") == .heading)
+        #expect(SyntaxKind(capture: "text.literal") == .code)
+        #expect(SyntaxKind(capture: "variable") == nil)
+        #expect(SyntaxKind(capture: "variable.builtin") == .keyword)
+        #expect(SyntaxKind(capture: "") == nil)
+    }
+}
+
+struct FallbackHighlighterTests {
+    func kinds(_ text: String, _ lang: Language) -> [(String, SyntaxKind)] {
+        let u = Array(text.utf16)
+        return FallbackHighlighter.spans(in: text, language: lang).map {
+            (String(decoding: u[$0.range], as: UTF16.self), $0.kind)
+        }
+    }
+
+    @Test func toml() {
+        let k = kinds("[package]\nname = \"kiri\" # the app\nversion = 2\n", .toml)
+        #expect(k.map(\.0) == ["[package]", "name", "\"kiri\"", "# the app", "version", "2"])
+        #expect(k.map(\.1) == [.heading, .property, .string, .comment, .property, .number])
+    }
+
+    @Test func escapedQuotes() {
+        let k = kinds(#"x = "a \" b" // done"#, .rust)
+        #expect(k.map(\.0) == [#""a \" b""#, "// done"])
+    }
+
+    @Test func unterminatedStringStopsAtLineEnd() {
+        let k = kinds("\"open\nlet x = 1", .rust)
+        #expect(k.map(\.0) == ["\"open", "let", "1"])
+    }
+
+    @Test func rangeStartsAtLineBoundary() {
+        let text = "// a comment\nlet y = 2\n"
+        let spans = FallbackHighlighter.spans(in: text, language: .rust, range: 5..<20)
+        #expect(spans.first?.range == 0..<12)
+    }
+}

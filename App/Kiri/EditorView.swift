@@ -1,5 +1,6 @@
 import AppKit
 import KiriKit
+import KiriSyntax
 import SwiftUI
 
 /// What the status bar shows and the menus act on, for one window.
@@ -18,6 +19,7 @@ struct EditorView: NSViewRepresentable {
     let document: KiriDocument
     let model: EditorModel
     let fontScale: Double
+    let language: Language
 
     func makeCoordinator() -> EditorController { EditorController(model: model) }
 
@@ -26,6 +28,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.undoManager = context.environment.undoManager
         context.coordinator.attach(view)
         context.coordinator.load(document)
+        context.coordinator.setLanguage(language)
         #if DEBUG
         SelfTest.run(textView: view.textView)
         #endif
@@ -37,6 +40,7 @@ struct EditorView: NSViewRepresentable {
         c.undoManager = context.environment.undoManager
         if c.document !== document { c.load(document) }
         c.setFontScale(fontScale)
+        c.setLanguage(language)
     }
 }
 
@@ -48,6 +52,7 @@ struct EditorView: NSViewRepresentable {
     private weak var container: EditorContainerView?
     private var fontScale = 1.0
     private var lineIndex = LineIndex()
+    private var highlighter: SyntaxHighlighter?
     /// The document's undo manager: text edits registered here make the
     /// document dirty, and File ▸ Save cleans it.
     weak var undoManager: UndoManager?
@@ -64,6 +69,8 @@ struct EditorView: NSViewRepresentable {
         container = view
         view.textView.delegate = self
         view.textView.textStorage?.delegate = self
+        highlighter = SyntaxHighlighter(textView: view.textView)
+        view.onScroll = { [weak self] in self?.highlighter?.visibleRangeChanged() }
         applyFont()
     }
 
@@ -83,7 +90,12 @@ struct EditorView: NSViewRepresentable {
         assert(lineIndex.length == storage.length, "line index out of sync")
         container?.gutter.lineIndex = lineIndex
         container?.updateGutterWidth()
+        highlighter?.textReplaced()
         updateCaret()
+    }
+
+    func setLanguage(_ language: Language) {
+        highlighter?.setLanguage(language)
     }
 
     // MARK: Font
@@ -113,6 +125,8 @@ struct EditorView: NSViewRepresentable {
             storage.setAttributes(attrs, range: NSRange(location: 0, length: storage.length))
             storage.endEditing()
         }
+        highlighter?.baseFont = font
+        highlighter?.invalidateColors()
         container?.gutter.font = .monospacedDigitSystemFont(ofSize: max(9, 11 * fontScale), weight: .regular)
         container?.updateGutterWidth()
     }
@@ -128,10 +142,14 @@ struct EditorView: NSViewRepresentable {
         MainActor.assumeIsolated {
             let old = editedRange.location..<(editedRange.location + editedRange.length - delta)
             let inserted = (textStorage.string as NSString).substring(with: editedRange)
+            let before = lineIndex
             if old.upperBound <= lineIndex.length {
                 lineIndex.replace(range: old, with: inserted)
+                highlighter?.didEdit(SyntaxEdit(old: old, newLength: editedRange.length, before: before,
+                                                after: lineIndex))
             } else {
                 lineIndex = LineIndex(textStorage.string)
+                highlighter?.textReplaced()
             }
             container?.gutter.lineIndex = lineIndex
             container?.updateGutterWidth()

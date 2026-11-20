@@ -69,3 +69,6 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
     dependencies:
       - package: KiriKit
+        product: KiriKit
+      - package: KiriKit
+        product: KiriSyntax

@@ -11,7 +11,7 @@ struct EditorScreen: View {
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
-        EditorView(document: document, model: model, fontScale: textScale)
+        EditorView(document: document, model: model, fontScale: textScale, language: model.language)
             .honeyPanel()
             .overlay(alignment: .bottom) {
                 statusBar.padding(.bottom, 8)

@@ -231,7 +231,13 @@ final class EditorContainerView: NSView {
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func scrolled() { gutter.needsDisplay = true }
+    /// Called when the visible part of the text changes.
+    var onScroll: (() -> Void)?
+
+    @objc private func scrolled() {
+        gutter.needsDisplay = true
+        onScroll?()
+    }
 
     /// Call after the line count or font changes.
     func updateGutterWidth() {

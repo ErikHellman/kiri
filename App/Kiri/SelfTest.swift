@@ -10,7 +10,14 @@ import os
     private static var started = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
+    static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
+
     static func run(textView: NSTextView) {
+        if perf, !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { perfTest(textView) }
+            return
+        }
         print("SELFTEST info makeNSView windows=\(NSApp.windows.map { "\($0.title)|\($0.isVisible)" })")
         guard enabled, !started else { return }
         started = true
@@ -68,6 +75,36 @@ import os
                 NSApp.terminate(nil)
             }
         }
+    }
+
+    /// Typing and scrolling cost on whatever file is open (use a big one).
+    private static func perfTest(_ initial: NSTextView) {
+        let tv = NSApp.windows.filter(\.isVisible).compactMap { findTextView(in: $0.contentView) }.first ?? initial
+        let clock = ContinuousClock()
+        let len = (tv.string as NSString).length
+        tv.setSelectedRange(NSRange(location: len / 2, length: 0))
+        tv.scrollRangeToVisible(tv.selectedRange())
+        var worst = Duration.zero, total = Duration.zero
+        for _ in 0..<100 {
+            let d = clock.measure {
+                tv.insertText("x", replacementRange: tv.selectedRange())
+                tv.displayIfNeeded()
+            }
+            worst = max(worst, d); total += d
+        }
+        print("SELFTEST PERF \(len / 1024) KB typing: avg \(total / 100), worst \(worst)")
+        var scrollWorst = Duration.zero
+        let step = max(1, len / 40)
+        for i in 0..<40 {
+            let d = clock.measure {
+                tv.scrollRangeToVisible(NSRange(location: min(len - 1, i * step), length: 0))
+                tv.enclosingScrollView?.displayIfNeeded()
+            }
+            scrollWorst = max(scrollWorst, d)
+        }
+        print("SELFTEST PERF jump-scroll worst \(scrollWorst)")
+        fflush(stdout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { NSApp.terminate(nil) }
     }
 
     private static func findTextView(in view: NSView?) -> NSTextView? {

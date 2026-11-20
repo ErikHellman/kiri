@@ -60,6 +60,31 @@ public enum Honey {
     /// The caret is the `focus` color (≥ 3:1 on `surface`).
     public static let caret = focus
 
+    // MARK: Syntax colors (§3.1)
+
+    /// Highlighted code. Each is ≥ 4.5:1 on `surface` and `current-line`
+    /// (≥ 7:1 with increased contrast); `HoneyTests` checks it.
+    public static let synKeyword = Token(light: 0x9B2C6E, dark: 0xF08BC0, hcLight: 0x8D2864, hcDark: 0xF6A8D0)
+    public static let synString = Token(light: 0x4E7A1F, dark: 0xA8D58A, hcLight: 0x395917, hcDark: 0xBFE6A8)
+    public static let synNumber = Token(light: 0xA34F00, dark: 0xF5B656, hcLight: 0x7F3E00, hcDark: 0xFFC978)
+    public static let synComment = Token(light: 0x7C6A5F, dark: 0xA08E7E, hcLight: 0x5B4E46, hcDark: 0xC9BAAC)
+    public static let synFunction = Token(light: 0x1F6F8B, dark: 0x7FC6E0, hcLight: 0x18566C, hcDark: 0xA6DCEE)
+    public static let synType = Token(light: 0x6A3FA0, dark: 0xC3A6F5, hcLight: 0x562F87, hcDark: 0xD8C4FA)
+    public static let synProperty = Token(light: 0x8A4B2A, dark: 0xF0A07A, hcLight: 0x6E3A1F, hcDark: 0xF7BFA0)
+    public static let synTag = Token(light: 0xB23A2A, dark: 0xFF8A70, hcLight: 0x8F2F22, hcDark: 0xFFB3A0)
+    public static let synAttribute = Token(light: 0x8A5A00, dark: 0xF2C46B, hcLight: 0x6E4800, hcDark: 0xF7D592)
+    public static let synPunctuation = Token(light: 0x76615A, dark: 0xB5A492, hcLight: 0x5D4D47, hcDark: 0xD5C7B8)
+    public static let synHeading = Token(light: 0x995A05, dark: 0xF5B656, hcLight: 0x744404, hcDark: 0xFFC978)
+    public static let synEscape = Token(light: 0xA8327A, dark: 0xF7A8D8, hcLight: 0x8B2965, hcDark: 0xFAC4E4)
+
+    /// Every syntax token by name.
+    public static let syntaxTokens: [(name: String, token: Token)] = [
+        ("syn-keyword", synKeyword), ("syn-string", synString), ("syn-number", synNumber),
+        ("syn-comment", synComment), ("syn-function", synFunction), ("syn-type", synType),
+        ("syn-property", synProperty), ("syn-tag", synTag), ("syn-attribute", synAttribute),
+        ("syn-punctuation", synPunctuation), ("syn-heading", synHeading), ("syn-escape", synEscape),
+    ]
+
     /// Every color token by its DESIGN.md name, for the gallery and tests.
     public static let allTokens: [(name: String, token: Token)] = [
         ("canvas", canvas), ("surface", surface), ("surface-2", surface2), ("surface-3", surface3),
@@ -67,7 +92,7 @@ public enum Honey {
         ("accent-ink", accentInk), ("accent-soft", accentSoft), ("focus", focus), ("danger", danger),
         ("danger-fill", dangerFill), ("ok", ok), ("selection", selection), ("current-line", currentLine),
         ("gutter", gutter),
-    ]
+    ] + syntaxTokens
 
     /// WCAG contrast ratio of two 0xRRGGBB colors.
     public static func contrast(_ a: UInt32, _ b: UInt32) -> Double {

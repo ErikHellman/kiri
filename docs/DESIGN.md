@@ -51,6 +51,27 @@ Same values as Ting (`Honey.swift`), with high-contrast variants. Kiri adds the 
 
 `HoneyTests` checks these contrast promises in light, dark and both high-contrast modes.
 
+### 3.1 Syntax colors
+
+Warm, distinct hues on the solid editor surface. Every syntax token is ≥ 4.5:1 on `surface` and `current-line` (≥ 7:1 in the high-contrast variants); `SyntaxContrastTests` checks all four modes. Headings and `**strong**` Markdown are also bold, `*emphasis*` italic, so color never carries meaning alone.
+
+| Token | Light | Dark | HC light | HC dark | Used for |
+|---|---|---|---|---|---|
+| `syn-keyword` | `#9B2C6E` | `#F08BC0` | `#8D2864` | `#F6A8D0` | Keywords, operators that are words, built-in variables (`self`) |
+| `syn-string` | `#4E7A1F` | `#A8D58A` | `#395917` | `#BFE6A8` | Strings, Markdown code |
+| `syn-number` | `#A34F00` | `#F5B656` | `#7F3E00` | `#FFC978` | Numbers, booleans, constants |
+| `syn-comment` | `#7C6A5F` | `#A08E7E` | `#5B4E46` | `#C9BAAC` | Comments, block quotes |
+| `syn-function` | `#1F6F8B` | `#7FC6E0` | `#18566C` | `#A6DCEE` | Functions and methods, links |
+| `syn-type` | `#6A3FA0` | `#C3A6F5` | `#562F87` | `#D8C4FA` | Types, constructors, namespaces |
+| `syn-property` | `#8A4B2A` | `#F0A07A` | `#6E3A1F` | `#F7BFA0` | Properties, fields, keys |
+| `syn-tag` | `#B23A2A` | `#FF8A70` | `#8F2F22` | `#FFB3A0` | HTML/XML tags |
+| `syn-attribute` | `#8A5A00` | `#F2C46B` | `#6E4800` | `#F7D592` | Attributes, decorators |
+| `syn-punctuation` | `#76615A` | `#B5A492` | `#5D4D47` | `#D5C7B8` | Brackets, delimiters, operators |
+| `syn-heading` | `#995A05` | `#F5B656` | `#744404` | `#FFC978` | Markdown headings, TOML/INI sections |
+| `syn-escape` | `#A8327A` | `#F7A8D8` | `#8B2965` | `#FAC4E4` | Escapes, regexes, special punctuation |
+
+Highlighting (`KiriSyntax`): Tree-sitter grammars (Swift, JSON, YAML, Markdown with inline, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS) parse on a background queue, incrementally after each burst of edits; only the visible text plus a margin is colored, from a parse that matches the text exactly. Other formats (TOML, INI, XML, Rust, Go, …) use a small fallback lexer for strings, numbers, comments and keywords. Capture names map to tokens in `SyntaxKind(capture:)`.
+
 ## 4. Type
 
 - **Nunito** (OFL, weights 400/600/700/800, bundled in `KiriKit/Sources/KiriKit/Fonts`) for all UI: `Font.honey(.body, weight:)`.
