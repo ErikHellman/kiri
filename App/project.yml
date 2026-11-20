@@ -1,0 +1,38 @@
+# XcodeGen spec for Kiri. Generate the project with
+#   brew install xcodegen && cd App && xcodegen
+# Kiri.xcodeproj is generated and not checked in.
+name: Kiri
+options:
+  bundleIdPrefix: se.hellsoft
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Set to your Apple developer team id locally to sign.
+    DEVELOPMENT_TEAM: ""
+packages:
+  # The Honey + Liquid Glass style kit (and, later, the editor core).
+  KiriKit:
+    path: ../KiriKit
+targets:
+  Kiri:
+    type: application
+    platform: macOS
+    sources: [Kiri]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri
+        PRODUCT_NAME: Kiri
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Kiri
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+    dependencies:
+      - package: KiriKit

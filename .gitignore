@@ -4,3 +4,7 @@ DerivedData/
 .build/
 .swiftpm/
 *.xcuserstate
+
+# XcodeGen output
+App/Kiri.xcodeproj/
+App/build/

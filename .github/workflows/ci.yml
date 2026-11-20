@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The token layer is plain Foundation, so its tests also run on Linux.
+  linux:
+    name: linux
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: test KiriKit
+        working-directory: KiriKit
+        run: swift test
+
+  macos:
+    name: macos
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: select Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: test KiriKit
+        working-directory: KiriKit
+        run: swift test
+      - name: build app
+        working-directory: App
+        run: |
+          brew install xcodegen
+          xcodegen
+          xcodebuild build -project Kiri.xcodeproj -scheme Kiri \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO -quiet
+          # Fail if nothing was built (an empty scheme also "succeeds").
+          test -x build/Build/Products/Debug/Kiri.app/Contents/MacOS/Kiri
