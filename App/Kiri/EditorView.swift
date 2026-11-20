@@ -23,13 +23,18 @@ struct EditorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> EditorContainerView {
         let view = EditorContainerView(frame: .zero)
+        context.coordinator.undoManager = context.environment.undoManager
         context.coordinator.attach(view)
         context.coordinator.load(document)
+        #if DEBUG
+        SelfTest.run(textView: view.textView)
+        #endif
         return view
     }
 
     func updateNSView(_ view: EditorContainerView, context: Context) {
         let c = context.coordinator
+        c.undoManager = context.environment.undoManager
         if c.document !== document { c.load(document) }
         c.setFontScale(fontScale)
     }
@@ -43,6 +48,9 @@ struct EditorView: NSViewRepresentable {
     private weak var container: EditorContainerView?
     private var fontScale = 1.0
     private var lineIndex = LineIndex()
+    /// The document's undo manager: text edits registered here make the
+    /// document dirty, and File ▸ Save cleans it.
+    weak var undoManager: UndoManager?
 
     init(model: EditorModel) {
         self.model = model
@@ -63,8 +71,7 @@ struct EditorView: NSViewRepresentable {
     func load(_ document: KiriDocument) {
         guard let textView, let storage = textView.textStorage else { return }
         self.document = document
-        document.currentText = { [weak textView] in textView?.string ?? "" }
-        let text = document.file.text
+        let text = document.text
         // The storage delegate fills the index in from this edit: replacing
         // everything (old length) with `text`.
         lineIndex = LineIndex(storage.string)
@@ -112,6 +119,8 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: Edits and the caret
 
+    func undoManager(for view: NSTextView) -> UndoManager? { undoManager }
+
     nonisolated func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
                                  range editedRange: NSRange, changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
@@ -130,6 +139,7 @@ struct EditorView: NSViewRepresentable {
     }
 
     func textDidChange(_ notification: Notification) {
+        if let textView { document?.text = textView.string }
         updateCaret()
     }
 

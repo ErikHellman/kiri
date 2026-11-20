@@ -32,11 +32,19 @@ final class KiriDocument: ReferenceFileDocument, @unchecked Sendable {
     @Published var encoding: TextEncoding
     @Published var lineEnding: LineEnding
     @Published var hasBOM: Bool
-    /// The editor's current text, set while an editor shows this document.
-    var currentText: (@MainActor () -> String)?
+    /// The latest text from the editor. SwiftUI snapshots documents on a
+    /// background thread while the main thread waits, so the editor pushes
+    /// a copy here after each edit instead of being asked for it.
+    var text: String {
+        get { lock.withLock { _text } }
+        set { lock.withLock { _text = newValue } }
+    }
+    private var _text: String
+    private let lock = NSLock()
 
     init(text: String = "") {
         file = TextFile(text: text)
+        _text = text
         encoding = file.encoding
         lineEnding = file.lineEnding
         hasBOM = file.hasBOM
@@ -45,6 +53,7 @@ final class KiriDocument: ReferenceFileDocument, @unchecked Sendable {
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
         do { file = try TextFile(data: data) } catch { throw CocoaError(.fileReadUnknownStringEncoding) }
+        _text = file.text
         encoding = file.encoding
         lineEnding = file.lineEnding
         hasBOM = file.hasBOM
@@ -52,10 +61,7 @@ final class KiriDocument: ReferenceFileDocument, @unchecked Sendable {
 
     func snapshot(contentType: UTType) throws -> TextFile {
         var f = file
-        if let currentText {
-            f.text = Thread.isMainThread ? MainActor.assumeIsolated { currentText() }
-                : DispatchQueue.main.sync { MainActor.assumeIsolated { currentText() } }
-        }
+        f.text = text
         f.encoding = encoding
         f.lineEnding = lineEnding
         f.hasBOM = hasBOM && encoding.isUnicode
