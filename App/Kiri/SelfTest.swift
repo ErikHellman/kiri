@@ -13,6 +13,26 @@ import os
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
 
     static func run(textView: NSTextView) {
+        // Screenshot helpers: open Settings or Go to Line at launch.
+        if UserDefaults.standard.bool(forKey: "KiriDumpMenus") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                func dump(_ m: NSMenu, _ d: Int) {
+                    for i in m.items where !i.isSeparatorItem {
+                        let key = i.keyEquivalent.isEmpty ? "" : " [\(i.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "")⌘\(i.keyEquivalent)]"
+                        print(String(repeating: "  ", count: d) + i.title + key)
+                        if let sub = i.submenu, d < 2 { dump(sub, d + 1) }
+                    }
+                }
+                if let main = NSApp.mainMenu { dump(main, 0) }
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                (textView.delegate as? EditorController)?.model.showGoToLine = true
+            }
+        }
         if perf, !started {
             started = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { perfTest(textView) }

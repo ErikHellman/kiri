@@ -10,6 +10,8 @@ import SwiftUI
     var selectedLength = 0
     var lineCount = 1
     var language = Language.plainText
+    /// Go to Line (⌘L) is showing.
+    var showGoToLine = false
     /// Set by the editor once it exists.
     @ObservationIgnored weak var controller: EditorController?
 }
@@ -20,6 +22,7 @@ struct EditorView: NSViewRepresentable {
     let model: EditorModel
     let fontScale: Double
     let language: Language
+    let wrapLines: Bool
 
     func makeCoordinator() -> EditorController { EditorController(model: model) }
 
@@ -29,6 +32,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.attach(view)
         context.coordinator.load(document)
         context.coordinator.setLanguage(language)
+        LaunchTimer.editorShown()
         #if DEBUG
         SelfTest.run(textView: view.textView)
         #endif
@@ -41,6 +45,7 @@ struct EditorView: NSViewRepresentable {
         if c.document !== document { c.load(document) }
         c.setFontScale(fontScale)
         c.setLanguage(language)
+        c.setWrap(wrapLines)
     }
 }
 
@@ -183,11 +188,28 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: Commands
 
-    /// Moves the caret to the start of a 1-based line and scrolls to it.
-    func goTo(line: Int) {
+    /// Wraps long lines at the editor's edge, or scrolls sideways.
+    func setWrap(_ wrap: Bool) {
+        guard let textView, let container = textView.textContainer, let scroll = textView.enclosingScrollView,
+              container.widthTracksTextView != wrap else { return }
+        container.widthTracksTextView = wrap
+        textView.isHorizontallyResizable = !wrap
+        scroll.hasHorizontalScroller = !wrap
+        if wrap {
+            container.size = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
+            textView.frame.size.width = scroll.contentSize.width
+        } else {
+            container.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        }
+        highlighter?.visibleRangeChanged()
+    }
+
+    /// Moves the caret to a 1-based line (and column) and scrolls to it.
+    func goTo(line: Int, column: Int = 1) {
         guard let textView else { return }
         let l = min(max(line, 1), lineIndex.lineCount) - 1
-        let r = NSRange(location: lineIndex.starts[l], length: 0)
+        let lineRange = lineIndex.range(ofLine: l)
+        let r = NSRange(location: min(lineRange.lowerBound + max(0, column - 1), lineRange.upperBound), length: 0)
         textView.setSelectedRange(r)
         textView.scrollRangeToVisible(r)
         textView.window?.makeFirstResponder(textView)

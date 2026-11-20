@@ -42,13 +42,36 @@ import KiriSyntax
         pendingEdits = []
         version += 1
         clearColors()
-        if length <= Self.treeSitterLimit, let grammar = SyntaxGrammar.forLanguage(id: language.id) {
-            parser = SyntaxParser(grammar: grammar)
+        loadingGrammar = false
+        guard length <= Self.treeSitterLimit, SyntaxGrammar.supportedIDs.contains(language.id) else {
+            setNeedsHighlight()
+            return
         }
-        // A fresh parser starts from scratch: one full (background) parse.
-        startParseIfNeeded(force: true)
-        setNeedsHighlight()
+        // Load the grammar (compiling its query takes a moment) off the main
+        // thread, then parse from scratch there too.
+        loadingGrammar = true
+        let generation = version
+        let id = language.id
+        queue.async { [weak self] in
+            let parser = SyntaxGrammar.forLanguage(id: id).flatMap(SyntaxParser.init(grammar:))
+            nonisolated(unsafe) let p = parser
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.language.id == id, self.loadingGrammar else { return }
+                    _ = generation
+                    self.loadingGrammar = false
+                    self.parser = p
+                    self.pendingEdits = []
+                    self.startParseIfNeeded(force: true)
+                    self.setNeedsHighlight()
+                }
+            }
+        }
     }
+
+    /// While a grammar loads, nothing is colored (instead of the fallback
+    /// lexer flashing first).
+    private var loadingGrammar = false
 
     /// The whole text was replaced (a document load).
     func textReplaced() {
@@ -132,7 +155,7 @@ import KiriSyntax
     }
 
     private func highlightVisible() {
-        guard language != .plainText, let range = visibleRange() else { return }
+        guard language != .plainText, !loadingGrammar, let range = visibleRange() else { return }
         let needed = IndexSet(integersIn: range).subtracting(colored)
         guard let first = needed.first, let last = needed.last else { return }
         let target = first..<(last + 1)

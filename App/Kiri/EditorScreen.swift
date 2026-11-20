@@ -7,22 +7,91 @@ struct EditorScreen: View {
     @ObservedObject var document: KiriDocument
     let fileURL: URL?
     @State private var model = EditorModel()
-    @AppStorage(Settings.textScaleKey) private var textScale = 1.0
+    @State private var tabs = WindowTabs()
+    @State private var saveState = HoneyTaskState.idle
+    @State private var saver = SaveObserver()
+    @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
+    @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        EditorView(document: document, model: model, fontScale: textScale, language: model.language)
-            .honeyPanel()
-            .overlay(alignment: .bottom) {
-                statusBar.padding(.bottom, 8)
+        VStack(spacing: Honey.gap) {
+            topBar
+            EditorView(document: document, model: model, fontScale: textScale, language: model.language,
+                       wrapLines: wrapLines)
+                .honeyPanel()
+                .overlay(alignment: .bottom) {
+                    statusBar.padding(.bottom, 8)
+                }
+                .overlay(alignment: .top) {
+                    if model.showGoToLine {
+                        GoToLine(model: model).padding(.top, 12).transition(.honeyPop)
+                    }
+                }
+                .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: model.showGoToLine)
+        }
+        .padding(.horizontal, Honey.gap)
+        .padding(.bottom, Honey.gap)
+        .ignoresSafeArea(.container, edges: .top)
+        .frame(minWidth: 480, minHeight: 280)
+        .honeyCanvas()
+        .background(WindowReader { tabs.attach($0) })
+        .focusedSceneValue(\.editorModel, model)
+        .onAppear {
+            detectLanguage()
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openSettings() }
+            #endif
+        }
+        .onChange(of: fileURL) { detectLanguage() }
+        .onDisappear { tabs.invalidate() }
+    }
+
+    /// The toolbar row on the canvas, level with the traffic lights: the tab
+    /// strip, a new-tab button and Save.
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            HoneyGlassGroup {
+                HStack(spacing: 8) {
+                    if !tabs.items.isEmpty {
+                        HoneyTabStrip(tabs.items.map { HoneyTab(id: $0.id, title: $0.title, dirty: $0.dirty) },
+                                      selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
+                                      onClose: { tabs.close($0) })
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button {
+                        NSDocumentController.shared.newDocument(nil)
+                    } label: {
+                        Label("New Tab", systemImage: "plus")
+                    }
+                    .buttonStyle(.honeyIcon)
+                    .help("New document (⌘N)")
+                }
             }
-            .padding(.horizontal, Honey.gap)
-            .padding(.bottom, Honey.gap)
-            .frame(minWidth: 480, minHeight: 280)
-            .honeyCanvas()
-            .focusedSceneValue(\.editorModel, model)
-            .onAppear(perform: detectLanguage)
-            .onChange(of: fileURL) { detectLanguage() }
+            Spacer(minLength: 0)
+            HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, action: save)
+                .help("Save (⌘S)")
+                .opacity(tabs.dirty || saveState != .idle ? 1 : 0.55)
+        }
+        .padding(.leading, 78) // the traffic lights
+        .frame(height: 32)
+        .background {
+            // Empty canvas in the top bar moves the window, as a title bar would.
+            Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture())
+        }
+    }
+
+    private func save() {
+        guard saveState == .idle, let doc = tabs.document else { return }
+        saveState = .busy
+        saver.save(doc) { saved in
+            saveState = saved ? .done : .idle
+            guard saved else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Honey.doneHold) { saveState = .idle }
+        }
     }
 
     private var statusBar: some View {
@@ -120,6 +189,50 @@ struct EditorScreen: View {
     private func detectLanguage() {
         let firstLine = document.file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         model.language = Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
+    }
+}
+
+/// ⌘L: a small glass field over the top of the editor.
+private struct GoToLine: View {
+    let model: EditorModel
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.right.to.line").font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.honeyAccentInk)
+            TextField("Line (1–\(model.lineCount))", text: $text)
+                .textFieldStyle(.plain)
+                .font(.honey(.body))
+                .frame(width: 180)
+                .focused($focused)
+                .onSubmit(go)
+            Text("of \(model.lineCount)").font(.honey(.caption, weight: .semibold)).foregroundStyle(Color.honeyMuted)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 38)
+        .honeyGlass(.chrome, radius: .control)
+        .overlay {
+            RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
+                .strokeBorder(Color.honeyFocus, lineWidth: 2)
+        }
+        .onAppear { text = ""; focused = true }
+        .onExitCommand { close() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Go to line")
+    }
+
+    private func go() {
+        // "12" or "12:5" (line:column).
+        let parts = text.split(separator: ":").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        if let line = parts.first { model.controller?.goTo(line: line, column: parts.count > 1 ? parts[1] : 1) }
+        close()
+    }
+
+    private func close() {
+        model.showGoToLine = false
+        model.controller?.focus()
     }
 }
 
