@@ -13,6 +13,7 @@ struct EditorScreen: View {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
+    @AppStorage(Prefs.letterFadeKey) private var letterFade = false
     @Environment(\.undoManager) private var undoManager
     @Environment(\.openSettings) private var openSettings
     @Environment(\.honeyAppearance) private var appearance
@@ -24,7 +25,8 @@ struct EditorScreen: View {
             EditorView(document: document, model: model, fontScale: textScale, language: model.language,
                        wrapLines: wrapLines,
                        animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                          typingAnimations: typingAnimations))
+                                                          typingAnimations: typingAnimations),
+                       letterFade: letterFade)
                 .honeyPanel()
                 .overlay(alignment: .bottom) {
                     statusBar.padding(.bottom, 8)

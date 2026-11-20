@@ -27,8 +27,8 @@ final class KiriTextView: NSTextView {
         typingFade.typed(NSRange(location: selectedRange().location - length, length: length))
     }
 
-    func setAnimation(_ mode: EditorAnimation) {
-        typingFade.mode = mode
+    func setAnimation(_ mode: EditorAnimation, letterFade: Bool = false) {
+        typingFade.mode = letterFade ? mode : .none
         guard mode != (effects?.mode ?? .none) else { return }
         effects?.remove()
         effects = nil
@@ -55,6 +55,11 @@ final class KiriTextView: NSTextView {
         keyObservers.forEach(NotificationCenter.default.removeObserver)
         keyObservers = []
         guard let window else { return }
+        // Type right away in a new window or tab.
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window, window.firstResponder === window || window.firstResponder == nil else { return }
+            window.makeFirstResponder(self)
+        }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
                 [weak self] _ in MainActor.assumeIsolated { self?.effects?.update(animated: false) }

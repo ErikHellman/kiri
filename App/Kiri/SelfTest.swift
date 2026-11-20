@@ -13,6 +13,11 @@ import os
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
 
     static func run(textView: NSTextView) {
+        if UserDefaults.standard.bool(forKey: "KiriBehaviorTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { behavior(textView) }
+            return
+        }
         // Screenshot helpers: open Settings or Go to Line at launch.
         if UserDefaults.standard.bool(forKey: "KiriDumpMenus") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -294,6 +299,94 @@ import os
         tv.window?.makeFirstResponder(tv)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             perfEventLoop(tv) { NSApp.terminate(nil) }
+        }
+    }
+
+    /// Step 4/5 behaviour that otherwise was only looked at: focus at launch,
+    /// the letter fade's redraw, Go to Line, wrapping, Save, tabs.
+    private static func behavior(_ initial: NSTextView) {
+        let tv = (NSApp.windows.filter(\.isVisible).compactMap { findTextView(in: $0.contentView) }.first ?? initial)
+        guard let ktv = tv as? KiriTextView, let controller = ktv.delegate as? EditorController,
+              let window = tv.window else { report(false, "editor found"); NSApp.terminate(nil); return }
+        report(window.firstResponder === tv, "editor has keyboard focus at launch")
+
+        // Letter fade: each tick must redraw the letter's fragment.
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        ktv.insertText("z", replacementRange: ktv.selectedRange())
+        ktv.displayIfNeeded()
+        let d0 = FadingLayoutFragment.animatedDraws
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            ktv.typingFade.tick(); ktv.layoutSubtreeIfNeeded(); ktv.textLayoutManager?.textViewportLayoutController.layoutViewport(); ktv.displayIfNeeded(); CATransaction.flush()
+            let d1 = FadingLayoutFragment.animatedDraws
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                ktv.typingFade.tick(); ktv.layoutSubtreeIfNeeded(); ktv.textLayoutManager?.textViewportLayoutController.layoutViewport(); ktv.displayIfNeeded(); CATransaction.flush()
+                let d2 = FadingLayoutFragment.animatedDraws
+                if ktv.typingFade.mode == .none { print("SELFTEST SKIP letter fade (off; -letterFade YES to test)") } else {
+                report(d1 > d0 && d2 > d1, "letter fade redraws on each tick (\(d0) → \(d1) → \(d2)), mode \(ktv.typingFade.mode), items \(ktv.typingFade.items.map(\.range))")
+                }
+                ktv.undoManager?.undo()
+
+                // Go to Line.
+                controller.goTo(line: 5, column: 3)
+                report(controller.model.line == 5 && controller.model.column == 3,
+                       "Go to Line 5:3 lands on Ln \(controller.model.line), Col \(controller.model.column)")
+
+                // Wrap off and on.
+                controller.setWrap(false)
+                let off = !(ktv.textContainer?.widthTracksTextView ?? true) && ktv.enclosingScrollView?.hasHorizontalScroller == true
+                controller.setWrap(true)
+                let on = ktv.textContainer?.widthTracksTextView == true && ktv.enclosingScrollView?.hasHorizontalScroller == false
+                report(off && on, "wrap lines off and on")
+
+                // Save through the Save button's path.
+                let docs = NSDocumentController.shared.documents
+                print("SELFTEST info document(for:)=\(String(describing: NSDocumentController.shared.document(for: window))) wc.document=\(String(describing: window.windowController?.document)) docs=\(docs.map { "\($0.className) wcs=\($0.windowControllers.map { $0.window?.windowNumber ?? -1 })" }) window=\(window.windowNumber)")
+                fflush(stdout)
+                guard let doc = NSDocumentController.shared.document(for: window) else {
+                    report(false, "document for the window"); NSApp.terminate(nil); return
+                }
+                ktv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
+                // Variant: -KiriSaveDelay <s> waits like a person before pressing Save.
+                let delay = UserDefaults.standard.object(forKey: "KiriSaveDelay") as? Double ?? 0.3
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                let saver = SaveObserver()
+                var finished = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    guard !finished else { return }
+                    finished = true
+                    report(false, "Save button path saves (no callback within 4 s; sheets: \(window.attachedSheet.map { "\(type(of: $0))" } ?? "none"))")
+                    tabs(window)
+                }
+                saver.save(doc) { saved in
+                    _ = saver
+                    guard !finished else { return }
+                    finished = true
+                    report(saved && !doc.isDocumentEdited, "Save button path saves (didSave=\(saved))")
+                    tabs(window)
+                }
+                }
+            }
+        }
+    }
+
+    private static func tabs(_ window: NSWindow) {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-tab-test.txt")
+        try? "second tab\n".write(to: url, atomically: true, encoding: .utf8)
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let count = window.tabbedWindows?.count ?? 1
+                report(count == 2, "second document opens as a tab (\(count) tabs)")
+                let second = doc?.windowControllers.first?.window
+                report(second?.firstResponder is NSTextView, "new tab's editor has focus")
+                window.tabGroup?.selectedWindow = window
+                report(window.tabGroup?.selectedWindow === window, "selecting a tab")
+                second?.performClose(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    report((window.tabbedWindows?.count ?? 1) == 1, "closing a tab")
+                    try? FileManager.default.removeItem(at: url)
+                    NSApp.terminate(nil)
+                }
+            }
         }
     }
 

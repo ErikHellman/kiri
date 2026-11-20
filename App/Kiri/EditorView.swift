@@ -24,6 +24,7 @@ struct EditorView: NSViewRepresentable {
     let language: Language
     let wrapLines: Bool
     let animation: EditorAnimation
+    let letterFade: Bool
 
     func makeCoordinator() -> EditorController { EditorController(model: model) }
 
@@ -33,7 +34,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.attach(view)
         context.coordinator.load(document)
         context.coordinator.setLanguage(language)
-        view.textView.setAnimation(animation)
+        view.textView.setAnimation(animation, letterFade: letterFade)
         LaunchTimer.editorShown()
         #if DEBUG || KIRI_SELFTEST
         SelfTest.run(textView: view.textView)
@@ -48,7 +49,7 @@ struct EditorView: NSViewRepresentable {
         c.setFontScale(fontScale)
         c.setLanguage(language)
         c.setWrap(wrapLines)
-        view.textView.setAnimation(animation)
+        view.textView.setAnimation(animation, letterFade: letterFade)
         c.setCrossfade(animation != .none)
     }
 }

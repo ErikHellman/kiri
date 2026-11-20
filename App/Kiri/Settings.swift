@@ -8,6 +8,9 @@ enum Prefs {
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
     static let typingAnimationsKey = "typingAnimations"
+    /// Letter fade-in is off by default until it's been seen redrawing on a
+    /// real display (see README).
+    static let letterFadeKey = "letterFade"
 
     /// Text size steps for ⌘+ / ⌘-.
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
@@ -23,6 +26,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
+    @AppStorage(Prefs.letterFadeKey) private var letterFade = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -35,6 +39,10 @@ struct SettingsView: View {
             row("Typing animations", detail: "Letters fade in and the caret glides. Off with Motion Off.") {
                 Toggle("", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
                     .disabled(motion == .off)
+            }
+            row("Letters fade in", detail: "Typed letters fade in and settle (experimental).") {
+                Toggle("", isOn: $letterFade).toggleStyle(.switch).labelsHidden()
+                    .disabled(motion == .off || !typingAnimations)
             }
             row("Text size", detail: "⌘+ and ⌘- change it from any window.") {
                 HStack(spacing: 8) {

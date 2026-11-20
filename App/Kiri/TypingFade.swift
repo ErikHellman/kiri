@@ -60,8 +60,6 @@ final class FadeStore: @unchecked Sendable {
     }
     private weak var textView: NSTextView?
     private var displayLink: CADisplayLink?
-    private var frame = 0
-    private static let tickKey = NSAttributedString.Key("se.hellsoft.kiri.fadeTick")
 
     init(textView: NSTextView) {
         self.textView = textView
@@ -103,7 +101,7 @@ final class FadeStore: @unchecked Sendable {
         displayLink = link
     }
 
-    @objc private func tick() {
+    @objc func tick() {
         let now = CACurrentMediaTime()
         let finished = items.filter { now - $0.start >= Self.duration }
         items.removeAll { now - $0.start >= Self.duration }
@@ -125,14 +123,10 @@ final class FadeStore: @unchecked Sendable {
             guard let start = tlm.location(caret, offsetBy: r.location - caretOffset),
                   let end = tlm.location(start, offsetBy: r.length),
                   let range = NSTextRange(location: start, end: end) else { continue }
-            // Changing a rendering attribute is what makes TextKit redraw the
-            // fragment (invalidateRenderingAttributes alone doesn't).
-            frame &+= 1
-            if extra.contains(r) {
-                tlm.removeRenderingAttribute(Self.tickKey, for: range)
-            } else {
-                tlm.addRenderingAttribute(Self.tickKey, value: frame, for: range)
-            }
+            // Invalidating the paragraph's layout is what reliably makes
+            // TextKit 2 draw its fragment again (rendering attributes don't).
+            tlm.invalidateLayout(for: range)
+            textView.needsDisplay = true
         }
     }
 }
