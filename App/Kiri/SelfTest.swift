@@ -1,4 +1,4 @@
-#if DEBUG
+#if DEBUG || KIRI_SELFTEST
 import AppKit
 import os
 
@@ -90,11 +90,74 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 let shown = NSApp.windows.compactMap { findTextView(in: $0.contentView) }.first?.string ?? ""
                 report(!doc.isDocumentEdited, "clean after revert")
+                if let tv2 = NSApp.windows.compactMap({ findTextView(in: $0.contentView) }).first,
+                   let storage = tv2.textStorage, storage.length > 0 {
+                    var colors = Set<ObjectIdentifier>()
+                    storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { v, _, _ in
+                        if let c = v as AnyObject? { colors.insert(ObjectIdentifier(c)) }
+                    }
+                    report(colors.count > 1, "highlighted after revert (\(colors.count) colors)")
+                }
                 report(Data(shown.utf8) == Data(String(decoding: before, as: UTF8.self)
                     .replacingOccurrences(of: "\r\n", with: "\n").utf8), "revert shows the file on disk")
                 NSApp.terminate(nil)
             }
         }
+    }
+
+    /// Keystrokes through the event loop, each timed until the edit is
+    /// recolored (or, without highlighting, displayed).
+    private static func perfEventLoop(_ tv: NSTextView, done: @escaping () -> Void) {
+        let clock = ContinuousClock()
+        var samples: [Duration] = []
+        var start = clock.now
+        var waiting = false
+        var colored = false
+        SyntaxHighlighter.onColored = { _ in colored = true }
+        let plain = (tv.delegate as? EditorController)?.model.language == .plainText
+        func key(_ ch: String) {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0,
+                                            windowNumber: tv.window?.windowNumber ?? 0, context: nil, characters: ch,
+                                            charactersIgnoringModifiers: ch, isARepeat: false, keyCode: 0) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+            }
+        }
+        func next() {
+            guard samples.count < 60 else {
+                SyntaxHighlighter.onColored = nil
+                let sorted = samples.sorted()
+                let avg = samples.reduce(Duration.zero, +) / samples.count
+                print("SELFTEST PERF event-loop keystroke→\(plain ? "display" : "recolor"): avg \(avg), p95 \(sorted[sorted.count * 95 / 100]), max \(sorted.last!)")
+                fflush(stdout)
+                done()
+                return
+            }
+            colored = false
+            waiting = true
+            start = clock.now
+            key("x")
+            poll()
+        }
+        func poll() {
+            DispatchQueue.main.async {
+                if waiting && (colored || plain) && !(tv.window?.viewsNeedDisplay ?? false) {
+                    waiting = false
+                    tv.displayIfNeeded()
+                    samples.append(clock.now - start)
+                    // Like a fast typist: ~12 keys a second.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { next() }
+                } else if clock.now - start > .seconds(2) {
+                    waiting = false
+                    samples.append(clock.now - start)
+                    next()
+                } else {
+                    poll()
+                }
+            }
+        }
+        next()
     }
 
     /// Typing and scrolling cost on whatever file is open (use a big one).
@@ -124,7 +187,12 @@ import os
         }
         print("SELFTEST PERF jump-scroll worst \(scrollWorst)")
         fflush(stdout)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { NSApp.terminate(nil) }
+        tv.setSelectedRange(NSRange(location: len / 2, length: 0))
+        tv.scrollRangeToVisible(tv.selectedRange())
+        tv.window?.makeFirstResponder(tv)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            perfEventLoop(tv) { NSApp.terminate(nil) }
+        }
     }
 
     private static func findTextView(in view: NSView?) -> NSTextView? {

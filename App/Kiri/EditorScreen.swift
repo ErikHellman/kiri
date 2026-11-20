@@ -42,6 +42,7 @@ struct EditorScreen: View {
         .focusedSceneValue(\.editorModel, model)
         .onAppear {
             detectLanguage()
+            tabs.resume()
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openSettings() }
             #endif

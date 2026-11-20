@@ -53,6 +53,16 @@ struct HoneyMotionTests {
         #expect(HoneyAppearance(motion: .off).reduced(systemReduceMotion: false))
     }
 
+    @Test func editorAnimation() {
+        typealias A = EditorAnimation
+        #expect(A.resolve(motion: .system, systemReduceMotion: false, typingAnimations: true) == .full)
+        #expect(A.resolve(motion: .system, systemReduceMotion: true, typingAnimations: true) == .fades)
+        #expect(A.resolve(motion: .full, systemReduceMotion: true, typingAnimations: true) == .full)
+        #expect(A.resolve(motion: .reduced, systemReduceMotion: false, typingAnimations: true) == .fades)
+        #expect(A.resolve(motion: .off, systemReduceMotion: false, typingAnimations: true) == .none)
+        #expect(A.resolve(motion: .full, systemReduceMotion: false, typingAnimations: false) == .none)
+    }
+
     @Test func radii() {
         #expect(Honey.Radius.allCases.map(\.value) == [20, 16, 12, 8])
     }

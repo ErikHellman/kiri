@@ -33,7 +33,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.load(document)
         context.coordinator.setLanguage(language)
         LaunchTimer.editorShown()
-        #if DEBUG
+        #if DEBUG || KIRI_SELFTEST
         SelfTest.run(textView: view.textView)
         #endif
         return view

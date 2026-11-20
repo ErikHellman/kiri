@@ -179,3 +179,21 @@ public struct HoneyAppearance: Equatable, Sendable {
         }
     }
 }
+
+/// How the editor animates typing (caret glide, glyph fade-in, line and
+/// bracket highlights), resolved from the motion setting, the OS Reduce
+/// Motion switch and the Typing animations toggle.
+public enum EditorAnimation: Sendable, Equatable {
+    /// Movement and fades.
+    case full
+    /// Fades only: nothing moves (Reduce Motion, or Motion: Reduced).
+    case fades
+    /// No editor animation at all: the system caret, no extra layers.
+    case none
+
+    public static func resolve(motion: HoneyMotionLevel, systemReduceMotion: Bool,
+                               typingAnimations: Bool) -> EditorAnimation {
+        guard typingAnimations, motion != .off else { return .none }
+        return HoneyAppearance(motion: motion).reduced(systemReduceMotion: systemReduceMotion) ? .fades : .full
+    }
+}

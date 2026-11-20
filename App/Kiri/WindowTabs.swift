@@ -21,7 +21,7 @@ import SwiftUI
     @ObservationIgnored private var timer: Timer?
 
     func attach(_ window: NSWindow) {
-        guard self.window !== window else { return }
+        guard self.window !== window else { resume(); return }
         self.window = window
         window.tabbingMode = .preferred
         window.tabbingIdentifier = "se.hellsoft.kiri.document"
@@ -39,12 +39,20 @@ import SwiftUI
             self.refresh()
         }
         refresh()
+        timer?.invalidate()
+        timer = nil
+        resume()
+    }
+
+    /// Starts (or restarts, after the view came back) the refresh timer.
+    func resume() {
+        guard timer == nil, window != nil else { return }
         // Titles and dirty state change without notifications we can watch
         // cheaply; four checks a second cost nothing.
-        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
+        refresh()
     }
 
     func refresh() {
@@ -89,7 +97,10 @@ import SwiftUI
 
     var document: NSDocument? { window.flatMap { NSDocumentController.shared.document(for: $0) } }
 
-    func invalidate() { timer?.invalidate() }
+    func invalidate() {
+        timer?.invalidate()
+        timer = nil
+    }
 }
 
 /// Finds the NSWindow that hosts a SwiftUI view.

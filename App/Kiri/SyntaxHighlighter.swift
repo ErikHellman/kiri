@@ -34,8 +34,9 @@ import KiriSyntax
 
     var length: Int { textView?.textStorage?.length ?? 0 }
 
-    func setLanguage(_ language: Language) {
-        guard language != self.language || (parser == nil && snapshot == nil) else { return }
+    func setLanguage(_ language: Language, force: Bool = false) {
+        guard force || language != configured else { return }
+        configured = language
         self.language = language
         parser = nil
         snapshot = nil
@@ -69,16 +70,16 @@ import KiriSyntax
         }
     }
 
+    /// The language last set up (updateNSView calls setLanguage often).
+    private var configured: Language?
+
     /// While a grammar loads, nothing is colored (instead of the fallback
     /// lexer flashing first).
     private var loadingGrammar = false
 
     /// The whole text was replaced (a document load).
     func textReplaced() {
-        let lang = language
-        language = .plainText
-        parser = nil
-        setLanguage(lang)
+        setLanguage(language, force: true)
     }
 
     /// Call from the text storage delegate for every character edit.
@@ -113,8 +114,14 @@ import KiriSyntax
             let snap = parser.parse(unsafeText, edits: edits)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, self.parser === parser else { return }
+                    guard let self else { return }
                     self.parsing = false
+                    // The parser was replaced (new language, Revert) while this ran:
+                    // drop the result and start the new parser's first parse.
+                    guard self.parser === parser else {
+                        if self.parser != nil, self.snapshot == nil { self.startParseIfNeeded(force: true) }
+                        return
+                    }
                     if let snap {
                         self.snapshot = snap
                         self.snapshotVersion = parseVersion
@@ -170,6 +177,9 @@ import KiriSyntax
         }
         apply(spans, in: target)
         colored.insert(integersIn: target)
+        #if DEBUG || KIRI_SELFTEST
+        Self.onColored?(version)
+        #endif
     }
 
     private func apply(_ spans: [SyntaxSpan], in range: Range<Int>) {
@@ -197,6 +207,11 @@ import KiriSyntax
         storage.endEditing()
         colored = IndexSet()
     }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// Self-test hook: called after the visible range is colored.
+    static var onColored: ((Int) -> Void)?
+    #endif
 
     private static var colors: [SyntaxKind: NSColor] = [:]
 
