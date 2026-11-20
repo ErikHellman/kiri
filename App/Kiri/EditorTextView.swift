@@ -9,11 +9,68 @@ import os
 /// The text view: Honey caret, selection and current-line colors.
 final class KiriTextView: NSTextView {
     /// Paints the caret's line. Off while there is a selection.
-    var highlightsCurrentLine = true
+    var highlightsCurrentLine = true {
+        didSet { if oldValue != highlightsCurrentLine { effects?.update() } }
+    }
+    /// Typing animations (caret, current line, bracket pulse), or nil.
+    private(set) var effects: EditorEffects?
+    private var keyObservers: [NSObjectProtocol] = []
+
+    func setAnimation(_ mode: EditorAnimation) {
+        guard mode != (effects?.mode ?? .none) else { return }
+        effects?.remove()
+        effects = nil
+        if mode == .none {
+            insertionPointColor = .honey(Honey.caret)
+        } else {
+            effects = EditorEffects(textView: self, mode: mode)
+            // The caret layer replaces the system caret.
+            insertionPointColor = .clear
+            effects?.update(animated: false)
+        }
+        needsDisplay = true
+    }
+
+    /// Whether the caret should show: this view has focus in the key window.
+    var isCaretActive: Bool {
+        (window?.isKeyWindow == true || Self.forceCaretActive) && window?.firstResponder === self
+    }
+    /// Self-test pictures are taken while the window may not be key.
+    nonisolated(unsafe) static var forceCaretActive = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        keyObservers.forEach(NotificationCenter.default.removeObserver)
+        keyObservers = []
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.effects?.update(animated: false) }
+            })
+        }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        effects?.update(animated: false)
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        DispatchQueue.main.async { [weak self] in self?.effects?.update(animated: false) }
+        return ok
+    }
+
+    override func layout() {
+        super.layout()
+        effects?.update(animated: false)
+    }
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard highlightsCurrentLine, let lineRect = currentLineRect(), lineRect.intersects(rect) else { return }
+        guard effects == nil, highlightsCurrentLine, let lineRect = currentLineRect(), lineRect.intersects(rect)
+        else { return }
         NSColor.honey(Honey.currentLine).setFill()
         lineRect.fill()
     }
@@ -52,19 +109,30 @@ final class KiriTextView: NSTextView {
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
-        let old = currentLineRect()
+        guard let effects else {
+            let old = currentLineRect()
+            super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+            if let old { setNeedsDisplay(old) }
+            if let new = currentLineRect() { setNeedsDisplay(new) }
+            return
+        }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        if let old { setNeedsDisplay(old) }
-        if let new = currentLineRect() { setNeedsDisplay(new) }
+        // After layout catches up with any edit that moved the caret.
+        DispatchQueue.main.async { [weak self, weak effects] in
+            guard self != nil else { return }
+            effects?.update()
+            if !stillSelecting { effects?.pulseMatchingBracket() }
+        }
     }
 
     override func didChangeText() {
         super.didChangeText()
-        setNeedsDisplay(visibleRect)
+        if effects == nil { setNeedsDisplay(visibleRect) }
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        effects?.updateColors()
         needsDisplay = true
     }
 }

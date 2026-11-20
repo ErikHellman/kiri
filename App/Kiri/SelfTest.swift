@@ -28,6 +28,38 @@ import os
                 NSApp.terminate(nil)
             }
         }
+        if let path = UserDefaults.standard.string(forKey: "KiriSnapshot") {
+            KiriTextView.forceCaretActive = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                textView.window?.makeFirstResponder(textView)
+                // Caret inside line 8, after "greet(".
+                let ns = textView.string as NSString
+                let r = ns.range(of: "greet()")
+                if r.location != NSNotFound { textView.setSelectedRange(NSRange(location: r.location + 6, length: 0)) }
+            }
+            // In-process window picture (for when screen capture isn't
+            // available): renders the window's layer tree to a PNG, then quits.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                // SwiftUI's hosting layers don't render this way; the editor
+                // (AppKit) does, which is what these pictures are for.
+                guard let window = textView.window, let frameView = textView.enclosingScrollView?.superview,
+                      let layer = frameView.layer else { NSApp.terminate(nil); return }
+                let scale = window.backingScaleFactor
+                let size = frameView.bounds.size
+                guard let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                                          bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                ctx.scaleBy(x: scale, y: scale)
+                if !frameView.isFlipped { /* layers render bottom-up already */ }
+                layer.render(in: ctx)
+                if let image = ctx.makeImage() {
+                    let rep = NSBitmapImageRep(cgImage: image)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    print("SELFTEST snapshot \(path)")
+                }
+                NSApp.terminate(nil)
+            }
+        }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 (textView.delegate as? EditorController)?.model.showGoToLine = true
