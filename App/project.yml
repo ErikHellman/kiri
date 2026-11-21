@@ -31,9 +31,11 @@ targets:
       path: Kiri/Info.plist
       properties:
         CFBundleDocumentTypes:
+          # NSDocumentClass is KiriDocument's Objective-C name (`@objc(KiriDocument)`).
           - CFBundleTypeName: Text Document
             CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
+            NSDocumentClass: KiriDocument
             LSItemContentTypes:
               - public.plain-text
               - public.text
@@ -51,6 +53,7 @@ targets:
           - CFBundleTypeName: Any File
             CFBundleTypeRole: Editor
             LSHandlerRank: None
+            NSDocumentClass: KiriDocument
             LSItemContentTypes:
               - public.data
         # `kiri` command-line requests (App/CLI/kiri, KiriCLI.swift).

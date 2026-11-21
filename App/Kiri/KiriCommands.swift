@@ -2,18 +2,13 @@ import AppKit
 import KiriKit
 import SwiftUI
 
-/// Menu commands beyond what DocumentGroup gives (New, Open, Open Recent,
-/// Save, Duplicate, Rename, Revert, Close come with it). Every feature is
-/// in a menu, so the keyboard reaches all of it (⌃F2 opens the menu bar),
-/// and the common ones have keys of their own. Help ▸ Keyboard Shortcuts
-/// lists them; its contents live next to the keys in `Shortcuts.swift`.
+/// The menus. Every feature is in one, so the keyboard reaches all of it
+/// (⌃F2 opens the menu bar), and the common ones have keys of their own.
+/// Help ▸ Keyboard Shortcuts lists them; its contents live next to the keys
+/// in `Shortcuts.swift`.
+///
+/// What an item acts on is the front document window (`FrontEditor`).
 struct KiriCommands: Commands {
-    @FocusedValue(\.editorModel) private var editor
-    @FocusedValue(\.folderSession) private var folder
-    @FocusedValue(\.windowTabs) private var tabs
-    @FocusedBinding(\.textEncoding) private var encoding
-    @FocusedBinding(\.lineEnding) private var lineEnding
-    @FocusedBinding(\.byteOrderMark) private var byteOrderMark
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
@@ -21,6 +16,11 @@ struct KiriCommands: Commands {
     @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @Environment(\.openWindow) private var openWindow
+
+    private var editor: EditorModel? { FrontEditor.shared.editor }
+    private var folder: FolderSession? { FrontEditor.shared.folder }
+    private var tabs: WindowTabs? { FrontEditor.shared.tabs }
+    private var document: KiriDocument? { FrontEditor.shared.document }
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -55,12 +55,51 @@ struct KiriCommands: Commands {
                 .disabled(folder == nil)
         }
 
-        // File
-        CommandGroup(after: .newItem) {
+        // File. Written out, since the documents are AppKit's own and no
+        // SwiftUI scene brings these items: an explicit-save File menu,
+        // with Revert going back to the file and no Duplicate, Rename,
+        // Move To or Versions. The symbols are the ones macOS gives its
+        // own items of these names.
+        CommandGroup(replacing: .newItem) {
+            Button("New", systemImage: "plus") { NSDocumentController.shared.newDocument(nil) }
+                .keyboardShortcut(Keys.new)
             Button("New Tab") { NSDocumentController.shared.newDocument(nil) }
                 .keyboardShortcut(Keys.newTab)
+            Button("Open…", systemImage: "arrow.up.forward") { NSDocumentController.shared.openDocument(nil) }
+                .keyboardShortcut(Keys.open)
             Button("Open Folder…") { FolderSessions.openFolderPanel() }
                 .keyboardShortcut(Keys.openFolder)
+            Menu("Open Recent", systemImage: "clock") {
+                let recent = RecentDocuments.shared.urls
+                let folders = TabNames.details(titles: recent.map(\.lastPathComponent), paths: recent.map(\.path))
+                ForEach(Array(zip(recent, folders)), id: \.0) { url, folder in
+                    // Two of a name are told apart by their folders, as tabs are.
+                    Button(folder.map { "\(url.lastPathComponent) — \($0)" } ?? url.lastPathComponent) {
+                        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+                            MainActor.assumeIsolated { if let error { _ = NSApp.presentError(error) } }
+                        }
+                    }
+                }
+                Divider()
+                Button("Clear Menu") { NSDocumentController.shared.clearRecentDocuments(nil) }
+                    .disabled(recent.isEmpty)
+            }
+        }
+        CommandGroup(replacing: .saveItem) {
+            // Whatever window has the keyboard: a tab, Settings, a panel.
+            Button("Close", systemImage: "xmark") { NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil) }
+                .keyboardShortcut(Keys.close)
+            Button("Close All", systemImage: "xmark.rectangle") { FileAction.closeAll() }
+                .keyboardShortcut(Keys.closeAll)
+            Button("Save", systemImage: "square.and.arrow.down") { document?.save(nil) }
+                .keyboardShortcut(Keys.save)
+                .disabled(document == nil)
+            Button("Save As…", systemImage: "square.and.arrow.down.on.square") { document?.saveAs(nil) }
+                .keyboardShortcut(Keys.saveAs)
+                .disabled(document == nil)
+            // Back to the file as it was last saved; the document asks first.
+            Button("Revert to Saved", systemImage: "arrow.counterclockwise") { document?.revertToSaved(nil) }
+                .disabled(document?.location == nil || tabs?.dirty != true)
         }
 
         // Edit: Find and Transformations, written out instead of taken from
@@ -74,17 +113,17 @@ struct KiriCommands: Commands {
         // nothing to act on, the action goes nowhere.
         CommandGroup(replacing: .textEditing) {
             Menu("Find") {
-                Button("Find…") { EditAction.find(.show, in: editor) }
+                Button("Find…") { EditAction.find(.show) }
                     .keyboardShortcut(Keys.find)
-                Button("Find and Replace…") { EditAction.find(.showReplace, in: editor) }
+                Button("Find and Replace…") { EditAction.find(.showReplace) }
                     .keyboardShortcut(Keys.findAndReplace)
-                Button("Find Next") { EditAction.find(.next, in: editor) }
+                Button("Find Next") { EditAction.find(.next) }
                     .keyboardShortcut(Keys.findNext)
-                Button("Find Previous") { EditAction.find(.previous, in: editor) }
+                Button("Find Previous") { EditAction.find(.previous) }
                     .keyboardShortcut(Keys.findPrevious)
-                Button("Use Selection for Find") { EditAction.find(.useSelection, in: editor) }
+                Button("Use Selection for Find") { EditAction.find(.useSelection) }
                     .keyboardShortcut(Keys.useSelectionForFind)
-                Button("Jump to Selection") { EditAction.jumpToSelection(in: editor) }
+                Button("Jump to Selection") { EditAction.jumpToSelection() }
                     .keyboardShortcut(Keys.jumpToSelection)
             }
             Menu("Transformations") {
@@ -137,16 +176,16 @@ struct KiriCommands: Commands {
             }
             .disabled(editor == nil)
             Divider()
-            Picker("Text Encoding", selection: $encoding) {
+            Picker("Text Encoding", selection: Binding(get: { document?.encoding }, set: { if let new = $0 { document?.setEncoding(new) } })) {
                 ForEach(TextEncoding.allCases, id: \.self) { Text($0.label).tag(Optional($0)) }
             }
-            .disabled(encoding == nil)
-            Toggle("Byte Order Mark", isOn: Binding(get: { byteOrderMark ?? false }, set: { byteOrderMark = $0 }))
-                .disabled(byteOrderMark == nil || !(encoding?.isUnicode ?? false))
-            Picker("Line Endings", selection: $lineEnding) {
+            .disabled(document == nil)
+            Toggle("Byte Order Mark", isOn: Binding(get: { document?.hasBOM ?? false }, set: { document?.setByteOrderMark($0) }))
+                .disabled(!(document?.encoding.isUnicode ?? false))
+            Picker("Line Endings", selection: Binding(get: { document?.lineEnding }, set: { if let new = $0 { document?.setLineEnding(new) } })) {
                 ForEach(LineEnding.allCases, id: \.self) { Text($0.menuName).tag(Optional($0)) }
             }
-            .disabled(lineEnding == nil)
+            .disabled(document == nil)
             Divider()
             Button("Shift Right") { editor?.controller?.shiftLines(right: true) }
                 .keyboardShortcut(Keys.shiftRight)
@@ -173,6 +212,7 @@ struct KiriCommands: Commands {
                 }
             }
             Divider()
+            Button("Bring All to Front", systemImage: "macwindow.on.rectangle") { NSApp.arrangeInFront(nil) }
         }
 
         // Help: there is no help book, so Kiri Help becomes the shortcuts.
@@ -192,9 +232,22 @@ struct KiriCommands: Commands {
     }
 }
 
+/// The File menu's actions that take more than a line.
+@MainActor enum FileAction {
+    /// ⌥⌘W: every window closes. The documents go one by one through
+    /// their own "save the changes?" question, and stay open on Cancel.
+    static func closeAll() {
+        for window in NSApp.windows where window.isVisible && !DocumentWindow.isDocumentWindow(window) && window.sheetParent == nil {
+            window.performClose(nil)
+        }
+        NSDocumentController.shared.closeAllDocuments(withDelegate: nil, didCloseAllSelector: nil, contextInfo: nil)
+    }
+}
+
 /// The Edit menu's actions: standard AppKit editing actions sent to whatever
 /// has keyboard focus, and the find commands, which go to the front
-/// document's find bar.
+/// document's find bar (`FrontEditor`), wherever in that window the
+/// keyboard is.
 @MainActor enum EditAction {
     static func send(_ action: Selector, tag: Int = 0) {
         // The find actions read which one they are from the sender's tag,
@@ -215,22 +268,13 @@ struct KiriCommands: Commands {
     static weak var selfTestTarget: NSResponder?
     #endif
 
-    /// The front window's editor: the focused scene's, or in a self-test
-    /// (run in the background, where no scene has focus) the one it named.
-    private static func front(_ editor: EditorModel?) -> EditorModel? {
-        #if DEBUG || KIRI_SELFTEST
-        if editor == nil, NSApp.keyWindow == nil {
-            return ((selfTestTarget as? NSTextView)?.delegate as? EditorController)?.model
-        }
-        #endif
-        return editor
-    }
+    private static var editor: EditorModel? { FrontEditor.shared.editor }
 
     /// A find command, for the front document's find bar. In a window
     /// without an editor (Settings, Keyboard Shortcuts) the standard action
     /// goes down the responder chain instead, to whatever text has focus.
-    static func find(_ action: FindController.Action, in editor: EditorModel?) {
-        if let editor = front(editor) {
+    static func find(_ action: FindController.Action) {
+        if let editor {
             editor.find.perform(action)
             return
         }
@@ -247,8 +291,8 @@ struct KiriCommands: Commands {
 
     /// ⌘J scrolls the editor to its selection, also while the keyboard is
     /// in the find bar.
-    static func jumpToSelection(in editor: EditorModel?) {
-        if let textView = front(editor)?.controller?.textView {
+    static func jumpToSelection() {
+        if let textView = editor?.controller?.textView {
             textView.centerSelectionInVisibleArea(nil)
         } else {
             send(#selector(NSText.centerSelectionInVisibleArea(_:)))

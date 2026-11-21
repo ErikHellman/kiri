@@ -93,7 +93,14 @@ import KiriKit
         open(request)
     }
 
-    static func open(_ request: Request) { Opener(request).run() }
+    static func open(_ request: Request) {
+        hasOpenedSomething = true
+        Opener(request).run()
+    }
+
+    /// A request has arrived: one that launched Kiri opens what it asks
+    /// for, and the empty document of a plain launch isn't wanted.
+    private(set) static var hasOpenedSomething = false
 
     // MARK: Opening
 
@@ -150,11 +157,12 @@ import KiriKit
 
         private func openUntitled(text: String?) {
             placeNext()
-            KiriDocument.pendingText = text
-            defer { KiriDocument.pendingText = nil }
             do {
-                let doc = try NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
-                opened.append(doc)
+                if let text {
+                    opened.append(KiriDocument.openUntitled(text: text))
+                } else {
+                    opened.append(try NSDocumentController.shared.openUntitledDocumentAndDisplay(true))
+                }
             } catch {
                 WindowPlacement.next = nil
                 _ = NSApp.presentError(error)

@@ -3,9 +3,12 @@ import SwiftUI
 /// Kiri's own key equivalents, shared by the menus and the Keyboard
 /// Shortcuts window so the two can't drift apart.
 enum Keys {
-    /// File ▸ Open… is `DocumentGroup`'s own; its key is here for the
-    /// places that name it (the first-run hint, the Keyboard Shortcuts window).
+    static let new = KeyboardShortcut("n", modifiers: .command)
     static let open = KeyboardShortcut("o", modifiers: .command)
+    static let save = KeyboardShortcut("s", modifiers: .command)
+    static let saveAs = KeyboardShortcut("s", modifiers: [.option, .shift, .command])
+    static let close = KeyboardShortcut("w", modifiers: .command)
+    static let closeAll = KeyboardShortcut("w", modifiers: [.option, .command])
     static let settings = KeyboardShortcut(",", modifiers: .command)
     static let newTab = KeyboardShortcut("t", modifiers: .command)
     static let find = KeyboardShortcut("f", modifiers: .command)
@@ -124,14 +127,13 @@ struct ShortcutGroup: Identifiable {
 
     static let all: [ShortcutGroup] = [
         ShortcutGroup(title: "Files", systemImage: "doc", items: [
-            Item("New document", "⌘N"),
+            Item("New document", Keys.new),
             Item("New tab", Keys.newTab),
             Item("Open…", Keys.open),
             Item("Open folder…", Keys.openFolder),
-            Item("Save", "⌘S"),
-            Item("Duplicate", "⇧⌘S"),
-            Item("Save as…", "⌥⇧⌘S"),
-            Item("Close tab", "⌘W"),
+            Item("Save", Keys.save),
+            Item("Save as…", Keys.saveAs),
+            Item("Close tab", Keys.close),
             Item("Settings…", Keys.settings),
             Item("Quit", "⌘Q"),
         ]),

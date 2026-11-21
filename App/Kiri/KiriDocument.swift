@@ -1,3 +1,4 @@
+import AppKit
 import KiriKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,76 +9,241 @@ extension UTType {
 
 /// A text document. The text itself lives in the editor's NSTextStorage while
 /// a window is open (so typing never round-trips through SwiftUI); the
-/// document reads it from there when it saves.
-final class KiriDocument: ReferenceFileDocument, @unchecked Sendable {
-    typealias Snapshot = TextFile
-
-    /// Everything Kiri can open. `public.data` lets any file through the Open
-    /// panel; reading rejects files that aren't text.
-    static var readableContentTypes: [UTType] {
-        [.plainText, .text, .sourceCode, .kiriMarkdown, .json, .yaml, .xml, .propertyList, .commaSeparatedText,
-         .shellScript, .pythonScript, .swiftSource, .javaScript, .html, .data]
-    }
-
-    static var writableContentTypes: [UTType] {
-        [.plainText, .text, .sourceCode, .kiriMarkdown, .json, .yaml, .xml, .propertyList, .commaSeparatedText,
-         .shellScript, .pythonScript, .swiftSource, .javaScript, .html, .data]
-    }
-
-    // State is only touched on the main thread (SwiftUI reads the file on a
-    // background thread, but before anyone else can see the document).
+/// editor pushes a copy here after each edit, and the document writes that.
+///
+/// A plain `NSDocument`, not one of SwiftUI's: a `DocumentGroup` document
+/// autosaves in place and has no switch for it, and Kiri saves only when
+/// asked. The file changes on Save (⌘S, the Save button, Save As) and at no
+/// other time. What isn't saved yet is kept for a crash in a recovery copy
+/// that AppKit writes a few seconds after an edit (`autosavingDelay`),
+/// reopens at the next launch and deletes on Save, Revert and close.
+///
+/// AppKit finds the class by this name (`NSDocumentClass` in `project.yml`).
+@objc(KiriDocument) @Observable final class KiriDocument: NSDocument {
     /// The file as read.
-    var file: TextFile
-    /// Encoding and line ending to save with; the status bar changes them.
-    @Published var encoding: TextEncoding
-    @Published var lineEnding: LineEnding
-    @Published var hasBOM: Bool
-    /// The latest text from the editor. SwiftUI snapshots documents on a
-    /// background thread while the main thread waits, so the editor pushes
-    /// a copy here after each edit instead of being asked for it.
-    var text: String {
-        get { lock.withLock { _text } }
-        set { lock.withLock { _text = newValue } }
-    }
-    private var _text: String
-    private let lock = NSLock()
+    private(set) var file = TextFile()
+    /// Encoding and line ending to save with; the status bar and the Format
+    /// menu change them (`change`).
+    private(set) var encoding = TextEncoding.utf8
+    private(set) var lineEnding = LineEnding.lf
+    private(set) var hasBOM = false
+    /// The latest text from the editor.
+    @ObservationIgnored var text = ""
+    /// Where the document's file is, nil until it has one. Follows Save As
+    /// and a move in Finder (`fileURL` itself tells nobody).
+    private(set) var location: URL?
+    /// The editor that shows this document: a Revert reads the file into
+    /// the same document, and the editor has to show it.
+    @ObservationIgnored weak var editor: EditorController?
 
-    /// Text for the next new document (`kiri -`), since DocumentGroup
-    /// makes new documents with a fixed closure. Main thread only.
-    nonisolated(unsafe) static var pendingText: String?
+    /// The file changes when the person saves, never by itself.
+    override class var autosavesInPlace: Bool { false }
+    /// No Versions browser: Revert goes back to the file.
+    override class var preservesVersions: Bool { false }
 
-    init(text: String = "") {
-        file = TextFile(text: text)
-        _text = text
-        encoding = file.encoding
-        lineEnding = file.lineEnding
-        hasBOM = file.hasBOM
-    }
+    // Reading and writing stay on the main thread, where the text is.
+    override class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool { false }
+    override func canAsynchronouslyWrite(to url: URL, ofType typeName: String,
+                                         for saveOperation: NSDocument.SaveOperationType) -> Bool { false }
 
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
-        do { file = try TextFile(data: data) } catch { throw CocoaError(.fileReadUnknownStringEncoding) }
-        _text = file.text
-        encoding = file.encoding
-        lineEnding = file.lineEnding
-        hasBOM = file.hasBOM
+    // Kiri reads and writes any file that holds text, whatever the system
+    // calls its type: a `.toml`, a `Makefile` or a dotfile saves in place
+    // like a `.txt` does, instead of being sent to Save As as a type the
+    // app "can't write".
+    override class func isNativeType(_ type: String) -> Bool { true }
+    override nonisolated func writableTypes(for saveOperation: NSDocument.SaveOperationType) -> [String] {
+        [fileType ?? UTType.plainText.identifier]
     }
 
-    func snapshot(contentType: UTType) throws -> TextFile {
+    /// A file keeps the name it has. AppKit would otherwise give a saved
+    /// file its type's extension: `Makefile` would come back as
+    /// `Makefile.make`.
+    override nonisolated func fileNameExtension(forType typeName: String, saveOperation: NSDocument.SaveOperationType) -> String? {
+        // (The recovery copy of a document that has no name yet is a .txt.)
+        fileURL == nil && saveOperation == .autosaveElsewhereOperation ? "txt" : nil
+    }
+
+    override init() {
+        super.init()
+    }
+
+    /// A new document that starts with text in it (`kiri -`).
+    convenience init(text: String) {
+        self.init()
+        fileType = UTType.plainText.identifier
+        take(TextFile(text: text))
+    }
+
+    /// Opens a new untitled document with `text` in it, in a window like
+    /// any other. It is not edited: closing piped text asks nothing.
+    static func openUntitled(text: String) -> KiriDocument {
+        let document = KiriDocument(text: text)
+        NSDocumentController.shared.addDocument(document)
+        document.makeWindowControllers()
+        document.showWindows()
+        return document
+    }
+
+    // MARK: Reading
+
+    override nonisolated func read(from fileWrapper: FileWrapper, ofType typeName: String) throws {
+        guard fileWrapper.isRegularFile, let data = fileWrapper.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let read: TextFile
+        do { read = try TextFile(data: data) } catch { throw CocoaError(.fileReadUnknownStringEncoding) }
+        MainActor.assumeIsolated { take(read) }
+    }
+
+    /// The document becomes `read`: when it opens, and again on Revert,
+    /// which AppKit reads into the document that is already open.
+    private func take(_ read: TextFile) {
+        file = read
+        text = read.text
+        encoding = read.encoding
+        lineEnding = read.lineEnding
+        hasBOM = read.hasBOM
+        editor?.load(self)
+    }
+
+    // MARK: Writing
+
+    override func data(ofType typeName: String) throws -> Data {
+        do { return try contents().data() } catch { throw CocoaError(.fileWriteInapplicableStringEncoding) }
+    }
+
+    /// The text as it is now, in the format chosen for it.
+    private func contents() -> TextFile {
         var f = file
         f.text = text
         f.encoding = encoding
         f.lineEnding = lineEnding
         f.hasBOM = hasBOM && encoding.isUnicode
-        _ = try f.data() // Fail the save now if the text doesn't fit the encoding.
         return f
     }
 
-    func fileWrapper(snapshot: TextFile, configuration: WriteConfiguration) throws -> FileWrapper {
-        do {
-            return FileWrapper(regularFileWithContents: try snapshot.data())
-        } catch {
-            throw CocoaError(.fileWriteInapplicableStringEncoding)
+    override nonisolated func write(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
+                                    originalContentsURL absoluteOriginalContentsURL: URL?) throws {
+        // A recovery copy must never fail for the reason a save may: text
+        // that doesn't fit the chosen encoding. It is kept as UTF-8 then,
+        // without a word; the save itself still says what is wrong.
+        if saveOperation == .autosaveElsewhereOperation {
+            let data = MainActor.assumeIsolated { () -> Data? in
+                var f = contents()
+                if let data = try? f.data() { return data }
+                f.encoding = .utf8
+                return try? f.data()
+            }
+            if let data {
+                try data.write(to: url, options: .atomic)
+                return
+            }
+        }
+        try super.write(to: url, ofType: typeName, for: saveOperation, originalContentsURL: absoluteOriginalContentsURL)
+    }
+
+    // MARK: Recovery copies
+
+    /// AppKit keeps the recovery copy of a document that has a file beside
+    /// that file, as "name (Autosaved).ext": in a project folder, where a
+    /// build would compile it and git would list it. Kiri keeps them all in
+    /// one place instead, with those of untitled documents (which AppKit
+    /// puts there itself). AppKit's record of what to reopen holds
+    /// bookmarks, so it finds them wherever they are.
+    override func autosave(withImplicitCancellability autosavingIsImplicitlyCancellable: Bool,
+                           completionHandler: @escaping (Error?) -> Void) {
+        guard let fileURL, hasUnautosavedChanges else {
+            super.autosave(withImplicitCancellability: autosavingIsImplicitlyCancellable, completionHandler: completionHandler)
+            return
+        }
+        let copy = autosavedContentsFileURL ?? RecoveryCopies.newURL(for: fileURL)
+        save(to: copy, ofType: autosavingFileType ?? fileType ?? UTType.plainText.identifier,
+             for: .autosaveElsewhereOperation, completionHandler: completionHandler)
+    }
+
+    // MARK: Where the file is
+
+    @ObservationIgnored override nonisolated var fileURL: URL? {
+        didSet {
+            let url = fileURL
+            // Set on the main thread, since nothing here saves off it.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { if location != url { location = url } }
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.location != url else { return }
+                    self.location = url
+                }
+            }
+        }
+    }
+
+    // MARK: The save format
+
+    /// Changes the encoding, the line endings or the byte order mark: an
+    /// undoable edit, so the document turns dirty.
+    func change<V: Equatable>(_ keyPath: ReferenceWritableKeyPath<KiriDocument, V>, to new: V, actionName: String) {
+        let old = self[keyPath: keyPath]
+        guard old != new else { return }
+        self[keyPath: keyPath] = new
+        undoManager?.registerUndo(withTarget: self) { document in
+            MainActor.assumeIsolated { document.change(keyPath, to: old, actionName: actionName) }
+        }
+        undoManager?.setActionName(actionName)
+    }
+
+    func setEncoding(_ new: TextEncoding) { change(\.encoding, to: new, actionName: "Change Encoding") }
+    func setLineEnding(_ new: LineEnding) { change(\.lineEnding, to: new, actionName: "Change Line Endings") }
+    func setByteOrderMark(_ new: Bool) { change(\.hasBOM, to: new, actionName: "Change Byte Order Mark") }
+
+    // MARK: Windows and panels
+
+    override func makeWindowControllers() {
+        addWindowController(DocumentWindow.controller(for: self))
+    }
+
+    /// The Save panel takes any name: a text editor saves a `Makefile` and
+    /// a `.rs` file as readily as a `.txt`. A document that has never been
+    /// saved is offered as plain text.
+    override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
+        savePanel.allowedContentTypes = []
+        savePanel.allowsOtherFileTypes = true
+        savePanel.isExtensionHidden = false
+        savePanel.canSelectHiddenExtension = false
+        savePanel.nameFieldStringValue = fileURL?.lastPathComponent ?? displayName + ".txt"
+        return true
+    }
+
+    /// No "File Format" pop-up: the format is the text's own.
+    override var shouldRunSavePanelWithAccessoryView: Bool { false }
+}
+
+/// Where the recovery copies of documents that have a file are kept.
+enum RecoveryCopies {
+    /// The folder AppKit keeps the copies of untitled documents in:
+    /// `~/Library/Autosave Information`, or, in a launch that leaves saved
+    /// state alone (`-ApplePersistenceIgnoreState YES`: a run from Xcode
+    /// set up that way, the self-tests), a folder of that name in the
+    /// temporary directory. Such a launch must not write among the real
+    /// copies, and AppKit reopens nothing from the other folder.
+    static var folder: URL {
+        let temporary = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("Autosave Information", isDirectory: true)
+        if UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") { return temporary }
+        return (try? FileManager.default.url(for: .autosavedInformationDirectory, in: .userDomainMask,
+                                             appropriateFor: nil, create: true)) ?? temporary
+    }
+
+    /// A name no other copy has: "notes (Autosaved 3F9A61C2).md". Files of
+    /// the same name in different folders each get their own.
+    static func newURL(for file: URL) -> URL {
+        let folder = folder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = file.deletingPathExtension().lastPathComponent, ext = file.pathExtension
+        while true {
+            let tagged = "\(name) (Autosaved \(UUID().uuidString.prefix(8)))"
+            let url = folder.appendingPathComponent(ext.isEmpty ? tagged : tagged + "." + ext)
+            if !FileManager.default.fileExists(atPath: url.path) { return url }
         }
     }
 }

@@ -14,7 +14,7 @@ import SwiftUI
 /// format, then the language.
 struct EditorStatusBar: View {
     @Bindable var model: EditorModel
-    @ObservedObject var document: KiriDocument
+    let document: KiriDocument
     let encoding: Binding<TextEncoding>
     let lineEnding: Binding<LineEnding>
     let byteOrderMark: Binding<Bool>

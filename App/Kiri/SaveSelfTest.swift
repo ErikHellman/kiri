@@ -1,0 +1,381 @@
+#if DEBUG || KIRI_SELFTEST
+import AppKit
+import KiriKit
+import SwiftUI
+
+/// The explicit-save half of `-KiriSelfTest`: the file changes on Save and
+/// at no other time. A recovery copy is written a few seconds after an edit
+/// and goes with Save, Revert and close; closing a dirty tab asks (Cancel,
+/// Don't Save, Save); Revert reads the file into the same document; and
+/// `kiri -w` waits until its tab has really closed.
+///
+/// The sheets are answered in-process, by pressing their buttons. Every file
+/// is in a folder of the test's own, and every recovery copy it sees made is
+/// checked gone again.
+extension SelfTest {
+    /// What the document is and how it saves, before anything is typed.
+    static func probeDocument(_ doc: NSDocument) {
+        let chain = sequence(first: type(of: doc) as AnyClass, next: { $0.superclass() }).map { NSStringFromClass($0) }
+        print("SELFTEST info document class chain \(chain)")
+        report(doc is KiriDocument && chain == ["KiriDocument", "NSDocument", "NSObject"],
+               "the document is a plain NSDocument (\(chain.joined(separator: " : ")))")
+        report(!type(of: doc).autosavesInPlace && !type(of: doc).preservesVersions,
+               "it neither autosaves in place nor keeps versions")
+        let controller = NSDocumentController.shared
+        report(controller is KiriDocumentController && controller.autosavingDelay == KiriDocumentController.recoveryDelay
+               && controller.autosavingDelay > 0,
+               "recovery copies are written \(controller.autosavingDelay) s after an edit")
+    }
+
+    static func saveStages(_ first: NSDocument) async {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-save-test-\(getpid())")
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        await periodicRecovery(dir)
+        await anyFileSavesInPlace(dir)
+        await closeDirty(dir)
+        await revert(dir)
+        await untitled(dir)
+        await waiting(dir)
+        report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
+        print("SELFTEST DONE save")
+        fflush(stdout)
+    }
+
+    // MARK: Helpers
+
+    /// Recovery copies this run has seen made, each checked gone at the end.
+    private static var copies: [URL] = []
+
+    private static func leftovers() -> [URL] { copies.filter { FileManager.default.fileExists(atPath: $0.path) } }
+
+    private static func exists(_ url: URL?) -> Bool { url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
+
+    private static func wait(_ seconds: Double = 4, until done: () -> Bool) async -> Bool {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while clock.now - start < .seconds(seconds) {
+            if done() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return done()
+    }
+
+    private static func isOpen(_ doc: NSDocument) -> Bool { NSDocumentController.shared.documents.contains { $0 === doc } }
+
+    private struct Tab {
+        let doc: KiriDocument
+        let window: NSWindow
+        let text: KiriTextView
+        let controller: EditorController
+    }
+
+    /// The tab of `doc`, once its editor shows the document.
+    private static func tab(of doc: NSDocument?) async -> Tab? {
+        guard let doc = doc as? KiriDocument else { return nil }
+        var found: Tab?
+        _ = await wait {
+            guard let w = Editors.window(for: doc), let tv = findTextView(in: w.contentView) as? KiriTextView,
+                  let c = tv.delegate as? EditorController, c.document === doc else { return false }
+            found = Tab(doc: doc, window: w, text: tv, controller: c)
+            return true
+        }
+        return found
+    }
+
+    private static func open(_ url: URL) async -> Tab? {
+        let doc: NSDocument? = await withCheckedContinuation { c in
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { d, _, _ in c.resume(returning: d) }
+        }
+        return await tab(of: doc)
+    }
+
+    private static func file(_ name: String, _ text: String, in dir: URL) -> URL {
+        let url = dir.appendingPathComponent(name)
+        try? Data(text.utf8).write(to: url)
+        return url
+    }
+
+    /// Types at the start of the tab's text, as an edit the document counts.
+    private static func insert(_ text: String, in tab: Tab) async {
+        tab.window.makeFirstResponder(tab.text)
+        tab.text.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        await settle()
+    }
+
+    /// A forced recovery copy (the periodic one comes 5 s after an edit).
+    @discardableResult
+    private static func autosave(_ doc: NSDocument) async -> URL? {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            doc.autosave(withImplicitCancellability: false) { _ in c.resume() }
+        }
+        let copy = doc.autosavedContentsFileURL
+        if let copy, !copies.contains(copy) { copies.append(copy) }
+        return copy
+    }
+
+    private static func buttons(in view: NSView?) -> [NSButton] {
+        guard let view else { return [] }
+        if let button = view as? NSButton { return [button] }
+        return view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    /// The sheet on `window`, once it is up.
+    private static func sheet(on window: NSWindow) async -> NSWindow? {
+        _ = await wait { window.attachedSheet != nil }
+        return window.attachedSheet
+    }
+
+    /// Presses the sheet's button of that title and waits for the sheet to go.
+    @discardableResult
+    private static func press(_ title: String, on window: NSWindow) async -> Bool {
+        guard let sheet = window.attachedSheet, let button = buttons(in: sheet.contentView).first(where: { $0.title == title }) else {
+            return false
+        }
+        button.performClick(nil)
+        return await wait { window.attachedSheet == nil }
+    }
+
+    // MARK: Stages
+
+    /// Without being asked: the recovery copy is there a little after the
+    /// delay, the file as it was.
+    private static func periodicRecovery(_ dir: URL) async {
+        let url = file("periodic.txt", "one\n", in: dir)
+        guard let tab = await open(url) else { report(false, "a file opens for the recovery check"); return }
+        let untouched = FileState(url)
+        await insert("typed ", in: tab)
+        let delay = NSDocumentController.shared.autosavingDelay
+        let made = await wait(delay + 4) { tab.doc.autosavedContentsFileURL != nil }
+        let copy = tab.doc.autosavedContentsFileURL
+        if let copy { copies.append(copy) }
+        report(made && (copy.flatMap { try? Data(contentsOf: $0) }) == Data("typed one\n".utf8) && FileState(url) == untouched
+               && tab.doc.isDocumentEdited,
+               "a recovery copy is written by itself within \(Int(delay + 4)) s of an edit, the file untouched and the document still edited")
+        report(copy?.deletingLastPathComponent().standardizedFileURL == RecoveryCopies.folder.standardizedFileURL
+               && !exists(dir.appendingPathComponent("periodic (Autosaved).txt")),
+               "the copy is in the recovery folder, not beside the file (\(copy?.path ?? "none"))")
+        // What doesn't fit the chosen encoding still gets its copy.
+        tab.doc.setEncoding(.windowsLatin1)
+        await insert("→ ", in: tab)
+        var failed: Error?
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            tab.doc.autosave(withImplicitCancellability: false) { failed = $0; c.resume() }
+        }
+        let kept = tab.doc.autosavedContentsFileURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        report(failed == nil && kept == "→ typed one\n" && tab.window.attachedSheet == nil,
+               "text that doesn't fit the chosen encoding still gets its recovery copy, with no alert (\(kept ?? "none"))")
+        tab.doc.close()
+        report(!exists(copy) && FileState(url) == untouched, "closing without saving deletes the copy and leaves the file")
+    }
+
+    /// ⌘S saves where the file is, whatever the system calls its type.
+    private static func anyFileSavesInPlace(_ dir: URL) async {
+        var wrong: [String] = []
+        let names = ["Makefile", "Dockerfile", "LICENSE", "config.toml", ".gitignore", "notes.unknownext", "main.rs", "data.json",
+                     "run.sh", "READ ME.md"]
+        for name in names {
+            let url = file(name, "text\n", in: dir)
+            guard let tab = await open(url) else { wrong.append("\(name): didn't open"); continue }
+            await insert("x", in: tab)
+            let copy = await autosave(tab.doc)
+            tab.doc.save(nil)
+            let saved = await wait(3) { !tab.doc.isDocumentEdited || tab.window.attachedSheet != nil }
+            let bytes = try? Data(contentsOf: url)
+            let listing = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            if !saved || tab.window.attachedSheet != nil || bytes != Data("xtext\n".utf8)
+                || tab.doc.fileURL?.standardizedFileURL != url.standardizedFileURL || exists(copy)
+                || listing.contains(where: { $0 != name && $0.hasPrefix((name as NSString).deletingPathExtension) && !names.contains($0) }) {
+                wrong.append("\(name): type \(tab.doc.fileType ?? "nil"), sheet \(tab.window.attachedSheet != nil), bytes \(bytes.map { String(decoding: $0, as: UTF8.self) } ?? "none"), copy left \(exists(copy))")
+            }
+            if let sheet = tab.window.attachedSheet { tab.window.endSheet(sheet) }
+            tab.doc.close()
+        }
+        report(wrong.isEmpty, "Save writes the file in place and deletes its recovery copy, for \(names.count) kinds of file (\(wrong.isEmpty ? names.joined(separator: ", ") : wrong.joined(separator: "; ")))")
+    }
+
+    /// Closing a tab with unsaved changes asks: Cancel, Don't Save, Save.
+    private static func closeDirty(_ dir: URL) async {
+        let url = file("close.txt", "one\n", in: dir)
+        guard var tab = await open(url) else { report(false, "a file opens for the close checks"); return }
+        let untouched = FileState(url)
+        await insert("typed ", in: tab)
+        let copy = await autosave(tab.doc)
+
+        tab.window.performClose(nil)
+        let asked = await sheet(on: tab.window)
+        let titles = buttons(in: asked?.contentView).map(\.title)
+        report(titles == ["Save", "Don’t Save", "Cancel"], "closing a tab with unsaved changes asks (\(titles))")
+
+        await press("Cancel", on: tab.window)
+        report(isOpen(tab.doc) && tab.window.isVisible && tab.doc.isDocumentEdited && FileState(url) == untouched && exists(copy),
+               "Cancel keeps the tab, its changes and its recovery copy; the file is untouched")
+
+        tab.window.performClose(nil)
+        _ = await sheet(on: tab.window)
+        await press("Don’t Save", on: tab.window)
+        let discarded = await wait { !isOpen(tab.doc) }
+        report(discarded && FileState(url) == untouched && !exists(copy),
+               "Don’t Save closes the tab, leaves the file as it was and deletes the recovery copy")
+
+        guard let again = await open(url) else { report(false, "the file opens again"); return }
+        tab = again
+        report(tab.text.string == "one\n" && !tab.doc.isDocumentEdited, "opened again, it is the file as it was (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
+        await insert("kept ", in: tab)
+        let second = await autosave(tab.doc)
+        tab.window.performClose(nil)
+        _ = await sheet(on: tab.window)
+        await press("Save", on: tab.window)
+        let saved = await wait { !isOpen(tab.doc) }
+        report(saved && (try? Data(contentsOf: url)) == Data("kept one\n".utf8) && !exists(second),
+               "Save writes the file, closes the tab and deletes the recovery copy")
+    }
+
+    /// File ▸ Revert to Saved: asks, then reads the file into the document
+    /// that is open, whose editor shows it.
+    private static func revert(_ dir: URL) async {
+        let url = file("revert.swift", "let one = 1\n", in: dir)
+        guard let tab = await open(url) else { report(false, "a file opens for the revert check"); return }
+        await insert("// typed\n", in: tab)
+        let copy = await autosave(tab.doc)
+        report(exists(copy) && tab.doc.isDocumentEdited, "an edited document has its recovery copy")
+
+        tab.doc.revertToSaved(nil)
+        let asked = await sheet(on: tab.window)
+        let titles = buttons(in: asked?.contentView).map(\.title)
+        await press("Cancel", on: tab.window)
+        let kept = tab.text.string == "// typed\nlet one = 1\n" && tab.doc.isDocumentEdited
+        tab.doc.revertToSaved(nil)
+        _ = await sheet(on: tab.window)
+        await press("Revert", on: tab.window)
+        let reverted = await wait { !tab.doc.isDocumentEdited }
+        report(titles.contains("Revert") && titles.contains("Cancel") && kept, "Revert to Saved asks first, and Cancel keeps the changes (\(titles))")
+        report(reverted && tab.text.string == "let one = 1\n" && isOpen(tab.doc) && tab.controller.document === tab.doc
+               && Editors.window(for: tab.doc) === tab.window && findTextView(in: tab.window.contentView) === tab.text,
+               "Revert reads the file into the same document, window and editor (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
+        report(!exists(copy) && tab.doc.autosavedContentsFileURL == nil && !(tab.text.undoManager?.canUndo ?? true),
+               "and deletes the recovery copy and the undo history")
+        tab.doc.close()
+    }
+
+    /// A document that has no file yet: Save asks where, with a name that
+    /// can be anything; the tab then follows its file.
+    private static func untitled(_ dir: URL) async {
+        guard let doc = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true), let tab = await tab(of: doc) else {
+            report(false, "a new untitled document opens"); return
+        }
+        await insert("print(1)\n", in: tab)
+        let copy = await autosave(tab.doc)
+        report(exists(copy) && tab.doc.fileURL == nil, "an untitled document gets a recovery copy too (\(copy?.lastPathComponent ?? "none"))")
+
+        tab.doc.save(nil)
+        guard let panel = await sheet(on: tab.window) as? NSSavePanel else {
+            report(false, "Save on an untitled document asks where (sheet: \(tab.window.attachedSheet.map { "\(type(of: $0))" } ?? "none"))")
+            tab.doc.close()
+            return
+        }
+        report(panel.nameFieldStringValue == tab.doc.displayName + ".txt" && panel.allowedContentTypes.isEmpty && panel.accessoryView == nil,
+               "Save on an untitled document asks where, offering “\(panel.nameFieldStringValue)” with any extension allowed and no format pop-up")
+        // The panel itself is the system's and out of reach of a test:
+        // cancel it, and save where a chosen name would.
+        panel.cancel(nil)
+        _ = await wait { tab.window.attachedSheet == nil }
+        report(isOpen(tab.doc) && tab.doc.isDocumentEdited && tab.doc.fileURL == nil && exists(copy),
+               "cancelling the panel leaves the document as it was")
+
+        let url = dir.appendingPathComponent("named.py")
+        let saved: Bool = await withCheckedContinuation { c in
+            tab.doc.save(to: url, ofType: tab.doc.fileType ?? "public.plain-text", for: .saveAsOperation) { error in
+                c.resume(returning: error == nil)
+            }
+        }
+        report(saved && (try? Data(contentsOf: url)) == Data("print(1)\n".utf8) && !tab.doc.isDocumentEdited && !exists(copy)
+               && tab.doc.location?.standardizedFileURL == url.standardizedFileURL,
+               "saved under a name, the file holds the text, the document is clean and its recovery copy gone")
+        // The screen follows the file: no longer untitled, and colored by its name.
+        let followed = await wait(2) { tab.controller.model.language == .python }
+        if followed || tab.window.occlusionState.contains(.visible) {
+            report(followed, "the tab follows its new file: \(tab.controller.model.language.name) by its name")
+        } else {
+            print("SELFTEST SKIP the tab follows its new file (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        tab.doc.close()
+    }
+
+    /// `kiri -w`: the marker goes when the tab has really closed, and not
+    /// before the file has what Save wrote.
+    private static func waiting(_ dir: URL) async {
+        let url = file("COMMIT_EDITMSG", "\n# Please enter the commit message\n", in: dir)
+        func request(_ n: Int) async -> (marker: URL, tab: Tab)? {
+            let marker = dir.appendingPathComponent("request.\(n).wait")
+            FileManager.default.createFile(atPath: marker.path, contents: Data())
+            KiriCLI.open(KiriCLI.Request(waitMarker: marker, entries: [.file(url, line: 0, column: 0)]))
+            var doc: NSDocument?
+            _ = await wait { doc = NSDocumentController.shared.documents.first { $0.fileURL?.lastPathComponent == url.lastPathComponent }; return doc != nil }
+            guard let tab = await tab(of: doc) else { return nil }
+            await settle(200)
+            return (marker, tab)
+        }
+
+        guard let (marker, tab) = await request(1) else { report(false, "kiri -w opens its file"); return }
+        let untouched = FileState(url)
+        await insert("Fix the thing", in: tab)
+        tab.window.performClose(nil)
+        _ = await sheet(on: tab.window)
+        let whileAsked = exists(marker)
+        await press("Cancel", on: tab.window)
+        await settle(200)
+        report(whileAsked && exists(marker) && isOpen(tab.doc) && FileState(url) == untouched,
+               "kiri -w keeps waiting while the close question is up and after Cancel")
+
+        // Save: the marker goes only once the file has the text.
+        tab.window.performClose(nil)
+        _ = await sheet(on: tab.window)
+        var bytesWhenReleased: Data?
+        let watcher = Task { @MainActor in
+            while exists(marker) { try? await Task.sleep(for: .milliseconds(1)) }
+            bytesWhenReleased = try? Data(contentsOf: url)
+        }
+        await press("Save", on: tab.window)
+        let released = await wait { !exists(marker) }
+        await watcher.value
+        report(released && !isOpen(tab.doc) && bytesWhenReleased == Data("Fix the thing\n# Please enter the commit message\n".utf8),
+               "Save closes the tab and ends the wait, the file already holding what was saved")
+
+        // Don't Save: the wait ends, the file as it was.
+        guard let (marker2, tab2) = await request(2) else { report(false, "kiri -w opens its file again"); return }
+        let saved = FileState(url)
+        await insert("Changed my mind ", in: tab2)
+        tab2.window.performClose(nil)
+        _ = await sheet(on: tab2.window)
+        await press("Don’t Save", on: tab2.window)
+        let released2 = await wait { !exists(marker2) }
+        report(released2 && !isOpen(tab2.doc) && FileState(url) == saved, "Don’t Save ends the wait and leaves the file as it was")
+
+        // Quitting while a tab with changes is waited for asks; Cancel
+        // keeps Kiri, the tab and the wait.
+        guard let (marker3, tab3) = await request(3) else { report(false, "kiri -w opens its file a third time"); return }
+        await insert("Quit? ", in: tab3)
+        var question: [String] = []
+        let answer = Timer(timeInterval: 0.6, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                // One document with changes: its own sheet. More: an alert.
+                let asking = NSApp.modalWindow ?? tab3.window.attachedSheet
+                question = buttons(in: asking?.contentView).map(\.title)
+                buttons(in: asking?.contentView).first { $0.title == "Cancel" }?.performClick(nil)
+            }
+        }
+        RunLoop.main.add(answer, forMode: .common)
+        NSApp.terminate(nil)
+        _ = await wait(3) { !question.isEmpty && tab3.window.attachedSheet == nil }
+        report(question.contains("Cancel") && isOpen(tab3.doc) && exists(marker3) && FileState(url) == saved,
+               "quitting while a changed tab is waited for asks first, and Cancel keeps Kiri and the wait (\(question))")
+        tab3.window.performClose(nil)
+        _ = await sheet(on: tab3.window)
+        await press("Don’t Save", on: tab3.window)
+        _ = await wait { !exists(marker3) }
+    }
+}
+#endif

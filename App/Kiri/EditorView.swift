@@ -61,7 +61,10 @@ struct EditorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> EditorContainerView {
         let view = EditorContainerView(frame: .zero)
-        context.coordinator.undoManager = context.environment.undoManager
+        // The document's own undo manager, handed over rather than found
+        // in the environment: an edit registered there is what makes the
+        // document dirty, and undoing back to the save cleans it.
+        context.coordinator.undoManager = document.undoManager
         context.coordinator.attach(view)
         context.coordinator.setUntitled(isUntitled)
         context.coordinator.load(document)
@@ -76,7 +79,7 @@ struct EditorView: NSViewRepresentable {
 
     func updateNSView(_ view: EditorContainerView, context: Context) {
         let c = context.coordinator
-        c.undoManager = context.environment.undoManager
+        c.undoManager = document.undoManager
         c.setUntitled(isUntitled)
         if c.document !== document { c.load(document) }
         c.setFontScale(fontScale)
@@ -135,10 +138,12 @@ struct EditorView: NSViewRepresentable {
         applyFont()
     }
 
-    /// Shows `document`'s text (a new window, or after File ▸ Revert).
+    /// Shows `document`'s text: in a new window, and when the document
+    /// reads its file again (File ▸ Revert to Saved), which it says here.
     func load(_ document: KiriDocument) {
         guard let textView, let storage = textView.textStorage else { return }
         self.document = document
+        document.editor = self
         let text = document.text
         // The storage delegate fills the index in from this edit: replacing
         // everything (old length) with `text`.

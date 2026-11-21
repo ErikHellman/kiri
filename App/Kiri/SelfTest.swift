@@ -41,9 +41,22 @@ import os
                         if let sub = i.submenu, d < 2 { dump(sub, d + 1) }
                     }
                 }
-                if let main = NSApp.mainMenu { dump(main, 0) }
-                fflush(stdout)
-                NSApp.terminate(nil)
+                // -KiriDumpMenusFront YES: the menus as they are with the
+                // document window in front. A background launch has no main
+                // window, and SwiftUI brings a menu up to date only when it
+                // is about to open, so the test says the one and does the
+                // other. (The symbols macOS gives items by itself are not
+                // back yet after that; the plain dump has them.)
+                let front = UserDefaults.standard.bool(forKey: "KiriDumpMenusFront")
+                if front { FrontEditor.shared.selfTestMain(textView.window) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (front ? 0.5 : 0)) {
+                    if let main = NSApp.mainMenu {
+                        if front { updateMenu(main) }
+                        dump(main, 0)
+                    }
+                    fflush(stdout)
+                    quit()
+                }
             }
         }
         // Screenshot helper: type into the document (makes it dirty).
@@ -219,7 +232,7 @@ import os
                 // SwiftUI's hosting layers don't render this way; the editor
                 // (AppKit) does, which is what these pictures are for.
                 guard let window = textView.window, let frameView = textView.enclosingScrollView?.superview,
-                      let layer = frameView.layer else { NSApp.terminate(nil); return }
+                      let layer = frameView.layer else { quit(); return }
                 let scale = window.backingScaleFactor
                 let size = frameView.bounds.size
                 guard let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
@@ -233,7 +246,7 @@ import os
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                     print("SELFTEST snapshot \(path)")
                 }
-                NSApp.terminate(nil)
+                quit()
             }
         }
         if let path = UserDefaults.standard.string(forKey: "KiriRenderSettings") {
@@ -463,7 +476,55 @@ import os
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { step1(textView) }
     }
 
-    private static func report(_ ok: Bool, _ what: String) {
+    /// Called before the app has opened anything. A launch with a Debug
+    /// flag types into documents, saves and closes them, so it has to be
+    /// one that leaves saved state alone (`-ApplePersistenceIgnoreState
+    /// YES`): AppKit then neither restores the person's windows nor reopens
+    /// their unsaved documents into the test, and keeps the test's own
+    /// recovery copies in the temporary folder. Without it, nothing runs.
+    static func guardLaunch() {
+        guard ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-Kiri") }) else { return }
+        guard UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") else {
+            print("SELFTEST FAIL refusing to run: launch with -ApplePersistenceIgnoreState YES, so the test can't touch your windows or unsaved documents")
+            fflush(stdout)
+            exit(2)
+        }
+        // A test that is stopped (`kill`) leaves no recovery copies behind.
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler {
+            MainActor.assumeIsolated {
+                discardDocuments()
+                exit(0)
+            }
+        }
+        source.resume()
+        terminationSource = source
+    }
+
+    private static var terminationSource: DispatchSourceSignal?
+
+    /// Closes every document as it is: nothing is saved, and AppKit deletes
+    /// their recovery copies.
+    private static func discardDocuments() {
+        for document in NSDocumentController.shared.documents { document.close() }
+    }
+
+    /// The end of a run: quits without the unsaved-changes prompt, which
+    /// nobody is there to answer.
+    static func quit() {
+        discardDocuments()
+        NSApp.terminate(nil)
+    }
+
+    /// SwiftUI brings a menu up to date when it is about to open or a key
+    /// is looked up in it, which nothing does in a background launch.
+    static func updateMenu(_ menu: NSMenu) {
+        menu.delegate?.menuNeedsUpdate?(menu)
+        for item in menu.items { if let sub = item.submenu { updateMenu(sub) } }
+    }
+
+    static func report(_ ok: Bool, _ what: String) {
         print("SELFTEST \(ok ? "PASS" : "FAIL") \(what)")
         fflush(stdout)
     }
@@ -472,10 +533,11 @@ import os
         print("SELFTEST info documents=\(NSDocumentController.shared.documents.map { "\($0.className) \($0.fileURL?.lastPathComponent ?? "-")" })")
         let tv = NSApp.windows.filter(\.isVisible).compactMap { findTextView(in: $0.contentView) }.first ?? initial
         guard let doc = NSDocumentController.shared.documents.first(where: { $0.fileURL != nil }), let url = doc.fileURL else {
-            report(false, "no document with a file"); NSApp.terminate(nil); return
+            report(false, "no document with a file"); quit(); return
         }
         report(tv.textLayoutManager != nil, "TextKit 2")
         report(!doc.isDocumentEdited, "clean after open")
+        probeDocument(doc)
         let before = (try? Data(contentsOf: url)) ?? Data()
         let untouched = FileState(url)
         let expected = String(decoding: before, as: UTF8.self).contains("\r\n") ? "// added\r\n" : "// added\n"
@@ -504,13 +566,15 @@ import os
                        "typed letters animate (\(FadingLayoutFragment.animatedDraws - fadingDrawsBefore) fading draws)")
             }
         }
-        report(doc.isDocumentEdited || doc.hasUnautosavedChanges, "dirty after typing (edited=\(doc.isDocumentEdited) unautosaved=\(doc.hasUnautosavedChanges) windowEdited=\(tv.window?.isDocumentEdited ?? false) level=\(tv.undoManager?.groupingLevel ?? -1))")
+        report(doc.isDocumentEdited && tv.window?.isDocumentEdited == true, "dirty after typing (edited=\(doc.isDocumentEdited) unautosaved=\(doc.hasUnautosavedChanges) windowEdited=\(tv.window?.isDocumentEdited ?? false) level=\(tv.undoManager?.groupingLevel ?? -1))")
         noWriteBeforeSave(doc, url, untouched: untouched, saved: before + Data(expected.utf8)) {
         doc.save(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             let after = (try? Data(contentsOf: url)) ?? Data()
             report(after == before + Data(expected.utf8), "saved bytes = original + typed text (\(after.count) bytes)")
             report(!doc.isDocumentEdited, "clean after save")
+            report(doc.autosavedContentsFileURL == nil && recoveryCopy.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false,
+                   "the save deleted the recovery copy")
             tv.undoManager?.undo()
             report(tv.string.hasSuffix("// added\n") == false, "undo removes the typed text")
             report(doc.isDocumentEdited, "dirty after undo")
@@ -531,15 +595,24 @@ import os
                 }
                 report(Data(shown.utf8) == Data(String(decoding: before, as: UTF8.self)
                     .replacingOccurrences(of: "\r\n", with: "\n").utf8), "revert shows the file on disk")
-                NSApp.terminate(nil)
+                report(NSDocumentController.shared.documents.contains { $0 === doc }
+                       && ((tv as? KiriTextView)?.delegate as? EditorController)?.document === doc,
+                       "the revert read the file into the document that was open")
+                Task { @MainActor in
+                    await saveStages(doc)
+                    quit()
+                }
             }
         }
         }
         }
     }
 
+    /// The first document's recovery copy, which its save has to delete.
+    private static var recoveryCopy: URL?
+
     /// A file as it is on disk: what a write of any kind would change.
-    private struct FileState: Equatable {
+    struct FileState: Equatable {
         let data: Data?
         let modified: Date?
         let inode: Int?
@@ -564,6 +637,7 @@ import os
                 report(error == nil && now == untouched,
                        "the file is untouched after an autosave (bytes \(now.data == untouched.data), modification date \(now.modified == untouched.modified), inode \(now.inode == untouched.inode), error \(error.map { "\($0)" } ?? "none"))")
                 let copy = doc.autosavedContentsFileURL
+                recoveryCopy = copy
                 print("SELFTEST info recovery copy \(copy?.path ?? "none")")
                 report(copy != nil && copy?.standardizedFileURL != url.standardizedFileURL
                        && copy.flatMap { try? Data(contentsOf: $0) } == saved,
@@ -663,7 +737,7 @@ import os
             perfEventLoop(tv) {
                 Task { @MainActor in
                     await perfFind(tv)
-                    NSApp.terminate(nil)
+                    quit()
                 }
             }
         }
@@ -721,8 +795,11 @@ import os
     private static func behavior(_ initial: NSTextView) {
         let tv = (NSApp.windows.filter(\.isVisible).compactMap { findTextView(in: $0.contentView) }.first ?? initial)
         guard let ktv = tv as? KiriTextView, let controller = ktv.delegate as? EditorController,
-              let window = tv.window else { report(false, "editor found"); NSApp.terminate(nil); return }
+              let window = tv.window else { report(false, "editor found"); quit(); return }
         report(window.firstResponder === tv, "editor has keyboard focus at launch")
+        // The menus act on the window in front, which in a background
+        // launch no window ever is.
+        FrontEditor.shared.selfTestMain(window)
 
         // Top bar: 10 pt above the 32 pt row, 10 pt below it; traffic lights
         // centred on the row (26 pt from the top).
@@ -784,7 +861,7 @@ import os
         print("SELFTEST info document(for:)=\(String(describing: NSDocumentController.shared.document(for: window))) wc.document=\(String(describing: window.windowController?.document)) docs=\(docs.map { "\($0.className) wcs=\($0.windowControllers.map { $0.window?.windowNumber ?? -1 })" }) window=\(window.windowNumber)")
         fflush(stdout)
         guard let doc = NSDocumentController.shared.document(for: window) else {
-            report(false, "document for the window"); NSApp.terminate(nil); return
+            report(false, "document for the window"); quit(); return
         }
         ktv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
         // Variant: -KiriSaveDelay <s> waits like a person before pressing Save.
@@ -816,7 +893,7 @@ import os
     /// catch up, and the undo group of what was just done closes (AppKit
     /// closes it after an event; nothing else sends one to a background
     /// launch).
-    private static func settle(_ milliseconds: Int = 60) async {
+    static func settle(_ milliseconds: Int = 60) async {
         if let e = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
                                       windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
             NSApp.postEvent(e, atStart: false)
@@ -1647,13 +1724,14 @@ import os
                     try? FileManager.default.removeItem(at: url)
                     Task { @MainActor in
                         await tabState(window)
+                        await frontWindow(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
                         // The last line of a run that got to its end.
                         print("SELFTEST DONE behavior")
                         fflush(stdout)
-                        NSApp.terminate(nil)
+                        quit()
                     }
                 }
             }
@@ -1790,6 +1868,110 @@ import os
         let closed = await time { model.items.map(\.id) == [window.windowNumber] }
         report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed elsewhere leaves the strip (\(ms(closed)))")
         _ = await time { (window.tabbedWindows?.count ?? 1) == 1 }
+    }
+
+    // MARK: The menus act on the window in front
+
+    /// The menu items are the app's, and each document window has an editor
+    /// of its own: Find, Save and the rest go to the one in front
+    /// (`FrontEditor`), wherever in that window the keyboard is, and are
+    /// off when the window in front isn't a document's.
+    private static func frontWindow(_ original: NSWindow) async {
+        guard let main = NSApp.mainMenu, let file = main.item(withTitle: "File")?.submenu,
+              let find = main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Find")?.submenu,
+              let first = (findTextView(in: original.contentView) as? KiriTextView)?.delegate as? EditorController else {
+            report(false, "the File and Edit ▸ Find menus"); return
+        }
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-front-test-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("front.txt")
+        try? "second window\n".write(to: url, atomically: true, encoding: .utf8)
+        let opened: NSDocument? = await withCheckedContinuation { c in
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { d, _, _ in c.resume(returning: d) }
+        }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        var second: (window: NSWindow, text: KiriTextView, controller: EditorController)?
+        _ = await wait {
+            guard let doc = opened, let w = Editors.window(for: doc), let tv = findTextView(in: w.contentView) as? KiriTextView,
+                  let c = tv.delegate as? EditorController, c.document === doc else { return false }
+            second = (w, tv, c)
+            return true
+        }
+        guard let doc = opened, let second else { report(false, "a second document opens for the menu checks"); return }
+        /// The menus as they would be with `window` in front and about to open.
+        func front(_ window: NSWindow?) async {
+            FrontEditor.shared.selfTestMain(window)
+            await settle(250)
+            updateMenu(main)
+        }
+        func item(_ title: String, in menu: NSMenu) -> NSMenuItem? { menu.items.first { $0.title == title } }
+        @discardableResult func choose(_ title: String, in menu: NSMenu) -> Bool {
+            guard let i = menu.items.firstIndex(where: { $0.title == title }), menu.items[i].isEnabled else { return false }
+            menu.performActionForItem(at: i)
+            return true
+        }
+        first.model.find.close()
+
+        // Find: the front window's bar, also with the keyboard in its field.
+        await front(second.window)
+        let found = choose("Find…", in: find)
+        await settle(200)
+        report(found && second.controller.model.find.isOpen && !first.model.find.isOpen,
+               "Edit ▸ Find… opens the find bar of the window in front, not the other's")
+        let inField = await wait(1.5) { fieldEditor(of: second.window) != nil }
+        let replaced = choose("Find and Replace…", in: find)
+        await settle(200)
+        if inField || second.window.occlusionState.contains(.visible) {
+            report(inField && replaced && second.controller.model.find.showsReplace && !first.model.find.isOpen,
+                   "with the keyboard in the find field, Find and Replace… still goes to that window's bar")
+        } else {
+            print("SELFTEST SKIP the Find items with the keyboard in the find field (the window is covered or the screen locked: SwiftUI isn't giving the field the keyboard)")
+            report(replaced && second.controller.model.find.showsReplace && !first.model.find.isOpen,
+                   "Find and Replace… goes to the bar of the window in front")
+        }
+        second.controller.model.find.close()
+
+        // Save and Revert: the front window's document.
+        report(item("Save", in: file)?.isEnabled == true && item("Revert to Saved", in: file)?.isEnabled == false,
+               "File ▸ Save is on for the document in front, Revert to Saved off while it has no changes")
+        second.window.makeFirstResponder(second.text)
+        second.text.insertText("edited ", replacementRange: NSRange(location: 0, length: 0))
+        await settle(250)
+        updateMenu(main)
+        let revertOn = item("Revert to Saved", in: file)?.isEnabled == true
+        // The other window's document, which the Save must leave alone.
+        let other = NSDocumentController.shared.document(for: original)
+        let otherEdited = other?.isDocumentEdited, otherFile = other?.fileURL.map { FileState($0) }
+        let saved = choose("Save", in: file)
+        let clean = await wait { !doc.isDocumentEdited }
+        report(revertOn && saved && clean && (try? String(contentsOf: url, encoding: .utf8)) == "edited second window\n"
+               && other != nil && other?.isDocumentEdited == otherEdited && other?.fileURL.map { FileState($0) } == otherFile,
+               "once it has changes Revert to Saved is on, and File ▸ Save saves the document in front, only that one")
+
+        // No document window in front: Settings, a panel, or nothing.
+        await front(NSWindow())
+        report(FrontEditor.shared.editor == nil && FrontEditor.shared.document == nil
+               && item("Save", in: file)?.isEnabled == false && item("Save As…", in: file)?.isEnabled == false
+               && item("Revert to Saved", in: file)?.isEnabled == false,
+               "with a window in front that isn't a document's, the document items are off")
+        // And the way AppKit says it: the notifications.
+        NotificationCenter.default.post(name: NSWindow.didBecomeMainNotification, object: second.window)
+        let byNotification = FrontEditor.shared.editor === second.controller.model
+        NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: second.window)
+        report(byNotification && FrontEditor.shared.editor == nil, "the front window is followed by its becoming and resigning main")
+
+        second.window.performClose(nil)
+        _ = await wait { (original.tabbedWindows?.count ?? 1) == 1 }
+        await front(original)
     }
 
     // MARK: Several files at once
@@ -1991,7 +2173,7 @@ import os
         return windows()
     }
 
-    private static func findTextView(in view: NSView?) -> NSTextView? {
+    static func findTextView(in view: NSView?) -> NSTextView? {
         guard let view else { return nil }
         if let tv = view as? NSTextView { return tv }
         for sub in view.subviews { if let tv = findTextView(in: sub) { return tv } }
@@ -2155,9 +2337,9 @@ enum StatusBarSample {
 
     @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
         let windows = KiriDocument()
-        windows.encoding = .utf16LE
-        windows.hasBOM = true
-        windows.lineEnding = .crlf
+        windows.setEncoding(.utf16LE)
+        windows.setByteOrderMark(true)
+        windows.setLineEnding(.crlf)
         let resting = model()
         resting.statusRest.activity()
         let long = model(line: 12345, column: 120, lineCount: 20000, longestLine: 400, length: 900_000, language: .typescript,

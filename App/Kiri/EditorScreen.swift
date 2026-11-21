@@ -4,8 +4,7 @@ import SwiftUI
 /// One document window: the editor on a solid Honey panel over the canvas,
 /// with the glass status bar floating over its bottom edge.
 struct EditorScreen: View {
-    @ObservedObject var document: KiriDocument
-    let fileURL: URL?
+    let document: KiriDocument
     @State private var model = EditorModel()
     @State private var commandLineTool = CommandLineTool.shared
     @State private var tabs = WindowTabs()
@@ -18,10 +17,13 @@ struct EditorScreen: View {
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.letterFadeKey) private var letterFade = false
-    @Environment(\.undoManager) private var undoManager
     @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Where the document's file is: nil until it is saved, and it follows
+    /// Save As and a move in Finder.
+    private var fileURL: URL? { document.location }
 
     var body: some View {
         VStack(spacing: Honey.gap) {
@@ -49,13 +51,11 @@ struct EditorScreen: View {
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 480, minHeight: 280)
         .honeyCanvas()
-        .background(WindowReader { tabs.attach($0) })
-        .focusedSceneValue(\.editorModel, model)
-        .focusedSceneValue(\.folderSession, tabs.folder)
-        .focusedSceneValue(\.windowTabs, tabs)
-        .focusedSceneValue(\.textEncoding, encodingBinding)
-        .focusedSceneValue(\.lineEnding, lineEndingBinding)
-        .focusedSceneValue(\.byteOrderMark, bomBinding)
+        .background(WindowReader {
+            tabs.attach($0)
+            // The menus act on the window that is in front.
+            FrontEditor.shared.register($0, editor: model, tabs: tabs, document: document)
+        })
         .onAppear {
             detectLanguage()
             tabs.resume()
@@ -191,51 +191,23 @@ struct EditorScreen: View {
         }
     }
 
-    // Changing the save format is an undoable edit, so the document turns dirty.
-    private func undoable<V: Equatable>(_ keyPath: ReferenceWritableKeyPath<KiriDocument, V>, _ name: String) -> Binding<V> {
-        Binding {
-            document[keyPath: keyPath]
-        } set: { new in
-            set(keyPath, new, name)
-        }
+    // Changing the save format is an undoable edit of the document.
+    private var encodingBinding: Binding<TextEncoding> {
+        Binding(get: { document.encoding }, set: { document.setEncoding($0) })
     }
 
-    private func set<V: Equatable>(_ keyPath: ReferenceWritableKeyPath<KiriDocument, V>, _ new: V, _ name: String) {
-        let old = document[keyPath: keyPath]
-        guard old != new else { return }
-        document[keyPath: keyPath] = new
-        let doc = document
-        let undo = undoManager
-        undo?.registerUndo(withTarget: doc) { d in
-            MainActor.assumeIsolated {
-                d[keyPath: keyPath] = old
-                undo?.registerUndo(withTarget: d) { d in MainActor.assumeIsolated { d[keyPath: keyPath] = new } }
-            }
-        }
-        undo?.setActionName(name)
+    private var lineEndingBinding: Binding<LineEnding> {
+        Binding(get: { document.lineEnding }, set: { document.setLineEnding($0) })
     }
 
-    private var encodingBinding: Binding<TextEncoding> { undoable(\.encoding, "Change Encoding") }
-    private var lineEndingBinding: Binding<LineEnding> { undoable(\.lineEnding, "Change Line Endings") }
-    private var bomBinding: Binding<Bool> { undoable(\.hasBOM, "Change Byte Order Mark") }
+    private var bomBinding: Binding<Bool> {
+        Binding(get: { document.hasBOM }, set: { document.setByteOrderMark($0) })
+    }
 
     private func detectLanguage() {
         let firstLine = document.file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         model.language = Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
     }
-}
-
-extension FocusedValues {
-    /// The front window's editor, for menu commands.
-    @Entry var editorModel: EditorModel?
-    /// The front window's tabs, for Window ▸ Next Tab and ⌘1 … ⌘9.
-    @Entry var windowTabs: WindowTabs?
-    /// The front window's folder, for View ▸ Show Sidebar.
-    @Entry var folderSession: FolderSession?
-    /// The front document's save format, for the Format menu (undoable).
-    @Entry var textEncoding: Binding<TextEncoding>?
-    @Entry var lineEnding: Binding<LineEnding>?
-    @Entry var byteOrderMark: Binding<Bool>?
 }
 
 extension LineEnding {

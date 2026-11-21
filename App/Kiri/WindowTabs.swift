@@ -10,9 +10,9 @@ import SwiftUI
 /// The strip follows the tab group by observation, so a change shows in the
 /// next run-loop turn: the group's `windows` and `selectedWindow` and each
 /// window's `title` are key-value observable; a document turning dirty is
-/// not (SwiftUI's documents never set their window's `isDocumentEdited`),
-/// but every edit, undo and redo closes an undo group, and a save sets the
-/// document's `fileModificationDate`.
+/// not (`NSDocument.isDocumentEdited` tells nobody), but every edit, undo
+/// and redo closes an undo group, and a save sets the document's
+/// `fileModificationDate`.
 @MainActor @Observable final class WindowTabs {
     struct Item: Equatable {
         let id: Int
@@ -108,8 +108,8 @@ import SwiftUI
             resume()
             return
         }
-        // SwiftUI opens each document in a window of its own; join the
-        // frontmost document window's tab group instead. A folder window's
+        // Each document has a window of its own; join the frontmost
+        // document window's tab group instead. A folder window's
         // folder comes along now, so the new tab opens with the sidebar
         // already there instead of sliding it in a moment later.
         Self.joining.insert(ObjectIdentifier(window))
