@@ -368,6 +368,15 @@ extension SelfTest {
         await press("Don’t Save", on: dirty.window)
         let closed = await wait { NSDocumentController.shared.documents.isEmpty }
         report(closed && FileState(dirty.doc.fileURL ?? dir) == untouched, "Don’t Save closes them all, the file as it was")
+
+        // With no window left, a click on the Dock icon: what AppKit asks
+        // the app delegate then.
+        let handled = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+        let opened = await wait(2) { NSDocumentController.shared.documents.count == 1 }
+        let fresh = NSDocumentController.shared.documents.first
+        report(handled == false && opened && fresh?.fileURL == nil && fresh?.isDocumentEdited == false,
+               "reopening Kiri with no window open gives a new empty document (the delegate answered \(handled.map { "\($0)" } ?? "nothing"))")
+        fresh?.close()
     }
 
     /// File ▸ Open Recent is Kiri's own menu over AppKit's list. (A test
