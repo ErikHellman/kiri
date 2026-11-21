@@ -42,6 +42,7 @@ extension SelfTest {
         await untitled(dir)
         await waiting(dir)
         await newFile(dir)
+        await standardInput(dir)
         await openRecent(dir)
         await closeAll(dir)
         report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
@@ -325,6 +326,25 @@ extension SelfTest {
         _ = await wait { !isOpen(again.doc) }
         await settle(200)
         report((try? Data(contentsOf: url)) == Data("saved".utf8), "saved, it stays")
+    }
+
+    /// `git diff | kiri -`: the text in a new untitled tab, which is not an
+    /// edit of anything, so closing it asks nothing.
+    private static func standardInput(_ dir: URL) async {
+        let input = file("request.1.stdin", "piped in\n", in: dir)
+        let before = NSDocumentController.shared.documents
+        KiriCLI.open(KiriCLI.Request(entries: [.stdin(input)]))
+        var doc: NSDocument?
+        _ = await wait { doc = NSDocumentController.shared.documents.first { d in !before.contains { $0 === d } }; return doc != nil }
+        guard let tab = await tab(of: doc) else { report(false, "kiri - opens a tab"); return }
+        await settle(200)
+        report(tab.text.string == "piped in\n" && tab.doc.fileURL == nil && !tab.doc.isDocumentEdited && !tab.controller.model.showsStartHint
+               && !exists(input),
+               "kiri - opens its text in a new untitled tab, not edited and without the first-run hint (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
+        tab.window.performClose(nil)
+        let closed = await wait(2) { !isOpen(tab.doc) }
+        report(closed && tab.window.attachedSheet == nil, "and closing it asks nothing")
+        if !closed { tab.doc.close() }
     }
 
     /// File ▸ Close All: a document with unsaved changes asks first, and
