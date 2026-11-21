@@ -10,7 +10,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Honey + Liquid Glass design**: glass chrome (tab strip, Save, status bar, Go to Line) over a warm canvas, the text on a solid panel. Light, dark and high-contrast; follows Reduce Motion and Reduce Transparency.
 - **Any text file**: plain text, Markdown, JSON, YAML, TOML, XML, CSV, logs, source code. Kiri detects the encoding (UTF-8, UTF-16/32 with or without BOM, Windows Latin 1) and line endings (LF, CRLF, CR) and saves them back unchanged; change either from the status bar.
 - **Syntax highlighting** with Tree-sitter for Swift, JSON, YAML, Markdown, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS, Go, Rust, Java, Kotlin, C#, C, C++ and Zig, and a lightweight lexer for TOML, INI, XML, Objective-C and more. Only the visible text is colored, so large files stay fast.
-- **Tabs**: documents open as tabs in one window (native window tabbing under a Honey tab strip, with dirty dots).
+- **Tabs**: documents open as tabs in one window (native window tabbing under a Honey tab strip, with dirty dots). The selected tab shows its whole name and the others shorten in the middle ("Greet….swift"); with more tabs than fit, the strip scrolls and a menu at its end lists them all. A tab's tooltip is its file's path, and files with the same name show their folder ("index.ts · api").
 - **Typing animations** (Settings ▸ Typing animations, on by default): a honey caret that glides and breathes, a current-line highlight that eases between lines, a pulse on the matching bracket, syntax colors that crossfade instead of flickering, and rolling Ln/Col digits. Reduce Motion keeps the fades and drops movement; Motion: Off turns them all off. A letter fade-in exists in the code but is off: TextKit 2 doesn't yet redraw the fading letter every frame.
 - **`kiri` command**: open files and folders from the terminal (see below).
 - Line numbers, current-line highlight, find and replace, Go to Line, editor text size, line wrapping, File ▸ Open Recent and Revert.
@@ -22,7 +22,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⌘N or ⌘T / ⌘O | New tab / open (as a tab) |
 | ⌘S / ⇧⌘S | Save / Duplicate |
 | ⇧⌘O | Open folder (a new window with a file sidebar) |
-| ⌃⌘S | Show / hide the folder sidebar |
+| ⌃⌘S | Show / hide the folder sidebar (also the button left of the tabs) |
 | ⇧⌘E | Jump between sidebar and editor (in the sidebar: arrows, Return, Space, type to select, Esc) |
 | ⌘W | Close tab |
 | ⌘F / ⌥⌘F | Find / Find and Replace |
@@ -77,16 +77,16 @@ cd App && xcodegen && open Kiri.xcodeproj
 
 `Kiri.xcodeproj` and `Info.plist` are generated from `App/project.yml` and not checked in. To sign with your own identity, set `DEVELOPMENT_TEAM` in `App/project.yml` (Xcode) or `SIGN_IDENTITY` for `scripts/build.sh`.
 
-Tests: `cd KiriKit && swift test` (the token, document-model and syntax tests; the first two also run on Linux). Debug builds (or Release with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=KIRI_SELFTEST`) have smoke tests, run as `Kiri.app/Contents/MacOS/Kiri <file> <flag> YES`:
+Tests: `cd KiriKit && swift test` (the token, document-model, tab-layout and syntax tests; all but the last also run on Linux). Debug builds (or Release with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=KIRI_SELFTEST`) have smoke tests, run as `Kiri.app/Contents/MacOS/Kiri <file> <flag> YES`:
 
 - `-KiriSelfTest`: typing through the event loop, dirty state, byte-exact save, undo, revert, highlighting after revert.
-- `-KiriBehaviorTest`: focus at launch, Go to Line, wrapping, the Save button, opening/selecting/closing tabs, the letter fade.
+- `-KiriBehaviorTest`: focus at launch, Go to Line, wrapping, the Save button, opening/selecting/closing tabs, the tab strip following edits, saves and renames, the letter fade.
 - `-KiriPerfTest`: typing and scrolling cost on the open file.
 
 ## Layout
 
 - `KiriKit/` Swift package:
-  - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) and the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer).
+  - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer) and the tab strip's arithmetic (`TabLayout`: shortening names, sharing the width, telling same-named files apart).
   - `KiriSyntax`: Tree-sitter parsing and highlight queries (macOS only).
 - `App/` the macOS app (XcodeGen spec in `App/project.yml`): `DocumentGroup` documents, the TextKit 2 editor, tabs, settings and commands.
 - `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).

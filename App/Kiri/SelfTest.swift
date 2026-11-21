@@ -288,10 +288,13 @@ import os
         }
         // Screenshot helper: -KiriOpenFolder <path> opens a folder window, as
         // `kiri <folder>` does (which can't be used here: it activates the app).
+        // -KiriOpenFolderFiles <path:path:…> opens those files as its tabs.
         if let folder = UserDefaults.standard.string(forKey: "KiriOpenFolder"), !openedFolder {
             openedFolder = true
+            let files = (UserDefaults.standard.string(forKey: "KiriOpenFolderFiles") ?? "").split(separator: ":")
+                .map { KiriCLI.Request.Entry.file(URL(fileURLWithPath: String($0)), line: 0, column: 0) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))]))
+                KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))] + files))
             }
         }
         // Screenshot helpers for the tab strip, run once the launch's files
