@@ -15,6 +15,7 @@ import os
     private static var arrangedTabs = false
     private static var renderedTabs = false
     private static var renderedFind = false
+    private static var renderedChrome = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -87,6 +88,28 @@ import os
                 if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                     print("SELFTEST rendered find \(path)")
+                }
+            }
+            fflush(stdout)
+        }
+        // -KiriRenderStatus <folder> and -KiriRenderHint <folder>: the status
+        // bar in its states (at rest, each item hovered, focused, faded over
+        // text, a selection, a long file, panels too narrow for all of it)
+        // and the first-run hint in panels of the sizes a window can give
+        // it, drawn offscreen in light and dark.
+        if !renderedChrome {
+            renderedChrome = true
+            for (key, name) in [("KiriRenderStatus", "status-bar"), ("KiriRenderHint", "start-hint")] {
+                guard let folder = UserDefaults.standard.string(forKey: key) else { continue }
+                for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+                    let renderer = key == "KiriRenderStatus" ? ImageRenderer(content: AnyView(StatusBarSample.sheet(scheme)))
+                        : ImageRenderer(content: AnyView(StartHintSample.sheet(scheme)))
+                    renderer.scale = 2
+                    let path = "\(folder)/\(name)-\(Honey.theme.id)-\(mode).png"
+                    if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                        print("SELFTEST rendered \(name) \(path)")
+                    }
                 }
             }
             fflush(stdout)
@@ -407,6 +430,14 @@ import os
                 fflush(stdout)
             }
         }
+        // Screenshot helpers for the status bar: -KiriStatusRest YES keeps it
+        // at rest, as while typing. (-KiriStatusShow <item>:<hover|focus>
+        // draws an item hovered or focused; `EditorStatusBar` reads it.)
+        if UserDefaults.standard.bool(forKey: "KiriStatusRest") {
+            Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
+                MainActor.assumeIsolated { (textView.delegate as? EditorController)?.model.statusRest.activity() }
+            }
+        }
         // -KiriShowGoToLine YES opens Go to Line; -KiriGoToLine <text> also
         // types that into it (the line shows as it is typed).
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") || UserDefaults.standard.string(forKey: "KiriGoToLine") != nil {
@@ -682,6 +713,7 @@ import os
                 Task { @MainActor in
                     await findStage(ktv, controller)
                     await goToLineStage(ktv, controller)
+                    await statusBarStage(ktv, controller)
                     transformations(ktv)
                     afterBars(ktv, controller, window)
                 }
@@ -1210,6 +1242,309 @@ import os
         controller.scrollOrigin = .zero
     }
 
+    // MARK: The status bar and the first-run hint
+
+    /// Whether Kiri is cutting motion down in this run (the Motion setting,
+    /// or the system's Reduce Motion): then the status bar doesn't rest.
+    private static var reducedMotion: Bool {
+        let level = UserDefaults.standard.string(forKey: Prefs.motionKey).flatMap(HoneyMotionLevel.init(rawValue:)) ?? .system
+        return HoneyAppearance(motion: level).reduced(systemReduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    /// The status bar: its items' names for VoiceOver, the position button
+    /// opening Go to Line, a width that holds wherever the caret is, the
+    /// indentation Shift Left and Right use, and resting while the text is
+    /// scrolled (`StatusBarRest`; the typing half is in `startHintStage`).
+    private static func statusBarStage(_ ktv: KiriTextView, _ controller: EditorController) async {
+        guard let window = ktv.window, let scroll = ktv.enclosingScrollView,
+              let container = scroll.superview as? EditorContainerView else { report(false, "the editor's container"); return }
+        let model = controller.model, rest = model.statusRest
+        let lines = controller.lineCount, length = (ktv.string as NSString).length
+        guard lines >= 12 else { report(false, "the test file has a dozen lines (\(lines))"); return }
+        window.makeFirstResponder(ktv)
+        let visible = window.occlusionState.contains(.visible)
+        await wakeAccessibility()
+        func elements() -> [AccessibilityElement] { accessibilityElements(of: window) }
+        func bar() -> AccessibilityElement? { elements().first { $0.name == "Status bar" } }
+
+        // What VoiceOver is given. (The elements are there in a window that
+        // isn't being drawn too, as they were when it opened.)
+        let list = elements()
+        let menus = list.filter { $0.role == NSAccessibility.Role.popUpButton.rawValue || $0.role == NSAccessibility.Role.menuButton.rawValue }
+            .map(\.name)
+        let named = ["Language, ", "Encoding, ", "Line endings, "].allSatisfy { prefix in menus.contains { $0.hasPrefix(prefix) && $0.count > prefix.count } }
+        let current = !visible || menus.contains("Language, \(model.language.name)") && menus.contains("Encoding, UTF-8") && menus.contains("Line endings, LF")
+        report(named && current, "the status bar's menus say what they are and their value (\(menus))")
+        let position = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "Go to Line" }
+        let indentation = list.first { $0.value.hasPrefix("Indentation, ") || $0.name.hasPrefix("Indentation, ") }
+        report(position?.value.hasPrefix("Line ") == true && indentation != nil,
+               "the position is a button with the line and column as its value, the indentation a text (“\(position?.value ?? "none")”, “\(indentation.map { $0.value + $0.name } ?? "none")”)")
+        report(list.filter { ["Status bar"].contains($0.name) }.count == 1 && (position.map { $0.frame.height >= 24 } ?? false),
+               "the status bar is one group, its button 24 pt high (\(position.map { "\($0.frame.width)×\($0.frame.height)" } ?? "none"))")
+
+        // The button does what Edit ▸ Go to Line… does.
+        if let position {
+            position.press()
+            await settle(150)
+            report(model.goToLine.isOpen, "pressing the position opens Go to Line")
+            model.goToLine.cancel()
+        }
+
+        // The width holds wherever the caret is. Drawn offscreen from the
+        // window's own model, and on screen where SwiftUI is drawing.
+        var places: [(name: String, text: String, offscreen: CGFloat, onScreen: CGFloat?)] = []
+        func measure(_ name: String) async {
+            let text = StatusText.position(line: model.line, column: model.column, selected: model.selectedLength)
+            var onScreen: CGFloat?
+            if visible {
+                await settle(250)
+                onScreen = bar()?.frame.width
+            }
+            places.append((name, text, StatusBarSample.width(model), onScreen))
+        }
+        controller.goTo(line: 1, column: 1)
+        await measure("line 1, column 1")
+        controller.goTo(line: 9, column: 1)
+        await measure("line 9")
+        controller.goTo(line: 10, column: 4)
+        await measure("line 10")
+        controller.goTo(line: lines, column: 9999)
+        await measure("the last line")
+        ktv.setSelectedRange(NSRange(location: 0, length: length))
+        await measure("everything selected")
+        ktv.setSelectedRange(NSRange(location: 3, length: 5))
+        await measure("five characters selected")
+        let texts = places.map(\.text)
+        report(texts[0] == "Ln 1, Col 1" && texts[1] == "Ln 9, Col 1" && texts[2] == "Ln 10, Col 4" && texts[3].hasPrefix("Ln \(lines), Col ")
+               && texts[4] == "Ln 1, Sel \(length)" && texts[5] == "Ln 1, Sel 5",
+               "the position reads line and column, and a selection's length in the column's place (\(texts))")
+        let offscreen = Set(places.map(\.offscreen))
+        report(offscreen.count == 1 && (offscreen.first ?? 0) > 100,
+               "the status bar is the same width at line 1, 9, 10, the last line and with a selection, drawn offscreen (\(places.map { "\($0.name): \($0.offscreen)" }))")
+        if visible {
+            let onScreen = Set(places.compactMap(\.onScreen))
+            report(onScreen.count == 1 && places.allSatisfy { $0.onScreen != nil },
+                   "and in the window (\(places.map { "\($0.name): \($0.onScreen.map { "\($0)" } ?? "none")" }))")
+        } else {
+            print("SELFTEST SKIP the status bar's width in the window (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        let reserve = StatusText.Reserve(lineCount: lines, longestLine: LineIndex(ktv.string).longestLine, length: length)
+        report(model.positionReserve == reserve, "the room it keeps is for the file's last line, longest line and length (\(model.positionReserve.texts))")
+
+        // The indentation: what Shift Right puts in.
+        let indent = IndentStyle.detect(in: ktv.string)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        let unshifted = ktv.string
+        controller.shiftLines(right: true)
+        let shifted = ktv.string == indent.unit + unshifted
+        await settle()
+        ktv.undoManager?.undo()
+        await settle()
+        report(model.indent == indent && indent == .spaces(4) && shifted,
+               "the status bar names the indentation Shift Right uses (“\(model.indent.label)”)")
+
+        // Resting: scrolling fades it, the pointer coming near brings it
+        // back, and an open menu or the keyboard on it keeps it solid.
+        func shown() -> Double { StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion) }
+        func scrollByHand() { NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll) }
+        let size = container.bounds.size
+        let top = EditorStatusBar.bottomPadding + HoneyStatusMetrics.barHeight
+        scrollByHand()
+        let scrolled = shown()
+        container.pointerMoved(to: NSPoint(x: size.width / 2, y: top + StatusBarRest.reach + 20))
+        container.pointerMoved(to: NSPoint(x: size.width / 2 + rest.barWidth / 2 + StatusBarRest.reach + 20, y: 20))
+        let far = shown()
+        container.pointerMoved(to: NSPoint(x: size.width / 2 + rest.barWidth / 2 + StatusBarRest.reach - 10, y: top + StatusBarRest.reach - 10))
+        let near = shown()
+        if reducedMotion {
+            report(scrolled == 1 && far == 1 && near == 1, "with reduced motion the status bar stays solid while scrolling (\(scrolled))")
+        } else {
+            report(scrolled == Honey.restOpacity && far == Honey.restOpacity && near == 1,
+                   "scrolling rests the status bar at \(Honey.restOpacity), and the pointer within \(Int(StatusBarRest.reach)) pt brings it back (scrolled \(scrolled), pointer far \(far), near \(near))")
+        }
+        let menu = NSMenu()
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: menu)
+        scrollByHand()
+        let menuOpen = shown()
+        NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        rest.focusChanged(inside: true)
+        scrollByHand()
+        let focused = shown()
+        rest.focusChanged(inside: false)
+        report(menuOpen == 1 && focused == 1, "an open menu and the keyboard on one of its items keep it solid (\(menuOpen), \(focused))")
+
+        // Wrapping off: the horizontal scroller and the capsule share the
+        // bottom edge. Measured, since nothing here can look.
+        controller.setWrap(false)
+        scroll.tile()
+        if let scroller = scroll.horizontalScroller {
+            let frame = scroller.convert(scroller.bounds, to: container)
+            let fromBottom = container.isFlipped ? container.bounds.maxY - frame.maxY : frame.minY
+            let capsule = NSRect(x: (size.width - rest.barWidth) / 2, y: EditorStatusBar.bottomPadding, width: rest.barWidth,
+                                 height: HoneyStatusMetrics.barHeight)
+            let band = NSRect(x: frame.minX, y: fromBottom, width: frame.width, height: frame.height)
+            print("SELFTEST info wrapping off: the horizontal scroller is \(Int(frame.height)) pt high, \(fromBottom) to \(fromBottom + frame.height) pt above the panel's bottom, x \(frame.minX)…\(frame.maxX); the capsule is at \(capsule.minY) to \(capsule.maxY) pt, x \(capsule.minX)…\(capsule.maxX); they \(band.intersects(capsule) ? "OVERLAP" : "don't overlap") (scroller style \(scroll.scrollerStyle == .overlay ? "overlay" : "legacy"), hidden \(scroller.isHidden))")
+        } else {
+            print("SELFTEST info wrapping off: no horizontal scroller")
+        }
+        controller.setWrap(true)
+
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.scrollOrigin = .zero
+        fflush(stdout)
+    }
+
+    /// The first-run hint: in a new untitled document and nowhere else,
+    /// its lines real buttons that leave the keyboard and the clicks around
+    /// them to the editor, gone with the first key typed and not back after
+    /// undo. The first key also rests the status bar, which comes back
+    /// after its pause. And where the `kiri` command counts as installed.
+    ///
+    /// The last stage: it leaves its two documents open. (Closing an
+    /// untitled tab from here raises an exception in `WindowTabs.invalidate`,
+    /// which removes a "tabGroup.windows" observer from a window that has
+    /// already left its tab group.)
+    private static func startHintStage(_ original: NSWindow) async {
+        guard let ktv = findTextView(in: original.contentView) as? KiriTextView,
+              let controller = ktv.delegate as? EditorController else { report(false, "the first window's editor"); return }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        /// A document's window, text view and controller, once it is a tab
+        /// of some window and showing.
+        func editor(of doc: NSDocument) async -> (NSWindow, KiriTextView, EditorController)? {
+            var found: (NSWindow, KiriTextView, EditorController)?
+            _ = await wait {
+                guard let w = Editors.window(for: doc), (w.tabbedWindows?.count ?? 1) > 1, w.tabGroup?.selectedWindow === w,
+                      let tv = findTextView(in: w.contentView) as? KiriTextView, let c = tv.delegate as? EditorController,
+                      c.document != nil else { return false }
+                found = (w, tv, c)
+                return true
+            }
+            return found
+        }
+
+        // Where the command counts as installed (`CLIInstaller.status`).
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-cli-test-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let mine = dir.appendingPathComponent("mine").path, other = dir.appendingPathComponent("other").path
+        for script in [mine, other] { FileManager.default.createFile(atPath: script, contents: Data("#!/bin/sh\n".utf8)) }
+        func link(_ name: String, to target: String) -> String {
+            let path = dir.appendingPathComponent(name).path
+            try? FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: target)
+            return path
+        }
+        let states = [CLIInstaller.status(link: dir.appendingPathComponent("none").path, script: mine),
+                      CLIInstaller.status(link: link("to-mine", to: mine), script: mine),
+                      CLIInstaller.status(link: link("to-other", to: other), script: mine),
+                      CLIInstaller.status(link: link("to-gone", to: dir.appendingPathComponent("gone").path), script: mine),
+                      CLIInstaller.status(link: other, script: mine)]
+        let resolved = URL(fileURLWithPath: other).resolvingSymlinksInPath().path
+        report(states == [.missing, .installed, .other(resolved), .missing, .other(resolved)],
+               "the kiri command is installed when its link is this copy's, another copy's when it leads elsewhere, missing when it leads nowhere (\(states))")
+
+        report(!controller.model.showsStartHint && !ktv.string.isEmpty, "a file with text in it has no first-run hint")
+
+        // A new untitled document, as ⌘N or ⌘T makes one.
+        guard let doc = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true),
+              let (window, tv, c) = await editor(of: doc) else { report(false, "a new untitled document opens as a tab"); return }
+        await settle(300)
+        let model = c.model
+        report(model.showsStartHint && tv.string.isEmpty, "a new untitled document shows the first-run hint")
+        report(window.firstResponder === tv, "the editor has the keyboard in it: the hint takes none (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+
+        // Its lines, as VoiceOver is given them.
+        let tool = CommandLineTool.shared.status
+        let expected = ["Open a file, \(Keys.open.spoken)", "Open a folder, \(Keys.openFolder.spoken)", "Keyboard shortcuts, \(Keys.shortcuts.spoken)"]
+            + (tool == .missing ? ["Install the kiri command"] : [])
+        await wakeAccessibility()
+        func hint(_ w: NSWindow) -> (group: AccessibilityElement?, lines: [AccessibilityElement]) {
+            let list = accessibilityElements(of: w)
+            guard let group = list.first(where: { $0.name == "Getting started" }) else { return (nil, []) }
+            return (group, list.filter { $0.role == NSAccessibility.Role.button.rawValue && group.frame.contains($0.frame) })
+        }
+        let shown = hint(window)
+        let drawn = window.occlusionState.contains(.visible)
+        if shown.group != nil {
+            report(shown.lines.map(\.name) == expected && expected[0] == "Open a file, Command O" && shown.lines.allSatisfy { $0.frame.height >= 24 },
+                   "the hint's lines are buttons named with their keys, the kiri command \(tool == .missing ? "among them" : "left out: it is installed") (\(shown.lines.map(\.name)))")
+            // Clicks: a line takes its own, the paper beside the hint is the editor's.
+            if let group = shown.group, let first = shown.lines.first, let content = window.contentView {
+                func hit(_ onScreen: NSPoint) -> NSView? {
+                    let inWindow = window.convertPoint(fromScreen: onScreen)
+                    return content.hitTest(content.superview?.convert(inWindow, from: nil) ?? inWindow)
+                }
+                let onLine = hit(NSPoint(x: first.frame.midX, y: first.frame.midY))
+                let beside = hit(NSPoint(x: group.frame.minX - 30, y: group.frame.midY))
+                let above = hit(NSPoint(x: group.frame.midX, y: group.frame.maxY + 30))
+                func isEditor(_ v: NSView?) -> Bool { v.map { $0 === tv || $0.isDescendant(of: tv) } ?? false }
+                report(!isEditor(onLine) && onLine != nil && isEditor(beside) && isEditor(above),
+                       "a click on a line is the line's, a click beside or above the hint the editor's (on a line: \(onLine == nil ? "nothing" : isEditor(onLine) ? "the editor" : "the hint"), beside: \(isEditor(beside) ? "the editor" : "not the editor"), above: \(isEditor(above) ? "the editor" : "not the editor"))")
+            }
+            // One line pressed: the one that opens no panel and changes nothing.
+            if let shortcuts = shown.lines.first(where: { $0.name.hasPrefix("Keyboard shortcuts") }) {
+                shortcuts.press()
+                let opened = await wait(2) { NSApp.windows.contains { $0.identifier?.rawValue == ShortcutsView.windowID && $0.isVisible } }
+                report(opened && window.firstResponder === tv, "pressing “Keyboard shortcuts” opens that window, the keyboard still in the editor")
+                NSApp.windows.first { $0.identifier?.rawValue == ShortcutsView.windowID }?.close()
+            }
+        } else if drawn {
+            report(false, "the hint's lines are in the window")
+        } else {
+            print("SELFTEST SKIP the hint's lines and clicks (the window is covered or the screen locked: SwiftUI isn't drawing it)")
+        }
+
+        // The first key typed, through the event loop.
+        let rest = model.statusRest
+        window.makeFirstResponder(tv)
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0,
+                                        windowNumber: window.windowNumber, context: nil, characters: "x",
+                                        charactersIgnoringModifiers: "x", isARepeat: false, keyCode: 7) {
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        let typed = await wait(2) { tv.string == "x" }
+        let start = clock.now
+        report(typed && !model.showsStartHint, "the first key typed starts the document and ends the hint (“\(tv.string)”)")
+        let whileTyping = StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion)
+        let back = await wait(StatusBarRest.pause + 1) { !rest.isResting }
+        let after = clock.now - start
+        if reducedMotion {
+            report(whileTyping == 1, "with reduced motion the status bar stays solid while typing (\(whileTyping))")
+        } else {
+            report(whileTyping == Honey.restOpacity && back && after >= .seconds(StatusBarRest.pause - 0.25) && after <= .seconds(StatusBarRest.pause + 0.5),
+                   "typing rests the status bar at \(Honey.restOpacity) and it comes back after its pause (\(whileTyping), back after \(after))")
+        }
+        await settle()
+        tv.undoManager?.undo()
+        await settle(150)
+        let gone = hint(window).group == nil
+        report(tv.string.isEmpty && !model.showsStartHint, "undo back to an empty document doesn't bring the hint back")
+        if drawn {
+            report(gone, "and its lines are gone from the window")
+        }
+        // A file that is empty on disk is a file: no hint.
+        let empty = dir.appendingPathComponent("empty.txt")
+        FileManager.default.createFile(atPath: empty.path, contents: Data())
+        let opened: NSDocument? = await withCheckedContinuation { c in
+            NSDocumentController.shared.openDocument(withContentsOf: empty, display: true) { d, _, _ in c.resume(returning: d) }
+        }
+        if let opened, let (_, emptyText, emptyController) = await editor(of: opened) {
+            await settle(200)
+            report(emptyText.string.isEmpty && !emptyController.model.showsStartHint, "an empty file has no first-run hint")
+        } else {
+            report(false, "an empty file opens as a tab")
+        }
+    }
+
     /// Edit ▸ Transformations, on a selected word.
     private static func transformations(_ ktv: KiriTextView) {
         guard let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
@@ -1250,6 +1585,7 @@ import os
                         await tabState(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
+                        await startHintStage(window)
                         // The last line of a run that got to its end.
                         print("SELFTEST DONE behavior")
                         fflush(stdout)
@@ -1519,7 +1855,13 @@ import os
     /// What VoiceOver is given for a window, flattened: each element's role,
     /// name, frame on screen and whether it is selected.
     private struct AccessibilityElement {
-        let role: String, name: String, frame: NSRect, selected: Bool, focused: Bool
+        let role: String, name: String, value: String, frame: NSRect, selected: Bool, focused: Bool
+        let object: AnyObject
+
+        /// Presses it, as VoiceOver would.
+        @MainActor func press() {
+            _ = object.perform(NSSelectorFromString("accessibilityPerformPress"))
+        }
     }
 
     /// The name of the control VoiceOver is told has the keyboard.
@@ -1554,8 +1896,9 @@ import os
                 && o.value(forKey: "accessibilitySelected") as? Bool == true
             let focused = o.responds(to: NSSelectorFromString("isAccessibilityFocused"))
                 && o.value(forKey: "accessibilityFocused") as? Bool == true
-            list.append(AccessibilityElement(role: ask("accessibilityRole") as? String ?? "", name: name, frame: frame,
-                                             selected: selected, focused: focused))
+            list.append(AccessibilityElement(role: ask("accessibilityRole") as? String ?? "", name: name,
+                                             value: ask("accessibilityValue") as? String ?? "", frame: frame,
+                                             selected: selected, focused: focused, object: o))
         }
         guard depth < 16 else { return list }
         for child in ask("accessibilityChildren") as? [Any] ?? [] { list += accessibilityElements(of: child, depth: depth + 1) }
@@ -1715,6 +2058,135 @@ private enum FindBarSample {
                 .frame(width: width)
                 .background(Color.honeySurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+    }
+}
+/// The status bar in given states with no editor behind it, for
+/// `-KiriRenderStatus` and for measuring that its width holds.
+enum StatusBarSample {
+    @MainActor static func model(line: Int = 12, column: Int = 5, selected: Int = 0, lineCount: Int = 40, longestLine: Int = 62,
+                                 length: Int = 1200, language: Language = .swift, indent: IndentStyle = .spaces(4)) -> EditorModel {
+        let model = EditorModel()
+        model.line = line
+        model.column = column
+        model.selectedLength = selected
+        model.lineCount = lineCount
+        model.language = language
+        model.indent = indent
+        model.positionReserve = StatusText.Reserve(lineCount: lineCount, longestLine: longestLine, length: length)
+        return model
+    }
+
+    @MainActor static func bar(_ model: EditorModel, document: KiriDocument = KiriDocument(),
+                               showing: (item: EditorStatusBar.Item, as: HoneyStatusHighlight)? = nil) -> some View {
+        EditorStatusBar(model: model, document: document, encoding: .constant(document.encoding),
+                        lineEnding: .constant(document.lineEnding), byteOrderMark: .constant(document.hasBOM), showing: showing)
+            .environment(\.honeyOffscreen, true)
+            .honeyRoot(HoneyAppearance())
+    }
+
+    /// The bar's width (with its side margins) as SwiftUI lays it out.
+    @MainActor static func width(_ model: EditorModel) -> CGFloat {
+        ImageRenderer(content: bar(model)).nsImage?.size.width ?? 0
+    }
+
+    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+        let windows = KiriDocument()
+        windows.encoding = .utf16LE
+        windows.hasBOM = true
+        windows.lineEnding = .crlf
+        let resting = model()
+        resting.statusRest.activity()
+        let long = model(line: 12345, column: 120, lineCount: 20000, longestLine: 400, length: 900_000, language: .typescript,
+                         indent: .spaces(2))
+        return VStack(alignment: .leading, spacing: 12) {
+            strip("at rest: a 40-line Swift file, 460 pt (a 480 pt window)") { bar(model()) }
+            strip("the pointer on the language") { bar(model(), showing: (.language, .hover)) }
+            strip("the pointer on the position (opens Go to Line)") { bar(model(), showing: (.position, .hover)) }
+            strip("the pointer on the encoding") { bar(model(), showing: (.encoding, .hover)) }
+            strip("the pointer on the line endings") { bar(model(), showing: (.lineEnding, .hover)) }
+            strip("the keyboard on the language") { bar(model(), showing: (.language, .focus)) }
+            strip("the keyboard on the encoding") { bar(model(), showing: (.encoding, .focus)) }
+            strip("line 1, column 1 (the same width)") { bar(model(line: 1, column: 1)) }
+            strip("the last line, its last column") { bar(model(line: 40, column: 63)) }
+            strip("a selection takes the column's place") { bar(model(selected: 128)) }
+            strip("everything selected") { bar(model(line: 1, column: 1, selected: 1200)) }
+            strip("resting while typing or scrolling: 35 %") { bar(resting) }
+            strip("a new document: plain text, no indentation yet") {
+                bar(model(line: 1, column: 1, lineCount: 1, longestLine: 0, length: 0, language: .plainText, indent: .tabs))
+            }
+            strip("a long file, UTF-16 with a BOM, CRLF") { bar(long, document: windows) }
+            strip("330 pt: the indentation goes first", width: 330) { bar(model()) }
+            strip("220 pt (a folder window at 480 pt): language and position", width: 220) { bar(model()) }
+            strip("220 pt, a long file: the position alone", width: 220) { bar(long, document: windows) }
+        }
+        .padding(16)
+        .background(Color.honeyCanvas)
+        .environment(\.colorScheme, scheme)
+        .honeyRoot(HoneyAppearance())
+    }
+
+    /// A bar over the last lines of a panel of text, as in a window.
+    @MainActor private static func strip(_ caption: String, width: CGFloat = 460, @ViewBuilder bar: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(["    mutating func greet(_ other: String? = nil) -> String {", "        count += 1",
+                         "        let who = other ?? name; return \"Hello, \\(who)! That's \\(count) so far.\""], id: \.self) {
+                    Text($0).font(.honeyMono(size: 12)).foregroundStyle(Color.honeyFg).lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            .frame(width: width, alignment: .leading)
+            .overlay(alignment: .bottom) { bar() }
+            .background(Color.honeySurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
+
+/// The first-run hint on panels of the sizes a window can give it, with the
+/// status bar below it, for `-KiriRenderHint`.
+private enum StartHintSample {
+    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+        let empty = StatusBarSample.model(line: 1, column: 1, lineCount: 1, longestLine: 0, length: 0, language: .plainText,
+                                          indent: .tabs)
+        func panel(_ caption: String, width: CGFloat, height: CGFloat, _ tool: CLIInstaller.Status, hovered: Int? = nil) -> some View {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
+                // Line 1 and its number, where the editor draws them.
+                HStack(alignment: .top, spacing: 16) {
+                    Text("1").font(.system(size: 11).monospacedDigit()).foregroundStyle(Color.honeyFg)
+                    Rectangle().fill(Color.honeyCaret).frame(width: 2, height: 16)
+                }
+                .padding(.leading, 24)
+                .padding(.top, 14)
+                .frame(width: width, height: height, alignment: .topLeading)
+                .overlay {
+                    StartHint(commandLineTool: tool, hovered: hovered).padding(.bottom, StartHint.bottomClearance)
+                }
+                .overlay(alignment: .bottom) { StatusBarSample.bar(empty) }
+                .background(Color.honeySurface, in: RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous))
+            }
+        }
+        return VStack(alignment: .leading, spacing: 14) {
+            panel("a 900 × 640 window: the kiri command not installed", width: 880, height: 578, .missing)
+            HStack(alignment: .top, spacing: 14) {
+                panel("480 pt wide: installed, three lines", width: 460, height: 340, .installed)
+                panel("the pointer on a line", width: 460, height: 340, .missing, hovered: 1)
+            }
+            HStack(alignment: .top, spacing: 14) {
+                panel("the pointer on the link", width: 460, height: 260, .missing, hovered: 3)
+                panel("a folder window at 480 pt: 220 pt of paper", width: 220, height: 260, .missing)
+                panel("the smallest window: 480 × 280", width: 220, height: 218, .missing)
+            }
+        }
+        .padding(16)
+        .background(Color.honeyCanvas)
+        .environment(\.honeyOffscreen, true)
+        .environment(\.colorScheme, scheme)
+        .honeyRoot(HoneyAppearance())
     }
 }
 #endif
