@@ -937,31 +937,7 @@ import os
         guard let group = original.tabGroup, group.windows.count >= 12 else {
             report(false, "a crowded tab group to look at (\(original.tabGroup?.windows.count ?? 0) tabs)"); return
         }
-        // SwiftUI builds its accessibility elements once something has
-        // asked this process for them, from another thread.
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global().async {
-                var value: AnyObject?
-                AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
-                c.resume()
-            }
-        }
-        struct Element { let role: String, name: String, frame: NSRect, selected: Bool }
-        func elements(_ root: Any, into list: inout [Element], depth: Int = 0) {
-            func ask(_ selector: String) -> Any? {
-                let o = root as AnyObject, sel = NSSelectorFromString(selector)
-                return o.responds(to: sel) ? o.perform(sel)?.takeUnretainedValue() : nil
-            }
-            if let o = root as? NSObject, o.responds(to: NSSelectorFromString("accessibilityFrame")),
-               let frame = (o.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue {
-                let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { ask($0) as? String }.first { !$0.isEmpty } ?? ""
-                let selected = o.responds(to: NSSelectorFromString("isAccessibilitySelected"))
-                    && o.value(forKey: "accessibilitySelected") as? Bool == true
-                list.append(Element(role: ask("accessibilityRole") as? String ?? "", name: name, frame: frame, selected: selected))
-            }
-            guard depth < 16 else { return }
-            for child in ask("accessibilityChildren") as? [Any] ?? [] { elements(child, into: &list, depth: depth + 1) }
-        }
+        await wakeAccessibility()
         let width = original.frame.width
         defer {
             for w in group.windows { w.setFrame(NSRect(x: w.frame.minX, y: w.frame.minY, width: width, height: w.frame.height), display: true) }
@@ -989,8 +965,7 @@ import os
                 }
                 // Long enough for the selection's spring to come to rest.
                 try? await Task.sleep(for: .milliseconds(900))
-                var list: [Element] = []
-                elements(tab, into: &list)
+                let list = accessibilityElements(of: tab)
                 let strip = list.first { $0.role == NSAccessibility.Role.scrollArea.rawValue && $0.name == "Tabs" }?.frame
                 let selected = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.selected }
                 let after = list.filter { ["New Tab", "Save"].contains($0.name) }.map(\.frame)
@@ -1000,6 +975,45 @@ import os
                        "\(group.windows.count) tabs at \(Int(tab.frame.width)) pt, \(position) selected: whole in the strip, + and Save in the window (strip \(strip.map { "\($0.minX)…\($0.maxX)" } ?? "none"), “\(selected?.name ?? "none")” \(selected.map { "\($0.frame.minX)…\($0.frame.maxX)" } ?? ""), buttons \(after.map { "\($0.minX)…\($0.maxX)" }))")
             }
         }
+    }
+
+    /// What VoiceOver is given for a window, flattened: each element's role,
+    /// name, frame on screen and whether it is selected.
+    private struct AccessibilityElement {
+        let role: String, name: String, frame: NSRect, selected: Bool
+    }
+
+    /// SwiftUI builds its accessibility elements once something has asked
+    /// this process for them, from another thread.
+    private static func wakeAccessibility() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                var value: AnyObject?
+                AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
+                c.resume()
+            }
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+    }
+
+    private static func accessibilityElements(of root: Any, depth: Int = 0) -> [AccessibilityElement] {
+        // SwiftUI's elements answer these without declaring the protocol.
+        func ask(_ selector: String) -> Any? {
+            let o = root as AnyObject, sel = NSSelectorFromString(selector)
+            return o.responds(to: sel) ? o.perform(sel)?.takeUnretainedValue() : nil
+        }
+        var list: [AccessibilityElement] = []
+        if let o = root as? NSObject, o.responds(to: NSSelectorFromString("accessibilityFrame")),
+           let frame = (o.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue {
+            let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { ask($0) as? String }.first { !$0.isEmpty } ?? ""
+            let selected = o.responds(to: NSSelectorFromString("isAccessibilitySelected"))
+                && o.value(forKey: "accessibilitySelected") as? Bool == true
+            list.append(AccessibilityElement(role: ask("accessibilityRole") as? String ?? "", name: name, frame: frame,
+                                             selected: selected))
+        }
+        guard depth < 16 else { return list }
+        for child in ask("accessibilityChildren") as? [Any] ?? [] { list += accessibilityElements(of: child, depth: depth + 1) }
+        return list
     }
 
     /// The windows of the documents for `urls`, once every one of them has a
