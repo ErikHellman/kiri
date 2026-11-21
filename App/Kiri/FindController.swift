@@ -116,8 +116,9 @@ import Observation
         case .none: return "No matches"
         case .invalid: return "Invalid pattern"
         case .found(let current, let total, let more):
-            let count = "\(total)\(more ? "+" : "")"
-            if let current { return "\(current + 1) of \(count)" }
+            // Grouped, so a long count reads at a glance: "42 of 100,000+".
+            let count = "\(total.formatted())\(more ? "+" : "")"
+            if let current { return "\((current + 1).formatted()) of \(count)" }
             return total == 1 && !more ? "1 match" : "\(count) matches"
         }
     }
@@ -126,8 +127,8 @@ import Observation
     /// bar keeps its width as the count changes.
     var widestLabel: String {
         guard case .found(_, let total, let more) = status else { return "" }
-        let count = "\(total)\(more ? "+" : "")"
-        return "\(total) of \(count)"
+        let count = "\(total.formatted())\(more ? "+" : "")"
+        return "\(total.formatted()) of \(count)"
     }
 
     /// The query finds nothing or can't be used.
@@ -281,7 +282,7 @@ import Observation
         let delta = all.text.utf16.count - all.range.count
         setCaret(caret <= all.range.lowerBound ? caret : caret >= all.range.upperBound ? caret + delta : all.range.lowerBound)
         current = nil
-        notice = "Replaced \(all.count)"
+        notice = "Replaced \(all.count.formatted())"
         if isOpen { refresh(jump: false) }
         announce()
     }
