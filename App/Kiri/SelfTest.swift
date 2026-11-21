@@ -945,9 +945,12 @@ import os
             for r in counts.prefix(n).reversed() { text = text.replacingCharacters(in: r, with: "n") as NSString }
             return text as String
         }
+        // (The document's own flag: the window's follows it later.)
+        let document = NSDocumentController.shared.document(for: window)
+        let cleanBefore = document?.isDocumentEdited == false
         find.replaceCurrent()
         await settle()
-        let afterOne = ktv.string, selectionAfterOne = ktv.selectedRange()
+        let afterOne = ktv.string, selectionAfterOne = ktv.selectedRange(), editedAfterOne = document?.isDocumentEdited == true
         find.replaceCurrent()
         await settle()
         let afterTwo = ktv.string
@@ -962,6 +965,8 @@ import os
         await settle()
         report(undoneOnce == replaced(1) && ktv.string == original && find.matches.count == counts.count,
                "each Replace is one undo step (\(find.matches.count) matches again)")
+        report(cleanBefore && editedAfterOne && document?.isDocumentEdited == false,
+               "a Replace is an edit of the document, and its undo leaves it clean again (clean \(cleanBefore), edited \(editedAfterOne), then \(document?.isDocumentEdited ?? true))")
 
         // A replacement that holds the query is not found again.
         find.replacement = "countcount"
@@ -978,11 +983,11 @@ import os
         find.replacement = "n"
         find.replaceAll()
         await settle()
-        report(ktv.string == replaced(counts.count) && find.label == "Replaced \(counts.count)",
-               "Replace All replaces every match and says how many (“\(find.label)”)")
+        report(ktv.string == replaced(counts.count) && find.label == "Replaced \(counts.count)" && document?.isDocumentEdited == true,
+               "Replace All replaces every match, says how many, and the document is edited (“\(find.label)”)")
         ktv.undoManager?.undo()
         await settle()
-        report(ktv.string == original, "and one undo puts them all back")
+        report(ktv.string == original && document?.isDocumentEdited == false, "and one undo puts them all back, the document clean again")
         find.options.regularExpression = true
         find.query = "(\\w+): String"
         find.replacement = "$1 = \\t$1"
@@ -1023,7 +1028,7 @@ import os
         find.close()
 
         // The bar itself: SwiftUI has to be drawing the window for these.
-        let wasEdited = window.isDocumentEdited
+        let wasEdited = document?.isDocumentEdited ?? false
         window.makeFirstResponder(ktv)
         ktv.setSelectedRange(funcs[0])
         ktv.scrollRangeToVisible(funcs[0])
@@ -1038,8 +1043,8 @@ import os
             await typeKeys("count", in: window)
             report(find.query == "count" && find.label == "\(counts.firstIndex { $0.location >= funcs[0].location }.map { $0 + 1 } ?? 1) of \(counts.count)",
                    "typing in the field searches as it is typed (“\(find.query)”, “\(find.label)”)")
-            report(window.isDocumentEdited == wasEdited && ktv.string == original && (ktv.undoManager?.canUndo ?? false) == couldUndo,
-                   "typing in the find field is not an edit of the document (edited \(window.isDocumentEdited), can undo \(ktv.undoManager?.canUndo ?? false))")
+            report(document?.isDocumentEdited == wasEdited && ktv.string == original && (ktv.undoManager?.canUndo ?? false) == couldUndo,
+                   "typing in the find field is not an edit of the document (edited \(document?.isDocumentEdited ?? true), can undo \(ktv.undoManager?.canUndo ?? false))")
             let start = find.label
             await typeKeys("\r", in: window)
             let afterReturn = find.label
@@ -1048,6 +1053,17 @@ import os
                    "Return in the field goes to the next match and ⇧Return back, the keyboard staying in the field (“\(start)” → “\(afterReturn)” → “\(find.label)”)")
             let viaMenu = press("g", .command)
             report(viaMenu && find.label == afterReturn, "⌘G works while the keyboard is in the find field (“\(find.label)”)")
+            if !NSApp.isFullKeyboardAccessEnabled {
+                // Nothing else in the bar takes the keyboard: Tab stays, and
+                // what is typed next is still the query, not the document.
+                await typeKeys("\t", in: window)
+                await typeKeys("\t", in: window, modifiers: .shift)
+                let stays = fieldEditor(of: window) != nil
+                if stays { await typeKeys("s", in: window) }
+                report(stays && find.query.hasSuffix("s") && ktv.string == original,
+                       "Tab in the find field alone stays in it (query “\(find.query)”)")
+                find.query = "count"
+            }
             _ = press("f", [.option, .command])
             await settle(300)
             await typeKeys("\t", in: window)
@@ -1065,6 +1081,17 @@ import os
             await typeKeys("q", in: window)
             report(inReplace == "xy" && find.query == "q",
                    "Tab goes from the find field to the replace field and ⇧Tab back (replace “\(inReplace)”, find “\(find.query)”)")
+            if !NSApp.isFullKeyboardAccessEnabled {
+                await typeKeys("\t", in: window)
+                await typeKeys("\t", in: window)
+                await typeKeys("r", in: window)
+                let around = find.query
+                await typeKeys("\t", in: window, modifiers: .shift)
+                await typeKeys("z", in: window)
+                report(around == "r" && find.replacement == "z" && ktv.string == original,
+                       "and round within the bar at its ends, never into the document (find “\(around)”, replace “\(find.replacement)”)")
+                await typeKeys("\t", in: window)
+            }
             find.query = "func"
             // With Full Keyboard Access, Tab also stops at buttons: after the fields.
             if NSApp.isFullKeyboardAccessEnabled {

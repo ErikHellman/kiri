@@ -132,12 +132,7 @@ struct FindBar: View {
                 .accessibilityHidden(true)
             BarTextField(prompt: "Find", text: $find.query)
                 .focused($focus, equals: .query)
-                // Tab goes on to the replace field, not out of the bar.
-                .onKeyPress(phases: .down) { press in
-                    guard find.showsReplace, press.key == .tab, !press.modifiers.contains(.shift) else { return .ignored }
-                    focus = .replacement
-                    return .handled
-                }
+                .onKeyPress(phases: .down) { press in tab(press, from: .query) }
                 // Return finds the next match, ⇧Return the one before.
                 .onSubmit { find.step(forward: NSApp.currentEvent?.modifierFlags.contains(.shift) != true) }
                 .accessibilityLabel("Find")
@@ -152,14 +147,7 @@ struct FindBar: View {
                 .accessibilityHidden(true)
             BarTextField(prompt: "Replace", text: $find.replacement)
                 .focused($focus, equals: .replacement)
-                // ⇧Tab goes back to the find field (it arrives as the
-                // back-tab character).
-                .onKeyPress(phases: .down) { press in
-                    guard press.key == KeyEquivalent("\u{19}") || press.key == .tab && press.modifiers.contains(.shift)
-                    else { return .ignored }
-                    focus = .query
-                    return .handled
-                }
+                .onKeyPress(phases: .down) { press in tab(press, from: .replacement) }
                 .onSubmit { find.replaceCurrent() }
                 .accessibilityLabel("Replace with")
         }
@@ -185,6 +173,27 @@ struct FindBar: View {
     }
 
     private func isFocused(_ field: Field) -> Bool { (focus ?? sampleFocus) == field }
+
+    /// Tab and ⇧Tab in a field. Tab goes from the find field to the replace
+    /// field and ⇧Tab back. At the ends, with Full Keyboard Access the
+    /// buttons are next (after the fields); without it there is nothing
+    /// else in the bar to go to, and the keyboard goes round within the
+    /// bar instead of off into the document, where the next key typed
+    /// would land on the match.
+    private func tab(_ press: KeyPress, from field: Field) -> KeyPress.Result {
+        // ⇧Tab arrives as the back-tab character.
+        let back = press.key == KeyEquivalent("\u{19}") || press.key == .tab && press.modifiers.contains(.shift)
+        guard back || press.key == .tab else { return .ignored }
+        let wraps = !NSApp.isFullKeyboardAccessEnabled
+        if field == .query, find.showsReplace, !back || wraps {
+            focus = .replacement
+        } else if field == .replacement, back || wraps {
+            focus = .query
+        } else if !wraps {
+            return .ignored
+        }
+        return .handled
+    }
 
     /// A field's place in the bar: a paper-colored well, with the Honey
     /// focus ring while the keyboard is in it.
