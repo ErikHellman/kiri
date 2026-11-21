@@ -120,7 +120,8 @@ func text(of span: SyntaxSpan, in s: String) -> String {
     /// in a ~1.5 MB file stays cheap, as does an incremental reparse.
     @Test(arguments: [
         ("cpp", "namespace n { class A { public: int f(int x) const { return x * 42; } }; } // row\n"),
-        ("kotlin", "class A(val x: Int) { fun f(): String = \"s$x\" + 42 } // row\n"),
+        // fwcd's Kotlin grammar wants a newline before a closing brace.
+        ("kotlin", "class A(val x: Int) {\n    fun f(): String = \"s$x\" + 42 // row\n}\n"),
         ("csharp", "class A { public string F(int x) { return \"s\" + x + 42; } } // row\n"),
     ])
     func largeCodeFile(id: String, row: String) throws {
