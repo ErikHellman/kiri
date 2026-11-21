@@ -11,6 +11,7 @@ import SwiftUI
     static let defaultSize = NSSize(width: 900, height: 640)
     /// The name the last document window's frame is kept under.
     private static let frameName = "KiriDocumentWindow"
+    private static let keepsState = !UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState")
 
     static func controller(for document: KiriDocument) -> NSWindowController {
         let host = NSHostingController(rootView: DocumentRoot(document: document))
@@ -26,9 +27,13 @@ import SwiftUI
         window.center()
         // Where the last one was. Not through `setFrameAutosaveName`: only
         // one window at a time can own a name, and the tabs of a group share
-        // one frame anyway. `FrameKeeper` saves it instead.
-        window.setFrameUsingName(frameName)
-        FrameKeeper.shared.start()
+        // one frame anyway. `FrameKeeper` saves it instead. (A launch that
+        // leaves saved state alone, as the self-tests do, neither reads
+        // nor writes it: its windows are always the default size.)
+        if keepsState {
+            window.setFrameUsingName(frameName)
+            FrameKeeper.shared.start()
+        }
         let controller = NSWindowController(window: window)
         // A window of its own (`kiri -n`, a folder) steps down and right of
         // the one before it; a tab takes its group's frame.
@@ -51,8 +56,6 @@ import SwiftUI
         func start() {
             guard !started else { return }
             started = true
-            // A launch that leaves saved state alone leaves this alone too.
-            guard !UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") else { return }
             for name in [NSWindow.didMoveNotification, NSWindow.didEndLiveResizeNotification, NSWindow.willCloseNotification] {
                 NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
                     nonisolated(unsafe) let object = note.object

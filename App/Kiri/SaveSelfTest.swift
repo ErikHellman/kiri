@@ -41,7 +41,9 @@ extension SelfTest {
         await changedOnDisk(dir)
         await untitled(dir)
         await waiting(dir)
+        await newFile(dir)
         await openRecent(dir)
+        await closeAll(dir)
         report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
         print("SELFTEST DONE save")
         fflush(stdout)
@@ -294,6 +296,62 @@ extension SelfTest {
         if let cancel = titles.first(where: { $0 == "Cancel" }) ?? titles.last { await press(cancel, on: tab.window) }
         if let sheet = tab.window.attachedSheet { tab.window.endSheet(sheet) }
         tab.doc.close()
+    }
+
+    /// `kiri new.txt`: the file is made so that it can open, and goes
+    /// again when its tab closes without ever having been saved.
+    private static func newFile(_ dir: URL) async {
+        let url = dir.appendingPathComponent("new.txt")
+        func openNew() async -> Tab? {
+            KiriCLI.open(KiriCLI.Request(entries: [.file(url, line: 0, column: 0)]))
+            var doc: NSDocument?
+            _ = await wait { doc = NSDocumentController.shared.documents.first { $0.fileURL?.lastPathComponent == "new.txt" }; return doc != nil }
+            return await tab(of: doc)
+        }
+        guard let tab = await openNew() else { report(false, "kiri with a file that doesn't exist opens it empty"); return }
+        let made = exists(url)
+        await insert("never saved", in: tab)
+        tab.window.performClose(nil)
+        _ = await sheet(on: tab.window)
+        await press("Don’t Save", on: tab.window)
+        let gone = await wait { !exists(url) }
+        report(made && gone, "a file kiri made to open, closed without saving, is gone again")
+
+        guard let again = await openNew() else { report(false, "it opens again"); return }
+        await insert("saved", in: again)
+        again.window.performClose(nil)
+        _ = await sheet(on: again.window)
+        await press("Save", on: again.window)
+        _ = await wait { !isOpen(again.doc) }
+        await settle(200)
+        report((try? Data(contentsOf: url)) == Data("saved".utf8), "saved, it stays")
+    }
+
+    /// File ▸ Close All: a document with unsaved changes asks first, and
+    /// Cancel keeps every document; otherwise they all close. (This closes
+    /// the test's first document too: it runs last.)
+    private static func closeAll(_ dir: URL) async {
+        guard let clean = await open(file("clean.txt", "clean\n", in: dir)), let dirty = await open(file("dirty.txt", "dirty\n", in: dir)) else {
+            report(false, "two files open for Close All"); return
+        }
+        let untouched = FileState(dirty.doc.fileURL ?? dir)
+        await insert("typed ", in: dirty)
+        let others = NSDocumentController.shared.documents.filter { $0 !== dirty.doc }
+        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.orderFront(nil)
+        FileAction.closeAll()
+        let asked = await sheet(on: dirty.window)
+        report(asked != nil && !panel.isVisible, "Close All closes a window that isn't a document's and asks about the document with changes")
+        await press("Cancel", on: dirty.window)
+        await settle(300)
+        report(isOpen(dirty.doc) && dirty.text.string == "typed dirty\n" && others.allSatisfy { isOpen($0) } && isOpen(clean.doc),
+               "Cancel keeps it, and the \(others.count) other documents with it")
+        FileAction.closeAll()
+        _ = await sheet(on: dirty.window)
+        await press("Don’t Save", on: dirty.window)
+        let closed = await wait { NSDocumentController.shared.documents.isEmpty }
+        report(closed && FileState(dirty.doc.fileURL ?? dir) == untouched, "Don’t Save closes them all, the file as it was")
     }
 
     /// File ▸ Open Recent is Kiri's own menu over AppKit's list. (A test

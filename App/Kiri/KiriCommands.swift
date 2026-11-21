@@ -234,10 +234,11 @@ struct KiriCommands: Commands {
 
 /// The File menu's actions that take more than a line.
 @MainActor enum FileAction {
-    /// ⌥⌘W: every window closes. The documents go one by one through
-    /// their own "save the changes?" question, and stay open on Cancel.
+    /// ⌥⌘W: every window closes. A document with unsaved changes asks
+    /// first, and Cancel there keeps all the documents open.
     static func closeAll() {
-        for window in NSApp.windows where window.isVisible && !DocumentWindow.isDocumentWindow(window) && window.sheetParent == nil {
+        for window in NSApp.windows where window.isVisible && window.styleMask.contains(.closable) && window.canBecomeMain
+            && !DocumentWindow.isDocumentWindow(window) && window.sheetParent == nil {
             window.performClose(nil)
         }
         NSDocumentController.shared.closeAllDocuments(withDelegate: nil, didCloseAllSelector: nil, contextInfo: nil)
