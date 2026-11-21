@@ -477,6 +477,8 @@ import os
         report(tv.textLayoutManager != nil, "TextKit 2")
         report(!doc.isDocumentEdited, "clean after open")
         let before = (try? Data(contentsOf: url)) ?? Data()
+        let untouched = FileState(url)
+        let expected = String(decoding: before, as: UTF8.self).contains("\r\n") ? "// added\r\n" : "// added\n"
         tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
         let fadingDrawsBefore = FadingLayoutFragment.animatedDraws
         // Type like a person: key events through the window.
@@ -503,11 +505,10 @@ import os
             }
         }
         report(doc.isDocumentEdited || doc.hasUnautosavedChanges, "dirty after typing (edited=\(doc.isDocumentEdited) unautosaved=\(doc.hasUnautosavedChanges) windowEdited=\(tv.window?.isDocumentEdited ?? false) level=\(tv.undoManager?.groupingLevel ?? -1))")
+        noWriteBeforeSave(doc, url, untouched: untouched, saved: before + Data(expected.utf8)) {
         doc.save(nil)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             let after = (try? Data(contentsOf: url)) ?? Data()
-            let expected = String(decoding: before, as: UTF8.self).contains("\r\n") ? "// added\r\n" : "// added\n"
             report(after == before + Data(expected.utf8), "saved bytes = original + typed text (\(after.count) bytes)")
             report(!doc.isDocumentEdited, "clean after save")
             tv.undoManager?.undo()
@@ -531,6 +532,44 @@ import os
                 report(Data(shown.utf8) == Data(String(decoding: before, as: UTF8.self)
                     .replacingOccurrences(of: "\r\n", with: "\n").utf8), "revert shows the file on disk")
                 NSApp.terminate(nil)
+            }
+        }
+        }
+        }
+    }
+
+    /// A file as it is on disk: what a write of any kind would change.
+    private struct FileState: Equatable {
+        let data: Data?
+        let modified: Date?
+        let inode: Int?
+
+        init(_ url: URL) {
+            data = try? Data(contentsOf: url)
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+            modified = attributes?[.modificationDate] as? Date
+            inode = (attributes?[.systemFileNumber] as? NSNumber)?.intValue
+        }
+    }
+
+    /// Saving is explicit: typing leaves the file alone, and so does an
+    /// autosave, which writes a recovery copy somewhere else and leaves the
+    /// document edited. `saved` is what Save would write.
+    private static func noWriteBeforeSave(_ doc: NSDocument, _ url: URL, untouched: FileState, saved: Data,
+                                          then next: @escaping @MainActor () -> Void) {
+        report(FileState(url) == untouched, "the file is untouched after typing (bytes, modification date, inode)")
+        doc.autosave(withImplicitCancellability: false) { error in
+            MainActor.assumeIsolated {
+                let now = FileState(url)
+                report(error == nil && now == untouched,
+                       "the file is untouched after an autosave (bytes \(now.data == untouched.data), modification date \(now.modified == untouched.modified), inode \(now.inode == untouched.inode), error \(error.map { "\($0)" } ?? "none"))")
+                let copy = doc.autosavedContentsFileURL
+                print("SELFTEST info recovery copy \(copy?.path ?? "none")")
+                report(copy != nil && copy?.standardizedFileURL != url.standardizedFileURL
+                       && copy.flatMap { try? Data(contentsOf: $0) } == saved,
+                       "the autosave wrote the text to a recovery copy somewhere else")
+                report(doc.isDocumentEdited, "the document is still edited after the autosave")
+                next()
             }
         }
     }
