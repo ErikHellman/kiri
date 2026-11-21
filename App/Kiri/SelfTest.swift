@@ -758,7 +758,9 @@ import os
         tv.setSelectedRange(NSRange(location: len / 2, length: 0))
         tv.scrollRangeToVisible(tv.selectedRange())
         tv.window?.makeFirstResponder(tv)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            await perfRecoveryCopy(tv)
             perfEventLoop(tv) {
                 Task { @MainActor in
                     await perfFind(tv)
@@ -766,6 +768,45 @@ import os
                 }
             }
         }
+    }
+
+    /// The recovery copy is written on the main thread, a few seconds after
+    /// an edit: how long that holds it, on whatever file is open.
+    private static func perfRecoveryCopy(_ tv: NSTextView) async {
+        guard let doc = tv.window.flatMap({ NSDocumentController.shared.document(for: $0) }) else { return }
+        let clock = ContinuousClock()
+        // The document knows of the typing above when its undo group
+        // closes: at the end of the event with a real key. Here there was
+        // no event, so one is posted for the run loop to end.
+        let asked = clock.now
+        if let nudge = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                          windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
+            NSApp.postEvent(nudge, atStart: false)
+        }
+        while !doc.hasUnautosavedChanges, clock.now - asked < .seconds(8) { try? await Task.sleep(for: .milliseconds(50)) }
+        let start = clock.now
+        var last = start, held = Duration.zero
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeSources.rawValue, true, 0) { _, _ in
+            held = max(held, clock.now - last); last = clock.now
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        let failed: Error? = await withCheckedContinuation { done in
+            doc.autosave(withImplicitCancellability: false) { error in
+                nonisolated(unsafe) let error = error
+                done.resume(returning: error)
+            }
+        }
+        held = max(held, clock.now - last)
+        CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+        let copy = doc.autosavedContentsFileURL
+        let size = copy.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
+        func ms(_ d: Duration) -> String { String(format: "%.1f ms", Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000) }
+        let took = ms(clock.now - start), heldFor = ms(held)
+        var line = "SELFTEST PERF recovery copy: \(size / 1024) KB there after \(took), main thread held at most \(heldFor)"
+        if let failed { line += " (failed: \(failed.localizedDescription))" }
+        if copy == nil { line += " (no copy; waited \(ms(start - asked)) for the document to know of its changes: edited \(doc.isDocumentEdited), to keep \(doc.hasUnautosavedChanges), undo level \(doc.undoManager?.groupingLevel ?? -1))" }
+        print(line)
+        fflush(stdout)
     }
 
     /// The find bar on whatever file is open (use a big one): how long a

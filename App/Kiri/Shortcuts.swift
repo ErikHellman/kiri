@@ -6,7 +6,7 @@ enum Keys {
     static let new = KeyboardShortcut("n", modifiers: .command)
     static let open = KeyboardShortcut("o", modifiers: .command)
     static let save = KeyboardShortcut("s", modifiers: .command)
-    static let saveAs = KeyboardShortcut("s", modifiers: [.option, .shift, .command])
+    static let saveAs = KeyboardShortcut("s", modifiers: [.shift, .command])
     static let close = KeyboardShortcut("w", modifiers: .command)
     static let closeAll = KeyboardShortcut("w", modifiers: [.option, .command])
     static let settings = KeyboardShortcut(",", modifiers: .command)
