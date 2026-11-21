@@ -69,7 +69,10 @@ struct EditorScreen: View {
     }
 
     private var editor: some View {
-        EditorView(document: document, model: model, fontScale: textScale, language: model.language,
+        let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
+        // The bars pop in; with Reduce Motion they fade.
+        let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
+        return EditorView(document: document, model: model, fontScale: textScale, language: model.language,
                    wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations),
@@ -79,11 +82,16 @@ struct EditorScreen: View {
                 statusBar.padding(.bottom, 8)
             }
             .overlay(alignment: .top) {
-                if model.showGoToLine {
-                    GoToLine(model: model).padding(.top, 12).transition(.honeyPop)
+                // One at a time: opening one closes the other.
+                if model.find.isOpen {
+                    FindBar(find: model.find).padding(.top, EditorBar.topPadding).transition(arrive)
+                } else if model.goToLine.isOpen {
+                    GoToLine(goToLine: model.goToLine, lineCount: model.lineCount)
+                        .padding(.top, EditorBar.topPadding).transition(arrive)
                 }
             }
-            .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: model.showGoToLine)
+            .animation(motion.shape, value: model.find.isOpen)
+            .animation(motion.shape, value: model.goToLine.isOpen)
     }
 
     /// Opens a sidebar file as a tab of this window. An empty untitled tab
@@ -261,50 +269,6 @@ struct EditorScreen: View {
     private func detectLanguage() {
         let firstLine = document.file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         model.language = Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
-    }
-}
-
-/// ⌘L: a small glass field over the top of the editor.
-private struct GoToLine: View {
-    let model: EditorModel
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.right.to.line").font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.honeyAccentInk)
-            TextField("Line (1–\(model.lineCount))", text: $text)
-                .textFieldStyle(.plain)
-                .font(.honey(.body))
-                .frame(width: 180)
-                .focused($focused)
-                .onSubmit(go)
-            Text("of \(model.lineCount)").font(.honey(.caption, weight: .semibold)).foregroundStyle(Color.honeyMuted)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 38)
-        .honeyGlass(.chrome, radius: .control)
-        .overlay {
-            RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
-                .strokeBorder(Color.honeyFocus, lineWidth: 2)
-        }
-        .onAppear { text = ""; focused = true }
-        .onExitCommand { close() }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Go to line")
-    }
-
-    private func go() {
-        // "12" or "12:5" (line:column).
-        let parts = text.split(separator: ":").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-        if let line = parts.first { model.controller?.goTo(line: line, column: parts.count > 1 ? parts[1] : 1) }
-        close()
-    }
-
-    private func close() {
-        model.showGoToLine = false
-        model.controller?.focus()
     }
 }
 

@@ -64,23 +64,25 @@ struct KiriCommands: Commands {
         // Edit: Find and Transformations, written out instead of taken from
         // `TextEditingCommands`, which also brings Spelling and Grammar,
         // Substitutions and Speech: prose tools that a code editor with
-        // spell checking and smart quotes off has no use for. The items do
-        // what AppKit's own do: send the standard action down the responder
-        // chain, so the editor and the find bar's fields both get them. They
-        // are never disabled: with nothing to act on, the action goes nowhere.
+        // spell checking and smart quotes off has no use for. The Find
+        // items drive the front document's own find bar (`FindController`),
+        // whichever has the keyboard, the editor or a field of the bar. The
+        // Transformations send the standard action down the responder
+        // chain, as AppKit's own items do. None is ever disabled: with
+        // nothing to act on, the action goes nowhere.
         CommandGroup(replacing: .textEditing) {
             Menu("Find") {
-                Button("Find…") { EditAction.find(.showFindInterface) }
+                Button("Find…") { EditAction.find(.show, in: editor) }
                     .keyboardShortcut(Keys.find)
-                Button("Find and Replace…") { EditAction.find(.showReplaceInterface) }
+                Button("Find and Replace…") { EditAction.find(.showReplace, in: editor) }
                     .keyboardShortcut(Keys.findAndReplace)
-                Button("Find Next") { EditAction.find(.nextMatch) }
+                Button("Find Next") { EditAction.find(.next, in: editor) }
                     .keyboardShortcut(Keys.findNext)
-                Button("Find Previous") { EditAction.find(.previousMatch) }
+                Button("Find Previous") { EditAction.find(.previous, in: editor) }
                     .keyboardShortcut(Keys.findPrevious)
-                Button("Use Selection for Find") { EditAction.find(.setSearchString) }
+                Button("Use Selection for Find") { EditAction.find(.useSelection, in: editor) }
                     .keyboardShortcut(Keys.useSelectionForFind)
-                Button("Jump to Selection") { EditAction.send(#selector(NSText.centerSelectionInVisibleArea(_:))) }
+                Button("Jump to Selection") { EditAction.jumpToSelection(in: editor) }
                     .keyboardShortcut(Keys.jumpToSelection)
             }
             Menu("Transformations") {
@@ -96,7 +98,7 @@ struct KiriCommands: Commands {
                 }
             }
             Divider()
-            Button("Go to Line…") { editor?.showGoToLine = true }
+            Button("Go to Line…") { editor?.goToLine.open() }
                 .keyboardShortcut(Keys.goToLine)
                 .disabled(editor == nil)
         }
@@ -188,8 +190,9 @@ struct KiriCommands: Commands {
     }
 }
 
-/// Standard AppKit editing actions for the Edit menu, sent to whatever has
-/// keyboard focus (the editor, or a field of its find bar).
+/// The Edit menu's actions: standard AppKit editing actions sent to whatever
+/// has keyboard focus, and the find commands, which go to the front
+/// document's find bar.
 @MainActor enum EditAction {
     static func send(_ action: Selector, tag: Int = 0) {
         // The find actions read which one they are from the sender's tag,
@@ -210,9 +213,43 @@ struct KiriCommands: Commands {
     static weak var selfTestTarget: NSResponder?
     #endif
 
-    /// `performFindPanelAction(_:)` with a find-bar action: the text view
-    /// uses the find bar (`usesFindBar`), so the tags are `NSTextFinder`'s.
-    static func find(_ action: NSTextFinder.Action) {
-        send(#selector(NSTextView.performFindPanelAction(_:)), tag: action.rawValue)
+    /// The front window's editor: the focused scene's, or in a self-test
+    /// (run in the background, where no scene has focus) the one it named.
+    private static func front(_ editor: EditorModel?) -> EditorModel? {
+        #if DEBUG || KIRI_SELFTEST
+        if editor == nil, NSApp.keyWindow == nil {
+            return ((selfTestTarget as? NSTextView)?.delegate as? EditorController)?.model
+        }
+        #endif
+        return editor
+    }
+
+    /// A find command, for the front document's find bar. In a window
+    /// without an editor (Settings, Keyboard Shortcuts) the standard action
+    /// goes down the responder chain instead, to whatever text has focus.
+    static func find(_ action: FindController.Action, in editor: EditorModel?) {
+        if let editor = front(editor) {
+            editor.find.perform(action)
+            return
+        }
+        let standard: NSTextFinder.Action? = switch action {
+        case .show: .showFindInterface
+        case .showReplace: .showReplaceInterface
+        case .next: .nextMatch
+        case .previous: .previousMatch
+        case .useSelection: .setSearchString
+        default: nil
+        }
+        if let standard { send(#selector(NSTextView.performFindPanelAction(_:)), tag: standard.rawValue) }
+    }
+
+    /// ⌘J scrolls the editor to its selection, also while the keyboard is
+    /// in the find bar.
+    static func jumpToSelection(in editor: EditorModel?) {
+        if let textView = front(editor)?.controller?.textView {
+            textView.centerSelectionInVisibleArea(nil)
+        } else {
+            send(#selector(NSText.centerSelectionInVisibleArea(_:)))
+        }
     }
 }

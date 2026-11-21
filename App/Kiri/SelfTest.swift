@@ -14,6 +14,7 @@ import os
     private static var openedFolder = false
     private static var arrangedTabs = false
     private static var renderedTabs = false
+    private static var renderedFind = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -24,7 +25,6 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { behavior(textView) }
             return
         }
-        // Screenshot helpers: open Settings or Go to Line at launch.
         if UserDefaults.standard.bool(forKey: "KiriDumpMenus") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 func dump(_ m: NSMenu, _ d: Int) {
@@ -45,8 +45,7 @@ import os
                 NSApp.terminate(nil)
             }
         }
-        // Screenshot helpers: type into the document (makes it dirty), and
-        // open the find bar searching for a word.
+        // Screenshot helper: type into the document (makes it dirty).
         if let typed = UserDefaults.standard.string(forKey: "KiriTypeOnLaunch"), !typedOnLaunch {
             typedOnLaunch = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -54,20 +53,69 @@ import os
                 textView.insertText(typed, replacementRange: textView.selectedRange())
             }
         }
+        // Screenshot helpers: -KiriFind <word> opens the Honey find bar on
+        // that query, at its first match from the caret. -KiriFindReplace
+        // <text> opens the replace row with that in it, -KiriFindRegex YES
+        // and -KiriFindCase YES set the toggles, -KiriFindNext <n> goes on n
+        // matches. (On a pasteboard of its own: the shared find pasteboard
+        // is the person's.)
         if let query = UserDefaults.standard.string(forKey: "KiriFind") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                guard let find = (textView.delegate as? EditorController)?.model.find else { return }
+                find.board = NSPasteboard.withUniqueName()
                 textView.window?.makeFirstResponder(textView)
-                let pb = NSPasteboard(name: .find)
-                pb.clearContents()
-                pb.setString(query, forType: .string)
-                for action in [NSTextFinder.Action.showFindInterface, .setSearchString, .nextMatch] {
-                    let item = NSMenuItem()
-                    item.tag = action.rawValue
-                    textView.performTextFinderAction(item)
+                let replacement = UserDefaults.standard.string(forKey: "KiriFindReplace")
+                find.show(replace: replacement != nil)
+                find.options = SearchOptions(matchCase: UserDefaults.standard.bool(forKey: "KiriFindCase"),
+                                             regularExpression: UserDefaults.standard.bool(forKey: "KiriFindRegex"))
+                find.replacement = replacement ?? ""
+                find.query = query
+                for _ in 0..<UserDefaults.standard.integer(forKey: "KiriFindNext") { find.step(forward: true) }
+                print("SELFTEST info find “\(query)”: \(find.label)")
+                fflush(stdout)
+            }
+        }
+        // -KiriRenderFind <folder>: the find bar and Go to Line in their
+        // states, drawn offscreen (no window, so no glass: the solid Honey
+        // fill stands in for it).
+        if let folder = UserDefaults.standard.string(forKey: "KiriRenderFind"), !renderedFind {
+            renderedFind = true
+            for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+                let renderer = ImageRenderer(content: FindBarSample.sheet(scheme))
+                renderer.scale = 2
+                let path = "\(folder)/find-bar-\(Honey.theme.id)-\(name).png"
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    print("SELFTEST rendered find \(path)")
                 }
-                let r = (textView.string as NSString).range(of: query)
-                if r.location != NSNotFound { textView.setSelectedRange(r) }
-                textView.performTextFinderAction({ let i = NSMenuItem(); i.tag = NSTextFinder.Action.nextMatch.rawValue; return i }())
+            }
+            fflush(stdout)
+        }
+        // -KiriEditorSnapshot <png>: the editor's own layers (text, selection,
+        // current line, find and Go to Line marks) on the panel's color,
+        // drawn to a file 3 s after launch. For when the screen can't be
+        // captured; the SwiftUI chrome around the editor is not in it.
+        if let path = UserDefaults.standard.string(forKey: "KiriEditorSnapshot") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                guard let frameView = textView.enclosingScrollView?.superview, let layer = frameView.layer else { return }
+                (textView as? KiriTextView)?.marksIfLoaded?.update()
+                let scale: CGFloat = 2, size = frameView.bounds.size
+                guard let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                                          bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                textView.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    ctx.setFillColor(NSColor.honey(Honey.surface).cgColor)
+                }
+                ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+                ctx.scaleBy(x: scale, y: scale)
+                layer.render(in: ctx)
+                if let image = ctx.makeImage() {
+                    try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: path))
+                    let origin = textView.enclosingScrollView?.contentView.bounds.origin ?? .zero
+                    print("SELFTEST editor snapshot \(path) (scrolled to \(origin.y), top inset \(textView.enclosingScrollView?.contentInsets.top ?? 0))")
+                    fflush(stdout)
+                }
             }
         }
         // Screenshot helper: -KiriForceCaret YES shows the caret although the
@@ -359,9 +407,13 @@ import os
                 fflush(stdout)
             }
         }
-        if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
+        // -KiriShowGoToLine YES opens Go to Line; -KiriGoToLine <text> also
+        // types that into it (the line shows as it is typed).
+        if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") || UserDefaults.standard.string(forKey: "KiriGoToLine") != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                (textView.delegate as? EditorController)?.model.showGoToLine = true
+                guard let goToLine = (textView.delegate as? EditorController)?.model.goToLine else { return }
+                goToLine.open()
+                if let text = UserDefaults.standard.string(forKey: "KiriGoToLine") { goToLine.text = text }
             }
         }
         if perf, !started {
@@ -533,8 +585,60 @@ import os
         tv.scrollRangeToVisible(tv.selectedRange())
         tv.window?.makeFirstResponder(tv)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            perfEventLoop(tv) { NSApp.terminate(nil) }
+            perfEventLoop(tv) {
+                Task { @MainActor in
+                    await perfFind(tv)
+                    NSApp.terminate(nil)
+                }
+            }
         }
+    }
+
+    /// The find bar on whatever file is open (use a big one): how long a
+    /// change of the query keeps the main thread, how long the main thread
+    /// is ever held while the search runs, when the count is there, and
+    /// what a keystroke in the document costs with the bar open.
+    private static func perfFind(_ tv: NSTextView) async {
+        guard let ktv = tv as? KiriTextView, let find = (ktv.delegate as? EditorController)?.model.find else { return }
+        find.board = NSPasteboard.withUniqueName()
+        let clock = ContinuousClock()
+        func ms(_ d: Duration) -> String { String(format: "%.1f ms", Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000) }
+        find.show()
+        for query in ["e", "le", "let", "let x", "zzzz-not-here", "func", "\\w+\\("] {
+            find.options.regularExpression = query.hasPrefix("\\")
+            let start = clock.now
+            find.query = query
+            let set = clock.now - start
+            // While the search runs elsewhere the main thread keeps turning:
+            // the longest it took to come back from a 2 ms sleep.
+            var held = Duration.zero, last = clock.now
+            while find.isSearching, clock.now - start < .seconds(10) {
+                try? await Task.sleep(for: .milliseconds(2))
+                held = max(held, clock.now - last - .milliseconds(2))
+                last = clock.now
+            }
+            let found = clock.now - start
+            let draw = clock.measure { ktv.marks.update() }
+            print("SELFTEST PERF find “\(query)”: “\(find.label)”, query set in \(ms(set)), count after \(ms(found)), main thread held at most \(ms(held)), highlights drawn in \(ms(draw)) (\(ktv.marks.shownMatches) in sight)")
+        }
+        find.options.regularExpression = false
+        find.query = "let"
+        while find.isSearching { try? await Task.sleep(for: .milliseconds(5)) }
+        var worst = Duration.zero, total = Duration.zero
+        ktv.window?.makeFirstResponder(ktv)
+        for _ in 0..<50 {
+            let d = clock.measure {
+                tv.insertText("x", replacementRange: tv.selectedRange())
+                tv.displayIfNeeded()
+            }
+            worst = max(worst, d); total += d
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        print("SELFTEST PERF typing in the document with the find bar open: avg \(ms(total / 50)), worst \(ms(worst))")
+        let step = clock.measure { find.step(forward: true) }
+        let all = clock.measure { find.replacement = "LET"; find.replaceAll() }
+        print("SELFTEST PERF Find Next \(ms(step)); Replace All \(ms(all)) (“\(find.label)”)")
+        fflush(stdout)
     }
 
     /// Step 4/5 behaviour that otherwise was only looked at: focus at launch,
@@ -575,109 +679,517 @@ import os
                 }
                 ktv.undoManager?.undo()
 
-                findMenu(ktv)
-
-                // Go to Line.
-                controller.goTo(line: 5, column: 3)
-                report(controller.model.line == 5 && controller.model.column == 3,
-                       "Go to Line 5:3 lands on Ln \(controller.model.line), Col \(controller.model.column)")
-
-                // Wrap off and on.
-                controller.setWrap(false)
-                let off = !(ktv.textContainer?.widthTracksTextView ?? true) && ktv.enclosingScrollView?.hasHorizontalScroller == true
-                controller.setWrap(true)
-                let on = ktv.textContainer?.widthTracksTextView == true && ktv.enclosingScrollView?.hasHorizontalScroller == false
-                report(off && on, "wrap lines off and on")
-
-                // Save through the Save button's path.
-                let docs = NSDocumentController.shared.documents
-                print("SELFTEST info document(for:)=\(String(describing: NSDocumentController.shared.document(for: window))) wc.document=\(String(describing: window.windowController?.document)) docs=\(docs.map { "\($0.className) wcs=\($0.windowControllers.map { $0.window?.windowNumber ?? -1 })" }) window=\(window.windowNumber)")
-                fflush(stdout)
-                guard let doc = NSDocumentController.shared.document(for: window) else {
-                    report(false, "document for the window"); NSApp.terminate(nil); return
-                }
-                ktv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
-                // Variant: -KiriSaveDelay <s> waits like a person before pressing Save.
-                // (A launch argument is a string: `double(forKey:)` reads it, a cast doesn't.)
-                let delay = UserDefaults.standard.string(forKey: "KiriSaveDelay") == nil ? 0.3
-                    : UserDefaults.standard.double(forKey: "KiriSaveDelay")
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                let saver = SaveObserver()
-                var finished = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                    guard !finished else { return }
-                    finished = true
-                    report(false, "Save button path saves (no callback within 4 s; sheets: \(window.attachedSheet.map { "\(type(of: $0))" } ?? "none"))")
-                    tabs(window)
-                }
-                saver.save(doc) { saved in
-                    _ = saver
-                    guard !finished else { return }
-                    finished = true
-                    report(saved && !doc.isDocumentEdited, "Save button path saves (didSave=\(saved))")
-                    tabs(window)
-                }
+                Task { @MainActor in
+                    await findStage(ktv, controller)
+                    await goToLineStage(ktv, controller)
+                    transformations(ktv)
+                    afterBars(ktv, controller, window)
                 }
             }
         }
     }
 
-    /// Edit ▸ Find is Kiri's own (see `KiriCommands`): its keys, pressed
-    /// through the menu bar, must still drive the editor's find bar.
-    private static func findMenu(_ ktv: KiriTextView) {
-        guard let scroll = ktv.enclosingScrollView, let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu,
-              let find = edit.item(withTitle: "Find")?.submenu else { report(false, "Edit ▸ Find exists"); return }
+    /// What `behavior` goes on with after the find bar and Go to Line.
+    private static func afterBars(_ ktv: KiriTextView, _ controller: EditorController, _ window: NSWindow) {
+        // Go to Line.
+        controller.goTo(line: 5, column: 3)
+        report(controller.model.line == 5 && controller.model.column == 3,
+               "Go to Line 5:3 lands on Ln \(controller.model.line), Col \(controller.model.column)")
+
+        // Wrap off and on.
+        controller.setWrap(false)
+        let off = !(ktv.textContainer?.widthTracksTextView ?? true) && ktv.enclosingScrollView?.hasHorizontalScroller == true
+        controller.setWrap(true)
+        let on = ktv.textContainer?.widthTracksTextView == true && ktv.enclosingScrollView?.hasHorizontalScroller == false
+        report(off && on, "wrap lines off and on")
+
+        // Save through the Save button's path.
+        let docs = NSDocumentController.shared.documents
+        print("SELFTEST info document(for:)=\(String(describing: NSDocumentController.shared.document(for: window))) wc.document=\(String(describing: window.windowController?.document)) docs=\(docs.map { "\($0.className) wcs=\($0.windowControllers.map { $0.window?.windowNumber ?? -1 })" }) window=\(window.windowNumber)")
+        fflush(stdout)
+        guard let doc = NSDocumentController.shared.document(for: window) else {
+            report(false, "document for the window"); NSApp.terminate(nil); return
+        }
+        ktv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
+        // Variant: -KiriSaveDelay <s> waits like a person before pressing Save.
+        // (A launch argument is a string: `double(forKey:)` reads it, a cast doesn't.)
+        let delay = UserDefaults.standard.string(forKey: "KiriSaveDelay") == nil ? 0.3
+            : UserDefaults.standard.double(forKey: "KiriSaveDelay")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        let saver = SaveObserver()
+        var finished = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            guard !finished else { return }
+            finished = true
+            report(false, "Save button path saves (no callback within 4 s; sheets: \(window.attachedSheet.map { "\(type(of: $0))" } ?? "none"))")
+            tabs(window)
+        }
+        saver.save(doc) { saved in
+            _ = saver
+            guard !finished else { return }
+            finished = true
+            report(saved && !doc.isDocumentEdited, "Save button path saves (didSave=\(saved))")
+            tabs(window)
+        }
+        }
+    }
+
+    // MARK: Find and Go to Line
+
+    /// A turn of the run loop and a little more: SwiftUI and the layers
+    /// catch up, and the undo group of what was just done closes (AppKit
+    /// closes it after an event; nothing else sends one to a background
+    /// launch).
+    private static func settle(_ milliseconds: Int = 60) async {
+        if let e = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                                      windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
+            NSApp.postEvent(e, atStart: false)
+        }
+        try? await Task.sleep(for: .milliseconds(milliseconds))
+    }
+
+    /// Key presses through the window, as typing sends them, then a moment
+    /// for them to arrive. Only while the keyboard is in a bar's field (or
+    /// on one of its buttons, with `anywhere`): never into the document,
+    /// but for Escape.
+    @discardableResult
+    private static func typeKeys(_ text: String, in window: NSWindow, modifiers: NSEvent.ModifierFlags = [],
+                                 anywhere: Bool = false) async -> Bool {
+        guard anywhere && (text == "\u{1b}" || !(window.firstResponder is KiriTextView)) || fieldEditor(of: window) != nil else {
+            report(false, "the keyboard is in a bar's field for typing “\(text.unicodeScalars.map { $0.value < 32 ? "⌃" : String($0) }.joined())” (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+            return false
+        }
+        let codes: [Character: UInt16] = ["\r": 36, "\u{1b}": 53, "\t": 48]
+        for ch in text {
+            // ⇧Tab arrives as the back-tab character.
+            let characters = ch == "\t" && modifiers.contains(.shift) ? "\u{19}" : String(ch)
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                                            windowNumber: window.windowNumber, context: nil, characters: characters,
+                                            charactersIgnoringModifiers: String(ch), isARepeat: false,
+                                            keyCode: codes[ch] ?? 0) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+            }
+        }
+        await settle(150)
+        return true
+    }
+
+    /// The field of a bar that has the keyboard, if one has.
+    private static func fieldEditor(of window: NSWindow) -> NSTextView? {
+        (window.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0 : nil }
+    }
+
+    /// Whether the editor shows `range` where nothing floats over it: below
+    /// the bar at the top and above the status capsule.
+    private static func isClear(_ range: NSRange, in ktv: KiriTextView) -> Bool {
+        guard let scroll = ktv.enclosingScrollView, let visible = ktv.visibleCharacters(),
+              let rect = ktv.rects(for: range.location..<NSMaxRange(range), near: visible).first else { return false }
+        let clip = scroll.contentView.bounds, insets = scroll.contentInsets
+        return rect.minY >= clip.minY + insets.top - 0.5 && rect.maxY <= clip.maxY - insets.bottom + 0.5
+    }
+
+    /// Kiri's own find bar (`FindController`, shown by `FindBar`): the Edit ▸
+    /// Find keys pressed through the menu bar, the count, next and previous
+    /// around the ends, the highlights, replace and Replace All with undo,
+    /// and what the bar's own field does with Return, Tab and Escape.
+    private static func findStage(_ ktv: KiriTextView, _ controller: EditorController) async {
+        guard let window = ktv.window, let scroll = ktv.enclosingScrollView, let storage = ktv.textStorage,
+              let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu,
+              let menu = edit.item(withTitle: "Find")?.submenu else { report(false, "Edit ▸ Find exists"); return }
+        let find = controller.model.find
         report(Set(edit.items.compactMap { $0.submenu == nil ? nil : $0.title }).isDisjoint(with: ["Spelling and Grammar", "Substitutions", "Speech"])
                && edit.item(withTitle: "Transformations") != nil,
                "Edit has Find and Transformations, no Spelling, Substitutions or Speech")
         /// Presses the item with this key equivalent, as the menu bar would.
         func press(_ key: String, _ mods: NSEvent.ModifierFlags) -> Bool {
-            guard let i = find.items.firstIndex(where: {
+            guard let i = menu.items.firstIndex(where: {
                 $0.keyEquivalent == key && $0.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == mods
-            }), find.items[i].isEnabled else { return false }
-            find.performActionForItem(at: i)
+            }), menu.items[i].isEnabled else { return false }
+            menu.performActionForItem(at: i)
             return true
         }
+        /// Where `needle` is in the text, found without `TextSearch`.
+        func occurrences(_ needle: String, in text: String? = nil, options: NSString.CompareOptions = [.caseInsensitive]) -> [NSRange] {
+            let ns = (text ?? ktv.string) as NSString
+            var found: [NSRange] = [], from = 0
+            while from < ns.length {
+                let r = ns.range(of: needle, options: options, range: NSRange(location: from, length: ns.length - from))
+                guard r.location != NSNotFound else { break }
+                found.append(r)
+                from = NSMaxRange(r)
+            }
+            return found
+        }
+        func origin() -> NSPoint { scroll.contentView.bounds.origin }
         EditAction.selfTestTarget = ktv
         defer { EditAction.selfTestTarget = nil }
-        // The find pasteboard is shared with every other app: put it back after.
-        let findBoard = NSPasteboard(name: .find)
-        let findBefore = findBoard.string(forType: .string)
-        defer {
-            findBoard.clearContents()
-            if let findBefore { findBoard.setString(findBefore, forType: .string) }
+        let original = ktv.string
+        let funcs = occurrences("func"), counts = occurrences("count")
+        guard funcs.count >= 2, counts.count >= 3, !occurrences("import").isEmpty else {
+            report(false, "the test file has “func” twice, “count” three times and an “import” (\(funcs.count), \(counts.count))"); return
         }
-        ktv.window?.makeFirstResponder(ktv)
-        let ns = ktv.string as NSString
-        let word = ns.range(of: "func")
-        ktv.setSelectedRange(word)
+        let couldUndo = ktv.undoManager?.canUndo ?? false
+
+        // ⌘E, once on the pasteboard every app shares: written, checked and
+        // put back before anything else can run.
+        let shared = NSPasteboard(name: .find)
+        let sharedBefore = shared.string(forType: .string)
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(funcs[0])
         let e = press("e", .command)
+        let onShared = shared.string(forType: .string)
+        shared.clearContents()
+        if let sharedBefore { shared.setString(sharedBefore, forType: .string) }
+        report(e && onShared == "func" && find.query == "func" && !find.isOpen,
+               "⌘E makes the selection the query and puts it on the find pasteboard, without opening the bar (“\(onShared ?? "nil")”, open \(find.isOpen))")
+        // From here on a pasteboard of the test's own.
+        let board = NSPasteboard.withUniqueName()
+        find.board = board
+        defer {
+            find.board = NSPasteboard(name: .find)
+            board.releaseGlobally()
+        }
+
+        // ⌘F: Kiri's bar, not AppKit's, and nothing moves.
+        let before = origin()
         let f = press("f", .command)
-        report(e && f && scroll.isFindBarVisible, "⌘E and ⌘F: the find bar opens (pressed \(e) \(f), visible \(scroll.isFindBarVisible))")
-        report(findBoard.string(forType: .string) == "func", "⌘E puts the selection on the find pasteboard")
-        if word.location != NSNotFound {
-            ktv.window?.makeFirstResponder(ktv)
-            ktv.setSelectedRange(NSRange(location: 0, length: 0))
-            let g = press("g", .command)
-            report(g && ktv.selectedRange() == word, "⌘G selects the next match (\(ktv.selectedRange()) vs \(word))")
-            ktv.setSelectedRange(NSRange(location: ns.length, length: 0))
-            let back = press("g", [.shift, .command])
-            report(back && ktv.selectedRange().length == word.length && ktv.selectedRange().location >= word.location,
-                   "⇧⌘G selects the previous match (\(ktv.selectedRange()))")
+        report(f && find.isOpen && !scroll.isFindBarVisible && find.query == "func",
+               "⌘F opens Kiri's find bar with the selected word as the query, and no system find bar (open \(find.isOpen), system bar \(scroll.isFindBarVisible), query “\(find.query)”)")
+        report(find.status == .found(current: 0, total: funcs.count, more: false) && find.label == "1 of \(funcs.count)",
+               "the count reads “1 of \(funcs.count)” (\(find.label))")
+        report(origin() == before && scroll.contentInsets.top == FindBar.obstruction(replace: false),
+               "opening the bar leaves the text where it was (\(before.y) → \(origin().y), room to scroll under the bar \(scroll.contentInsets.top))")
+        ktv.marks.update()
+        let inSight = ktv.visibleCharacters().map { v in funcs.filter { $0.location < v.range.upperBound && NSMaxRange($0) > v.range.lowerBound }.count } ?? -1
+        var background = false
+        storage.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if value != nil { background = true }
         }
-        func hideFindBar() {
-            ktv.window?.makeFirstResponder(ktv)
-            let hide = NSMenuItem()
-            hide.tag = NSTextFinder.Action.hideFindInterface.rawValue
-            ktv.performTextFinderAction(hide)
+        report(ktv.marks.shownMatches == inSight && inSight > 0 && !background && (ktv.undoManager?.canUndo ?? false) == couldUndo,
+               "every match in sight is highlighted, by layers: nothing in the text's attributes or in undo (\(ktv.marks.shownMatches) of \(inSight) in sight)")
+
+        // Next and previous, around the ends, each clear of what floats.
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        let g = press("g", .command)
+        report(g && ktv.selectedRange() == funcs[0] && find.label == "1 of \(funcs.count)" && isClear(funcs[0], in: ktv),
+               "⌘G selects the next match (\(ktv.selectedRange()) vs \(funcs[0]), “\(find.label)”)")
+        let g2 = press("g", .command)
+        report(g2 && ktv.selectedRange() == funcs[1] && find.label == "2 of \(funcs.count)" && isClear(funcs[1], in: ktv),
+               "⌘G again selects the one after (\(ktv.selectedRange()), “\(find.label)”)")
+        ktv.setSelectedRange(NSRange(location: storage.length, length: 0))
+        let back = press("g", [.shift, .command])
+        report(back && ktv.selectedRange() == funcs.last && find.label == "\(funcs.count) of \(funcs.count)",
+               "⇧⌘G selects the previous match (\(ktv.selectedRange()), “\(find.label)”)")
+        let wrapped = press("g", .command)
+        let first = ktv.selectedRange()
+        let wrappedBack = press("g", [.shift, .command])
+        report(wrapped && wrappedBack && first == funcs[0] && ktv.selectedRange() == funcs.last,
+               "next from the last match is the first, previous from the first the last (\(first), \(ktv.selectedRange()))")
+        ktv.marks.update()
+        report(ktv.marks.currentRects.count == 1, "the current match has its outline (\(ktv.marks.currentRects.count) rects)")
+
+        // As the query is typed: the first match from the caret, and a
+        // match on line 1 comes out from under the bar.
+        find.query = "import"
+        let top = occurrences("import")[0]
+        report(ktv.selectedRange() == top && find.label.hasPrefix("1 of ") && isClear(top, in: ktv) && origin().y < 0,
+               "a query finds as it is typed, and a match on line 1 is shown below the bar (scrolled to \(origin().y), selection \(ktv.selectedRange()))")
+        let selected = ktv.selectedRange()
+        find.query = "zzzz-not-here"
+        ktv.marks.update()
+        report(find.status == .none && find.label == "No matches" && ktv.selectedRange() == selected && ktv.marks.shownMatches == 0,
+               "a query that isn't there says “No matches” and leaves the selection alone (“\(find.label)”)")
+        find.options.regularExpression = true
+        find.query = "func ("
+        report(find.status == .invalid && find.label == "Invalid pattern", "an invalid regular expression says so (“\(find.label)”)")
+        find.query = "func \\w+\\("
+        report(find.status == .found(current: 0, total: funcs.count, more: false) && ktv.selectedRange().length > 5,
+               "a regular expression finds (“\(find.label)”, selection \(ktv.selectedRange()))")
+        find.options.regularExpression = false
+        find.query = "greeter"
+        let anyCase = find.label
+        find.options.matchCase = true
+        let thisCase = find.label
+        find.options.matchCase = false
+        report(anyCase.hasSuffix("of \(occurrences("greeter").count)") && thisCase.hasSuffix("of \(occurrences("greeter", options: []).count)")
+               && occurrences("greeter").count > occurrences("greeter", options: []).count,
+               "match case narrows the search (“\(anyCase)”, with match case “\(thisCase)”)")
+        find.query = ""
+        ktv.marks.update()
+        report(find.status == .idle && find.label.isEmpty && ktv.marks.shownMatches == 0, "no query, no count and no highlights")
+
+        // The highlights follow the document as it is edited.
+        find.query = "count"
+        ktv.insertText("count ", replacementRange: NSRange(location: 0, length: 0))
+        await settle()
+        report(find.matches.map { NSRange(location: $0.lowerBound, length: $0.count) } == occurrences("count") && find.matches.count == counts.count + 1,
+               "the matches follow an edit to the document (\(find.matches.count) after typing one more)")
+        ktv.undoManager?.undo()
+        await settle()
+        report(ktv.string == original && find.matches.count == counts.count, "and its undo (\(find.matches.count))")
+
+        // Replace: one match at a time, each its own undo step.
+        report(press("f", [.option, .command]) && find.showsReplace && scroll.contentInsets.top == FindBar.obstruction(replace: true),
+               "⌥⌘F shows the replace row (room under the bar \(scroll.contentInsets.top))")
+        find.replacement = "n"
+        // (The bar takes the keyboard when it opens; here the editor has it.)
+        await settle(300)
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        find.step(forward: true)
+        func replaced(_ n: Int) -> String {
+            var text = original as NSString
+            for r in counts.prefix(n).reversed() { text = text.replacingCharacters(in: r, with: "n") as NSString }
+            return text as String
         }
-        hideFindBar()
-        let hidden = !scroll.isFindBarVisible
-        let replace = press("f", [.option, .command])
-        report(hidden && replace && scroll.isFindBarVisible, "⌥⌘F opens the find bar again (was hidden \(hidden), pressed \(replace))")
+        find.replaceCurrent()
+        await settle()
+        let afterOne = ktv.string, selectionAfterOne = ktv.selectedRange()
+        find.replaceCurrent()
+        await settle()
+        let afterTwo = ktv.string
+        report(afterOne == replaced(1) && afterTwo == replaced(2)
+               && selectionAfterOne == NSRange(location: counts[1].location - 4, length: counts[1].length)
+               && find.label == "1 of \(counts.count - 2)",
+               "Replace changes the current match and goes on to the next (selection \(selectionAfterOne), “\(find.label)”)")
+        ktv.undoManager?.undo()
+        await settle()
+        let undoneOnce = ktv.string
+        ktv.undoManager?.undo()
+        await settle()
+        report(undoneOnce == replaced(1) && ktv.string == original && find.matches.count == counts.count,
+               "each Replace is one undo step (\(find.matches.count) matches again)")
+
+        // A replacement that holds the query is not found again.
+        find.replacement = "countcount"
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        find.step(forward: true)
+        find.replaceCurrent()
+        await settle()
+        report(ktv.selectedRange() == NSRange(location: counts[1].location + 5, length: 5),
+               "after a Replace the search goes on behind what was put in (\(ktv.selectedRange()))")
+        ktv.undoManager?.undo()
+        await settle()
+
+        // Replace All: one undo step for all of them, and it says how many.
+        find.replacement = "n"
+        find.replaceAll()
+        await settle()
+        report(ktv.string == replaced(counts.count) && find.label == "Replaced \(counts.count)",
+               "Replace All replaces every match and says how many (“\(find.label)”)")
+        ktv.undoManager?.undo()
+        await settle()
+        report(ktv.string == original, "and one undo puts them all back")
+        find.options.regularExpression = true
+        find.query = "(\\w+): String"
+        find.replacement = "$1 = \\t$1"
+        let pattern = try? NSRegularExpression(pattern: "(\\w+): String")
+        let expected = pattern?.stringByReplacingMatches(in: original, range: NSRange(location: 0, length: (original as NSString).length),
+                                                         withTemplate: "$1 = \t$1")
+        find.replaceAll()
+        await settle()
+        report(expected != nil && expected != original && ktv.string == expected, "a regular expression replaces with $1 templates (“\(find.label)”)")
+        ktv.undoManager?.undo()
+        await settle()
+        find.options.regularExpression = false
+        find.replacement = ""
+        guard ktv.string == original else { report(false, "the text is back as it was after the replace checks"); return }
+
+        // Closing: the match stays selected, the keyboard is the editor's,
+        // the highlights and the room under the bar are gone.
+        find.query = "func"
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        find.step(forward: true)
+        find.close()
+        ktv.marks.update()
+        report(!find.isOpen && window.firstResponder === ktv && ktv.selectedRange() == funcs[0] && scroll.contentInsets.top == 0
+               && ktv.marks.shownMatches == 0 && origin().y >= 0,
+               "closing leaves the match selected in the editor and takes the highlights away (selection \(ktv.selectedRange()), \(ktv.marks.shownMatches) highlights)")
+        let closedNext = press("g", .command)
+        report(closedNext && !find.isOpen && ktv.selectedRange() == funcs[1], "⌘G finds the next match with the bar closed (\(ktv.selectedRange()))")
         report(press("j", .command), "⌘J is in the menu")
-        // Edit ▸ Transformations, on a selected word.
-        hideFindBar()
+
+        // The bar and Go to Line take each other's place.
+        let goToLine = controller.model.goToLine
+        find.show()
+        goToLine.open()
+        let onlyGoToLine = goToLine.isOpen && !find.isOpen
+        find.show()
+        report(onlyGoToLine && find.isOpen && !goToLine.isOpen, "the find bar and Go to Line never show together")
+        find.close()
+
+        // The bar itself: SwiftUI has to be drawing the window for these.
+        let wasEdited = window.isDocumentEdited
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(funcs[0])
+        ktv.scrollRangeToVisible(funcs[0])
+        _ = press("f", .command)
+        await settle(400)
+        if let field = fieldEditor(of: window) {
+            report(field.string == "func" && field.selectedRange() == NSRange(location: 0, length: 4),
+                   "⌘F puts the keyboard in the find field with its text selected (“\(field.string)”, \(field.selectedRange()))")
+            ktv.marks.update()
+            report(ktv.selectedRange() == NSRange(location: funcs[0].location, length: 0) && ktv.marks.currentRects.count == 1,
+                   "while the keyboard is in the bar the current match is marked, not selected in grey (selection \(ktv.selectedRange()), “\(find.label)”, \(ktv.marks.currentRects.count) outlined)")
+            await typeKeys("count", in: window)
+            report(find.query == "count" && find.label == "\(counts.firstIndex { $0.location >= funcs[0].location }.map { $0 + 1 } ?? 1) of \(counts.count)",
+                   "typing in the field searches as it is typed (“\(find.query)”, “\(find.label)”)")
+            report(window.isDocumentEdited == wasEdited && ktv.string == original && (ktv.undoManager?.canUndo ?? false) == couldUndo,
+                   "typing in the find field is not an edit of the document (edited \(window.isDocumentEdited), can undo \(ktv.undoManager?.canUndo ?? false))")
+            let start = find.label
+            await typeKeys("\r", in: window)
+            let afterReturn = find.label
+            await typeKeys("\r", in: window, modifiers: .shift)
+            report(afterReturn != start && find.label == start && fieldEditor(of: window) != nil,
+                   "Return in the field goes to the next match and ⇧Return back, the keyboard staying in the field (“\(start)” → “\(afterReturn)” → “\(find.label)”)")
+            let viaMenu = press("g", .command)
+            report(viaMenu && find.label == afterReturn, "⌘G works while the keyboard is in the find field (“\(find.label)”)")
+            _ = press("f", [.option, .command])
+            await settle(300)
+            await typeKeys("\t", in: window)
+            await typeKeys("xy", in: window)
+            let inReplace = find.replacement
+            // Return in the replace field replaces the current match.
+            await typeKeys("\r", in: window)
+            let replacedByReturn = ktv.string
+            ktv.undoManager?.undo()
+            await settle()
+            report(replacedByReturn != original && occurrences("count", in: replacedByReturn).count == counts.count - 1
+                   && occurrences("xy", in: replacedByReturn).count == occurrences("xy", in: original).count + 1 && ktv.string == original,
+                   "Return in the replace field replaces the current match, and undo puts it back")
+            await typeKeys("\t", in: window, modifiers: .shift)
+            await typeKeys("q", in: window)
+            report(inReplace == "xy" && find.query == "q",
+                   "Tab goes from the find field to the replace field and ⇧Tab back (replace “\(inReplace)”, find “\(find.query)”)")
+            find.query = "func"
+            // With Full Keyboard Access, Tab also stops at buttons: after the fields.
+            if NSApp.isFullKeyboardAccessEnabled {
+                await wakeAccessibility()
+                var order = [focusedName(in: window)]
+                for _ in 0..<10 {
+                    await typeKeys("\t", in: window, anywhere: true)
+                    order.append(focusedName(in: window))
+                }
+                report(Array(order.prefix(10)) == ["Find", "Replace with", "Match Case", "Regular Expression", "Previous Match", "Next Match",
+                                                   "Close Find", "Replace", "Replace All", "Hide Replace"],
+                       "Tab goes through the bar: find field, replace field, then the buttons (\(order))")
+                find.show()
+                await settle(300)
+            } else {
+                print("SELFTEST SKIP Tab through the bar's buttons (Full Keyboard Access is off: System Settings ▸ Keyboard ▸ Keyboard navigation)")
+            }
+            let current = find.label
+            await typeKeys("\u{1b}", in: window)
+            report(!find.isOpen && window.firstResponder === ktv && ktv.selectedRange().length == 4 && funcs.contains(ktv.selectedRange()),
+                   "Escape closes the bar and returns to the editor with the current match selected (“\(current)”, selection \(ktv.selectedRange()))")
+            // Escape with the keyboard in the editor closes the bar too.
+            find.show()
+            await settle(300)
+            window.makeFirstResponder(ktv)
+            await typeKeys("\u{1b}", in: window, anywhere: true)
+            report(!find.isOpen && window.firstResponder === ktv, "Escape in the editor closes the bar over it (open \(find.isOpen))")
+        } else if window.occlusionState.contains(.visible) {
+            report(false, "⌘F puts the keyboard in the find field (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+        } else {
+            print("SELFTEST SKIP the find field's keys: Return, Tab, Escape (the window is covered or the screen locked: SwiftUI isn't drawing the bar)")
+        }
+        // Put the window back as it was for the checks that follow.
+        find.close()
+        find.replacement = ""
+        find.showsReplace = false
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.scrollOrigin = .zero
+    }
+
+    /// Go to Line (`GoToLineController`, shown by `GoToLine`): the line
+    /// shows while its number is typed, Return keeps it, Escape goes back
+    /// to the selection and the scroll position from before.
+    private static func goToLineStage(_ ktv: KiriTextView, _ controller: EditorController) async {
+        guard let window = ktv.window, let scroll = ktv.enclosingScrollView else { return }
+        let model = controller.model, goToLine = model.goToLine
+        func origin() -> NSPoint { scroll.contentView.bounds.origin }
+        func caretIsClear() -> Bool { isClear(ktv.selectedRange(), in: ktv) }
+        let lines = controller.lineCount
+        guard lines >= 12 else { report(false, "the test file has a dozen lines (\(lines))"); return }
+        window.makeFirstResponder(ktv)
+        let selection = NSRange(location: 3, length: 4)
+        ktv.setSelectedRange(selection)
+        controller.scrollOrigin = .zero
+        let before = origin()
+        /// Whether the last line is out of sight at the top of the document.
+        let scrolls = ktv.frame.height > scroll.contentView.bounds.height - scroll.contentInsets.bottom
+
+        goToLine.open()
+        report(goToLine.isOpen && origin() == before && ktv.selectedRange() == selection && scroll.contentInsets.top == GoToLine.obstruction,
+               "Go to Line opens without moving anything (\(before.y) → \(origin().y))")
+        goToLine.text = "\(lines)"
+        ktv.marks.update()
+        report(model.line == lines && caretIsClear() && ktv.marks.showsLine && (!scrolls || origin().y > before.y),
+               "typing a line number shows that line, marked, before Return (Ln \(model.line), scrolled to \(origin().y), marked \(ktv.marks.showsLine))")
+        goToLine.text = "1"
+        report(model.line == 1 && caretIsClear() && origin().y < 0, "line 1 is shown below the field (Ln \(model.line), scrolled to \(origin().y))")
+        goToLine.text = "99999"
+        report(model.line == lines && !goToLine.isInvalid, "a number past the end is the last line (Ln \(model.line))")
+        goToLine.text = "9x"
+        report(goToLine.isInvalid && model.line == lines && goToLine.isOpen, "what isn't a line number is marked invalid and goes nowhere")
+        goToLine.commit()
+        report(goToLine.isOpen && goToLine.isInvalid, "and Return does nothing with it")
+        goToLine.text = ""
+        report(!goToLine.isInvalid && ktv.selectedRange() == selection && origin() == before,
+               "clearing the field goes back to where the editor was (selection \(ktv.selectedRange()), \(origin().y))")
+        goToLine.text = "12"
+        goToLine.cancel()
+        ktv.marks.update()
+        report(!goToLine.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv
+               && scroll.contentInsets.top == 0 && !ktv.marks.showsLine,
+               "Escape restores the selection and the scroll position (selection \(ktv.selectedRange()), \(origin().y))")
+        goToLine.open()
+        goToLine.text = "5:3"
+        let previewed = (model.line, model.column)
+        goToLine.commit()
+        report(previewed == (5, 3) && !goToLine.isOpen && model.line == 5 && model.column == 3 && ktv.selectedRange().length == 0
+               && window.firstResponder === ktv && scroll.contentInsets.top == 0,
+               "5:3 previews and Return keeps Ln \(model.line), Col \(model.column) with the keyboard in the editor")
+
+        // The field itself: SwiftUI has to be drawing the window for these.
+        ktv.setSelectedRange(selection)
+        controller.scrollOrigin = .zero
+        goToLine.open()
+        await settle(400)
+        if fieldEditor(of: window) != nil {
+            await typeKeys("7", in: window)
+            let typed = model.line
+            await typeKeys("\u{1b}", in: window)
+            report(typed == 7 && !goToLine.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv,
+                   "typed into the field: 7 previews line 7, Escape goes back (Ln \(typed), selection \(ktv.selectedRange()))")
+            goToLine.open()
+            await settle(400)
+            await typeKeys("8\r", in: window)
+            report(!goToLine.isOpen && model.line == 8 && window.firstResponder === ktv,
+                   "typed into the field: 8 and Return go to line 8 (Ln \(model.line))")
+        } else if window.occlusionState.contains(.visible) {
+            report(false, "Go to Line puts the keyboard in its field (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+        } else {
+            print("SELFTEST SKIP Go to Line's field: typing, Return, Escape (the window is covered or the screen locked: SwiftUI isn't drawing it)")
+        }
+        goToLine.cancel()
+        window.makeFirstResponder(ktv)
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.scrollOrigin = .zero
+    }
+
+    /// Edit ▸ Transformations, on a selected word.
+    private static func transformations(_ ktv: KiriTextView) {
+        guard let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
+        EditAction.selfTestTarget = ktv
+        defer { EditAction.selfTestTarget = nil }
+        ktv.window?.makeFirstResponder(ktv)
+        let word = (ktv.string as NSString).range(of: "func")
         if word.location != NSNotFound, let transformations = edit.item(withTitle: "Transformations")?.submenu,
            let upper = transformations.items.firstIndex(where: { $0.title == "Make Upper Case" }) {
             ktv.setSelectedRange(word)
@@ -689,8 +1201,6 @@ import os
         } else {
             report(false, "Edit ▸ Transformations ▸ Make Upper Case exists")
         }
-        // Put the window back as it was for the checks that follow.
-        hideFindBar()
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
     }
 
@@ -982,7 +1492,12 @@ import os
     /// What VoiceOver is given for a window, flattened: each element's role,
     /// name, frame on screen and whether it is selected.
     private struct AccessibilityElement {
-        let role: String, name: String, frame: NSRect, selected: Bool
+        let role: String, name: String, frame: NSRect, selected: Bool, focused: Bool
+    }
+
+    /// The name of the control VoiceOver is told has the keyboard.
+    private static func focusedName(in window: NSWindow) -> String {
+        accessibilityElements(of: window).last { $0.focused && !$0.name.isEmpty && $0.role != NSAccessibility.Role.group.rawValue }?.name ?? "nothing"
     }
 
     /// SwiftUI builds its accessibility elements once something has asked
@@ -1010,8 +1525,10 @@ import os
             let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { ask($0) as? String }.first { !$0.isEmpty } ?? ""
             let selected = o.responds(to: NSSelectorFromString("isAccessibilitySelected"))
                 && o.value(forKey: "accessibilitySelected") as? Bool == true
+            let focused = o.responds(to: NSSelectorFromString("isAccessibilityFocused"))
+                && o.value(forKey: "accessibilityFocused") as? Bool == true
             list.append(AccessibilityElement(role: ask("accessibilityRole") as? String ?? "", name: name, frame: frame,
-                                             selected: selected))
+                                             selected: selected, focused: focused))
         }
         guard depth < 16 else { return list }
         for child in ask("accessibilityChildren") as? [Any] ?? [] { list += accessibilityElements(of: child, depth: depth + 1) }
@@ -1124,6 +1641,53 @@ private struct TabStripSample: View {
         .background(Color.honeyCanvas)
         .environment(\.honeyOffscreen, true)
         .honeyRoot(HoneyAppearance())
+    }
+}
+
+/// The find bar and Go to Line in their states, for `-KiriRenderFind`: each
+/// over a strip of the editor's paper, as wide as a default window's editor
+/// and as narrow as the narrowest.
+private enum FindBarSample {
+    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+        let regex = SearchOptions(matchCase: true, regularExpression: true)
+        let bars: [(String, FindController, FindBar.Field?)] = [
+            ("no query", .sample(query: "", status: .idle), .query),
+            ("matches, on the third", .sample(query: "count", status: .found(current: 2, total: 12, more: false)), .query),
+            ("matches, the editor has the keyboard and is on none of them",
+             .sample(query: "count", status: .found(current: nil, total: 12, more: false)), nil),
+            ("no matches", .sample(query: "cuont", status: .none), .query),
+            ("match case and regular expression on, an invalid pattern", .sample(query: "func (", status: .invalid, options: regex), .query),
+            ("more matches than are counted", .sample(query: "e", status: .found(current: 41, total: 100_000, more: true)), .query),
+            ("replace row", .sample(query: "count", status: .found(current: 0, total: 4, more: false), replacement: "tally"), .replacement),
+            ("replace row, after Replace All",
+             .sample(query: "count", status: .none, replacement: "tally", notice: "Replaced 4"), .replacement),
+        ]
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach([860.0, 460.0], id: \.self) { width in
+                ForEach(bars.indices, id: \.self) { i in
+                    strip("\(bars[i].0), \(Int(width)) pt", width: width) { FindBar(find: bars[i].1, sampleFocus: bars[i].2) }
+                }
+            }
+            strip("Go to Line", width: 460) { GoToLine(goToLine: .sample(text: ""), lineCount: 340) }
+            strip("Go to Line, a line typed", width: 460) { GoToLine(goToLine: .sample(text: "128"), lineCount: 340) }
+            strip("Go to Line, not a line", width: 460) { GoToLine(goToLine: .sample(text: "12b", invalid: true), lineCount: 340) }
+        }
+        .padding(16)
+        .background(Color.honeyCanvas)
+        .environment(\.honeyOffscreen, true)
+        .environment(\.colorScheme, scheme)
+        .honeyRoot(HoneyAppearance())
+    }
+
+    @MainActor private static func strip(_ caption: String, width: CGFloat, @ViewBuilder bar: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
+            bar()
+                .padding(.top, EditorBar.topPadding)
+                .padding(.bottom, EditorBar.clearance)
+                .frame(width: width)
+                .background(Color.honeySurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
     }
 }
 #endif

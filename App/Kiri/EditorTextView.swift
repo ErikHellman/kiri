@@ -19,6 +19,55 @@ final class KiriTextView: NSTextView {
     /// Typed letters fade in (drawn by `FadingLayoutFragment`).
     private(set) lazy var typingFade = TypingFade(textView: self)
 
+    /// What find and Go to Line point out in the text, once either has.
+    private(set) var marksIfLoaded: EditorMarks?
+    var marks: EditorMarks {
+        if let marksIfLoaded { return marksIfLoaded }
+        let marks = EditorMarks(textView: self)
+        marksIfLoaded = marks
+        return marks
+    }
+    /// How the editor animates now (`setAnimation`).
+    private(set) var animation = EditorAnimation.none
+
+    private var model: EditorModel? { (delegate as? EditorController)?.model }
+
+    // MARK: Find
+
+    // Find is Kiri's own bar (`FindBar`), so the standard find actions,
+    // wherever they come from, go to it and never to AppKit's find bar or
+    // find panel. (The two families of actions number theirs alike.)
+    override func performFindPanelAction(_ sender: Any?) { performTextFinderAction(sender) }
+
+    override func performTextFinderAction(_ sender: Any?) {
+        guard let find = model?.find, let tag = (sender as? NSValidatedUserInterfaceItem)?.tag,
+              let action = NSTextFinder.Action(rawValue: tag) else { return }
+        switch action {
+        case .showFindInterface: find.perform(.show)
+        case .showReplaceInterface: find.perform(.showReplace)
+        case .nextMatch: find.perform(.next)
+        case .previousMatch: find.perform(.previous)
+        case .setSearchString: find.perform(.useSelection)
+        case .replace, .replaceAndFind: find.perform(.replace)
+        case .replaceAll: find.perform(.replaceAll)
+        case .hideReplaceInterface: find.perform(.hideReplace)
+        case .hideFindInterface: find.perform(.close)
+        default: break
+        }
+    }
+
+    /// Escape in the editor closes the bar over it, as it does in the bar.
+    /// With none open it does what it always did.
+    override func cancelOperation(_ sender: Any?) {
+        if let model, model.find.isOpen {
+            model.find.close()
+        } else if let model, model.goToLine.isOpen {
+            model.goToLine.cancel()
+        } else {
+            super.cancelOperation(sender)
+        }
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
@@ -28,6 +77,7 @@ final class KiriTextView: NSTextView {
     }
 
     func setAnimation(_ mode: EditorAnimation, letterFade: Bool = false) {
+        animation = mode
         typingFade.mode = letterFade ? mode : .none
         guard mode != (effects?.mode ?? .none) else { return }
         effects?.remove()
@@ -69,12 +119,14 @@ final class KiriTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
+        if ok { model?.find.editorFocusChanged(hasFocus: true) }
         effects?.update(animated: false)
         return ok
     }
 
     override func resignFirstResponder() -> Bool {
         let ok = super.resignFirstResponder()
+        if ok { model?.find.editorFocusChanged(hasFocus: false) }
         DispatchQueue.main.async { [weak self] in self?.effects?.update(animated: false) }
         return ok
     }
@@ -82,6 +134,7 @@ final class KiriTextView: NSTextView {
     override func layout() {
         super.layout()
         effects?.update(animated: false)
+        marksIfLoaded?.setNeedsUpdate()
     }
 
     override func drawBackground(in rect: NSRect) {
@@ -150,6 +203,7 @@ final class KiriTextView: NSTextView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         effects?.updateColors()
+        marksIfLoaded?.updateColors()
         needsDisplay = true
     }
 
@@ -157,6 +211,7 @@ final class KiriTextView: NSTextView {
     /// rendered text fragments hold the old ones until redrawn.
     func themeDidChange() {
         effects?.updateColors()
+        marksIfLoaded?.updateColors()
         if let tlm = textLayoutManager { tlm.invalidateLayout(for: tlm.documentRange) }
         needsDisplay = true
     }
@@ -277,10 +332,8 @@ final class EditorContainerView: NSView {
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
-        textView.usesFindBar = true
-        // Incremental search dims the whole text grey while searching; Kiri
-        // finds on Return / ⌘G instead and keeps the text readable.
-        textView.isIncrementalSearchingEnabled = false
+        // No `usesFindBar`: find is Kiri's own glass bar over the editor
+        // (`FindBar`), which `KiriTextView` sends the find actions to.
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false

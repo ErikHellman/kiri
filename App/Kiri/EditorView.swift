@@ -10,14 +10,29 @@ import SwiftUI
     var selectedLength = 0
     var lineCount = 1
     var language = Language.plainText
-    /// Go to Line (⌘L) is showing.
-    var showGoToLine = false
     /// The folder sidebar has the keyboard (⇧⌘E moves it there and back).
     var sidebarHasFocus = false
     /// Bumped to ask the sidebar to take the keyboard.
     var sidebarFocusRequest = 0
     /// Set by the editor once it exists.
     @ObservationIgnored weak var controller: EditorController?
+    /// Find and replace (⌘F) and Go to Line (⌘L): the two glass bars that
+    /// float over the top of the editor, one at a time (opening one closes
+    /// the other).
+    let find = FindController()
+    let goToLine = GoToLineController()
+
+    init() {
+        find.model = self
+        goToLine.model = self
+    }
+
+    /// A bar opened, closed or changed height: the editor keeps what it
+    /// scrolls to clear of it.
+    func overlayChanged() {
+        controller?.setTopObstruction(find.isOpen ? FindBar.obstruction(replace: find.showsReplace)
+                                      : goToLine.isOpen ? GoToLine.obstruction : 0)
+    }
 }
 
 /// The editor as a SwiftUI view.
@@ -87,7 +102,10 @@ struct EditorView: NSViewRepresentable {
         assert(view.textView.textLayoutManager?.delegate == nil, "the text view already has a layout delegate")
         view.textView.textLayoutManager?.delegate = self
         highlighter = SyntaxHighlighter(textView: view.textView)
-        view.onScroll = { [weak self] in self?.highlighter?.visibleRangeChanged() }
+        view.onScroll = { [weak self, weak view] in
+            self?.highlighter?.visibleRangeChanged()
+            view?.textView.marksIfLoaded?.setNeedsUpdate()
+        }
         applyFont()
     }
 
@@ -174,6 +192,7 @@ struct EditorView: NSViewRepresentable {
             container?.updateGutterWidth()
             textView?.typingFade.textEdited(range: editedRange, delta: delta)
             highlighter?.lastEdit = editedRange
+            model.find.textEdited(old: old, newLength: editedRange.length)
         }
     }
 
@@ -209,6 +228,7 @@ struct EditorView: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
         updateCaret()
+        model.find.selectionChanged()
     }
 
     private func updateCaret() {
@@ -245,15 +265,46 @@ struct EditorView: NSViewRepresentable {
         highlighter?.visibleRangeChanged()
     }
 
+    var lineCount: Int { lineIndex.lineCount }
+
+    /// Where a 1-based line (and column) is in the text.
+    private func caret(line: Int, column: Int) -> NSRange {
+        let l = min(max(line, 1), lineIndex.lineCount) - 1
+        let lineRange = lineIndex.range(ofLine: l)
+        return NSRange(location: min(lineRange.lowerBound + max(0, column - 1), lineRange.upperBound), length: 0)
+    }
+
     /// Moves the caret to a 1-based line (and column) and scrolls to it.
     func goTo(line: Int, column: Int = 1) {
         guard let textView else { return }
-        let l = min(max(line, 1), lineIndex.lineCount) - 1
-        let lineRange = lineIndex.range(ofLine: l)
-        let r = NSRange(location: min(lineRange.lowerBound + max(0, column - 1), lineRange.upperBound), length: 0)
+        let r = caret(line: line, column: column)
         textView.setSelectedRange(r)
         textView.scrollRangeToVisible(r)
         textView.window?.makeFirstResponder(textView)
+    }
+
+    /// Go to Line's preview: the caret on that line and the line in sight
+    /// and marked (a pulse, or a steady band without motion), while the
+    /// keyboard stays in the Go to Line field.
+    func previewLine(_ line: Int, column: Int = 1) {
+        guard let textView else { return }
+        let r = caret(line: line, column: column)
+        textView.setSelectedRange(r)
+        reveal(r)
+        textView.marks.showLine(true, pulse: textView.animation == .full)
+    }
+
+    /// Replaces `range` with `string` as one undoable edit (find and
+    /// replace). False when the text view refuses the edit.
+    func replaceText(in range: NSRange, with string: String, actionName: String) -> Bool {
+        guard let textView, let storage = textView.textStorage, NSMaxRange(range) <= storage.length,
+              textView.shouldChangeText(in: range, replacementString: string) else { return false }
+        // Its own undo step, not part of the typing before it.
+        textView.breakUndoCoalescing()
+        storage.replaceCharacters(in: range, with: NSAttributedString(string: string, attributes: textAttributes))
+        textView.didChangeText()
+        textView.undoManager?.setActionName(actionName)
+        return true
     }
 
     /// ⌘] / ⌘[: indents or outdents every line the selection touches, as
