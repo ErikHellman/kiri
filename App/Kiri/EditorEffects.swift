@@ -222,12 +222,14 @@ extension KiriTextView {
         guard let storage = textStorage, let font else { return (.infinity, .infinity) }
         let text = storage.string as NSString
         let index = selectedRange().location
-        /// The glyph's bearings, nil for white space; a character the editor
-        /// font doesn't draw (emoji, CJK) counts as ink right up to its edges.
+        /// The glyph's bearings, nil for white space; a character its font
+        /// doesn't draw (emoji, CJK) counts as ink right up to its edges.
         func bearings(_ i: Int) -> (left: CGFloat, right: CGFloat)? {
             guard i >= 0, i < text.length else { return nil }
             var ch = text.character(at: i)
             if let scalar = UnicodeScalar(ch), CharacterSet.whitespacesAndNewlines.contains(scalar) { return nil }
+            // The highlighter sets bold and italic faces (Markdown headings, emphasis).
+            let font = storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont ?? font
             var glyph = CGGlyph()
             guard CTFontGetGlyphsForCharacters(font, &ch, &glyph, 1) else { return (0, 0) }
             var box = CGRect.zero
