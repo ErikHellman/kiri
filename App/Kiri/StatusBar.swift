@@ -38,8 +38,8 @@ struct EditorStatusBar: View {
         // At rest while the person types or scrolls (it still takes
         // clicks). Not with reduced motion, and not for someone who asked
         // for more contrast.
-        let resting = contrast != .increased
-            && StatusBarRest.opacity(resting: model.statusRest.isResting, reducedMotion: motion.reduced) < 1
+        let resting = StatusBarRest.opacity(resting: model.statusRest.isResting, reducedMotion: motion.reduced,
+                                            increasedContrast: contrast == .increased) < 1
         ViewThatFits(in: .horizontal) {
             bar(Set(Item.allCases), resting)
             bar([.language, .position, .encoding, .lineEnding], resting)
@@ -47,6 +47,9 @@ struct EditorStatusBar: View {
             bar([.position], resting)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { model.statusRest.barWidth = $0 }
+        // The pointer on the bar itself brings it back too (the editor's
+        // tracking area sees it coming, 40 pt out).
+        .onHover { if $0 { model.statusRest.pointerOnBar() } }
         .padding(.horizontal, Self.sideMargin)
         .padding(.bottom, Self.bottomPadding)
         .animation(resting ? motion.medium : motion.quick, value: resting)
@@ -165,9 +168,10 @@ struct EditorStatusBar: View {
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
-    /// What the bar is drawn with.
-    static func opacity(resting: Bool, reducedMotion: Bool) -> Double {
-        resting && !reducedMotion ? restingOpacity : 1
+    /// What the bar is drawn with. It doesn't fade with reduced motion,
+    /// nor for someone who asked for more contrast.
+    static func opacity(resting: Bool, reducedMotion: Bool, increasedContrast: Bool) -> Double {
+        resting && !reducedMotion && !increasedContrast ? restingOpacity : 1
     }
 
     /// The person typed or scrolled.
@@ -191,6 +195,8 @@ struct EditorStatusBar: View {
                          height: HoneyStatusMetrics.barHeight)
         if bar.insetBy(dx: -Self.reach, dy: -Self.reach).contains(point) { comeBack() }
     }
+
+    func pointerOnBar() { comeBack() }
 
     /// The keyboard went to one of the bar's items, or left it.
     func focusChanged(inside: Bool) {

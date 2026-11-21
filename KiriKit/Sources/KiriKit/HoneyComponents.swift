@@ -625,8 +625,9 @@ private struct HoneyTaskButtonStyle: ButtonStyle {
 /// be pressed have room for the capsule they show on hover.
 ///
 /// `resting` fades it to `Honey.restOpacity`, glass and all, for while the
-/// person works in the text it floats over. (The fade is done in here: an
-/// opacity put on glass from outside doesn't reach it.)
+/// person works in the text it floats over. (The fade is done in here, on
+/// the content and by swapping the glass for a faint fill: drawn offscreen,
+/// an opacity put on the glass view from outside changed nothing.)
 public struct HoneyStatusBar<Content: View>: View {
     let resting: Bool
     let content: Content
@@ -764,7 +765,8 @@ public struct HoneyStatusMenu<Items: View>: View {
         // A menu button with a name: one whose label is a view of its own
         // has none, whatever label it is given.
         .accessibilityRepresentation {
-            Menu("\(name), \(text)") { items }
+            // (Its items are the menu's, not elements of the bar.)
+            Menu("\(name), \(text)") { items }.accessibilityChildren { EmptyView() }
         }
     }
 

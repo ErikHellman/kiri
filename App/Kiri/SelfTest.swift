@@ -1256,6 +1256,9 @@ import os
         return HoneyAppearance(motion: level).reduced(systemReduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
+    /// Nor does it for someone who asked for more contrast.
+    private static var increasedContrast: Bool { NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast }
+
     /// The status bar: its items' names for VoiceOver, the position button
     /// opening Go to Line, a width that holds wherever the caret is, the
     /// indentation Shift Left and Right use, and resting while the text is
@@ -1350,7 +1353,7 @@ import os
 
         // Resting: scrolling fades it, the pointer coming near brings it
         // back, and an open menu or the keyboard on it keeps it solid.
-        func shown() -> Double { StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion) }
+        func shown() -> Double { StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion, increasedContrast: increasedContrast) }
         func scrollByHand() { NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll) }
         let size = container.bounds.size
         let top = EditorStatusBar.bottomPadding + HoneyStatusMetrics.barHeight
@@ -1361,11 +1364,11 @@ import os
         let far = shown()
         container.pointerMoved(to: NSPoint(x: size.width / 2 + rest.barWidth / 2 + StatusBarRest.reach - 10, y: top + StatusBarRest.reach - 10))
         let near = shown()
-        if reducedMotion {
-            report(scrolled == 1 && far == 1 && near == 1, "with reduced motion the status bar stays solid while scrolling (\(scrolled))")
+        if reducedMotion || increasedContrast {
+            report(scrolled == 1 && far == 1 && near == 1, "with reduced motion or increased contrast the status bar stays solid while scrolling (\(scrolled))")
         } else {
             report(scrolled == Honey.restOpacity && far == Honey.restOpacity && near == 1,
-                   "scrolling rests the status bar at \(Honey.restOpacity), and the pointer within \(Int(StatusBarRest.reach)) pt brings it back (scrolled \(scrolled), pointer far \(far), near \(near))")
+                   "scrolling rests the status bar (what its view is told to draw: \(Honey.restOpacity)), and the pointer within \(Int(StatusBarRest.reach)) pt brings it back (scrolled \(scrolled), pointer far \(far), near \(near))")
         }
         let menu = NSMenu()
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: menu)
@@ -1524,14 +1527,14 @@ import os
         let typed = await wait(2) { tv.string == "x" }
         let start = clock.now
         report(typed && !model.showsStartHint, "the first key typed starts the document and ends the hint (“\(tv.string)”)")
-        let whileTyping = StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion)
+        let whileTyping = StatusBarRest.opacity(resting: rest.isResting, reducedMotion: reducedMotion, increasedContrast: increasedContrast)
         let back = await wait(StatusBarRest.pause + 1) { !rest.isResting }
         let after = clock.now - start
-        if reducedMotion {
-            report(whileTyping == 1, "with reduced motion the status bar stays solid while typing (\(whileTyping))")
+        if reducedMotion || increasedContrast {
+            report(whileTyping == 1, "with reduced motion or increased contrast the status bar stays solid while typing (\(whileTyping))")
         } else {
             report(whileTyping == Honey.restOpacity && back && after >= .seconds(StatusBarRest.pause - 0.25) && after <= .seconds(StatusBarRest.pause + 0.5),
-                   "typing rests the status bar at \(Honey.restOpacity) and it comes back after its pause (\(whileTyping), back after \(after))")
+                   "typing rests the status bar (what its view is told to draw: \(Honey.restOpacity)) and it comes back after its pause (\(whileTyping), back after \(after))")
         }
         await settle()
         tv.undoManager?.undo()
