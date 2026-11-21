@@ -10,6 +10,9 @@ struct EditorScreen: View {
     @State private var tabs = WindowTabs()
     @State private var saveState = HoneyTaskState.idle
     @State private var saver = SaveObserver()
+    /// What the layout shows: follows `folder.sidebarVisible`, animated
+    /// only when the person toggles it.
+    @State private var sidebarShown = false
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
@@ -23,13 +26,22 @@ struct EditorScreen: View {
         VStack(spacing: Honey.gap) {
             topBar
             HStack(spacing: Honey.gap) {
-                if let folder = tabs.folder, folder.sidebarVisible {
+                if let folder = tabs.folder, sidebarShown {
                     FolderSidebar(session: folder, model: model, currentFile: fileURL?.standardizedFileURL, open: openFromSidebar)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 editor
             }
-            .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: tabs.folder?.sidebarVisible)
+            // Only Show/Hide Sidebar slides it. A new tab of a folder window
+            // gets the folder as it opens, and must not slide it in again.
+            .onChange(of: tabs.folder?.sidebarVisible, initial: true) { old, new in
+                let show = new ?? false
+                if old == nil || new == nil || old == new {
+                    sidebarShown = show
+                } else {
+                    withAnimation(HoneyMotion(appearance, systemReduced: reduceMotion).shape) { sidebarShown = show }
+                }
+            }
         }
         .padding(.horizontal, Honey.gap)
         .padding(.bottom, Honey.gap)

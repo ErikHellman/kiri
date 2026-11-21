@@ -38,7 +38,15 @@ import SwiftUI
             return
         }
         // SwiftUI opens each document in a window of its own; join the
-        // frontmost document window's tab group instead.
+        // frontmost document window's tab group instead. A folder window's
+        // folder comes along now, so the new tab opens with the sidebar
+        // already there instead of sliding it in a moment later.
+        if let host = NSApp.orderedWindows.first(where: {
+            $0 !== window && $0.isVisible && $0.tabbingIdentifier == window.tabbingIdentifier
+        }), let f = FolderSessions.session(for: host) {
+            FolderSessions.set(f, for: window)
+            folder = f
+        }
         DispatchQueue.main.async {
             let host = NSApp.orderedWindows.first {
                 $0 !== window && $0.isVisible && $0.tabbingIdentifier == window.tabbingIdentifier
