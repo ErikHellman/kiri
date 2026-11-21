@@ -267,7 +267,9 @@ final class EditorContainerView: NSView {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.usesFindBar = true
-        textView.isIncrementalSearchingEnabled = true
+        // Incremental search dims the whole text grey while searching; Kiri
+        // finds on Return / ⌘G instead and keeps the text readable.
+        textView.isIncrementalSearchingEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -331,3 +333,4 @@ final class EditorContainerView: NSView {
         gutter.needsDisplay = true
     }
 }
+

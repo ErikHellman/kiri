@@ -10,6 +10,7 @@ import os
 /// undoes, reverts and quits. Results go to stdout as `SELFTEST …` lines.
 @MainActor enum SelfTest {
     private static var started = false
+    private static var typedOnLaunch = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -37,7 +38,8 @@ import os
         }
         // Screenshot helpers: type into the document (makes it dirty), and
         // open the find bar searching for a word.
-        if let typed = UserDefaults.standard.string(forKey: "KiriTypeOnLaunch") {
+        if let typed = UserDefaults.standard.string(forKey: "KiriTypeOnLaunch"), !typedOnLaunch {
+            typedOnLaunch = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
                 textView.insertText(typed, replacementRange: textView.selectedRange())
