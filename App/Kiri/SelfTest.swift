@@ -225,7 +225,9 @@ import os
             // app has asked this process something, so ask it one question
             // through the accessibility API first (off the main thread, which
             // has to answer it), then read the window's own elements.
-            DispatchQueue.global().asyncAfter(deadline: .now() + (UserDefaults.standard.object(forKey: "KiriDumpDelay") as? Double ?? 1.5)) {
+            // (Launch arguments are strings: `double(forKey:)` reads them, a cast doesn't.)
+            let delay = UserDefaults.standard.string(forKey: "KiriDumpDelay") == nil ? 1.5 : UserDefaults.standard.double(forKey: "KiriDumpDelay")
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                 var value: AnyObject?
                 AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -271,6 +273,16 @@ import os
                         return nil
                     }
                     dump(window, 0)
+                    // -KiriDumpAgain <seconds>: once more that much later,
+                    // to see whether something is still moving.
+                    let again = UserDefaults.standard.double(forKey: "KiriDumpAgain")
+                    if again > 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + again) {
+                            print("AX again after \(again) s")
+                            dump(window, 0)
+                            fflush(stdout)
+                        }
+                    }
                     if let press {
                         guard let button = find(window, press) else { print("AX no button “\(press)”"); fflush(stdout); return }
                         let pressed = (button as AnyObject).responds(to: NSSelectorFromString("accessibilityPerformPress"))
@@ -698,6 +710,7 @@ import os
                     Task { @MainActor in
                         await tabState(window)
                         await manyFiles(window)
+                        await crowdedStrip(window)
                         // The last line of a run that got to its end.
                         print("SELFTEST DONE behavior")
                         fflush(stdout)
@@ -911,6 +924,82 @@ import os
         report(ws.count == 6 && together(ws) && ws.first.map(group)?.count == 6
                && sessions.allSatisfy { $0 != nil && $0 === sessions.first! },
                "3 more files join the folder window (\(shape(ws, of: 6)), \(sessions.compactMap { $0 }.count) with the sidebar)")
+    }
+
+    // MARK: A strip with more tabs than fit
+
+    /// With the seventeen tabs `manyFiles` left in the first window, the
+    /// strip scrolls: whichever tab is selected is whole inside it, and the
+    /// buttons after it stay inside the window, at the default width and
+    /// at the narrowest. Read from what VoiceOver is given, which has the
+    /// frames of the real scroll view (pictures drawn offscreen have none).
+    private static func crowdedStrip(_ original: NSWindow) async {
+        guard let group = original.tabGroup, group.windows.count >= 12 else {
+            report(false, "a crowded tab group to look at (\(original.tabGroup?.windows.count ?? 0) tabs)"); return
+        }
+        // SwiftUI builds its accessibility elements once something has
+        // asked this process for them, from another thread.
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                var value: AnyObject?
+                AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
+                c.resume()
+            }
+        }
+        struct Element { let role: String, name: String, frame: NSRect, selected: Bool }
+        func elements(_ root: Any, into list: inout [Element], depth: Int = 0) {
+            func ask(_ selector: String) -> Any? {
+                let o = root as AnyObject, sel = NSSelectorFromString(selector)
+                return o.responds(to: sel) ? o.perform(sel)?.takeUnretainedValue() : nil
+            }
+            if let o = root as? NSObject, o.responds(to: NSSelectorFromString("accessibilityFrame")),
+               let frame = (o.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue {
+                let name = ["accessibilityLabel", "accessibilityTitle"].compactMap { ask($0) as? String }.first { !$0.isEmpty } ?? ""
+                let selected = o.responds(to: NSSelectorFromString("isAccessibilitySelected"))
+                    && o.value(forKey: "accessibilitySelected") as? Bool == true
+                list.append(Element(role: ask("accessibilityRole") as? String ?? "", name: name, frame: frame, selected: selected))
+            }
+            guard depth < 16 else { return }
+            for child in ask("accessibilityChildren") as? [Any] ?? [] { elements(child, into: &list, depth: depth + 1) }
+        }
+        let width = original.frame.width
+        defer {
+            for w in group.windows { w.setFrame(NSRect(x: w.frame.minX, y: w.frame.minY, width: width, height: w.frame.height), display: true) }
+        }
+        for narrow in [false, true] {
+            if narrow {
+                for w in group.windows { w.setFrame(NSRect(x: w.frame.minX, y: w.frame.minY, width: 480, height: w.frame.height), display: true) }
+            }
+            // The last tab is the one a scroll view could leave cut off:
+            // selected, it grows past where the content ended.
+            for (position, tab) in [("last", group.windows.last), ("first", group.windows.first), ("middle", group.windows[group.windows.count / 2])] {
+                guard let tab else { continue }
+                group.selectedWindow = tab
+                // In front of Kiri's other windows (the app itself stays in
+                // the background): SwiftUI leaves a covered window's
+                // views alone until it shows.
+                tab.orderFront(nil)
+                try? await Task.sleep(for: .milliseconds(100))
+                // Nor one that can't be seen at all: behind a locked screen
+                // or other apps' windows its strip never hears of the
+                // selection (`onChange` waits for the window to show).
+                guard tab.occlusionState.contains(.visible) else {
+                    print("SELFTEST SKIP \(group.windows.count) tabs at \(Int(tab.frame.width)) pt, \(position) selected (the window is covered or the screen locked: SwiftUI isn't updating it)")
+                    continue
+                }
+                // Long enough for the selection's spring to come to rest.
+                try? await Task.sleep(for: .milliseconds(900))
+                var list: [Element] = []
+                elements(tab, into: &list)
+                let strip = list.first { $0.role == NSAccessibility.Role.scrollArea.rawValue && $0.name == "Tabs" }?.frame
+                let selected = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.selected }
+                let after = list.filter { ["New Tab", "Save"].contains($0.name) }.map(\.frame)
+                let inView = strip.map { s in selected.map { $0.frame.minX >= s.minX - 0.5 && $0.frame.maxX <= s.maxX + 0.5 } ?? false } ?? false
+                let room = strip.map { s in after.count == 2 && after.allSatisfy { $0.minX >= s.maxX && $0.maxX <= tab.frame.maxX - Honey.gap + 0.5 } } ?? false
+                report(inView && room && selected?.name == tab.title,
+                       "\(group.windows.count) tabs at \(Int(tab.frame.width)) pt, \(position) selected: whole in the strip, + and Save in the window (strip \(strip.map { "\($0.minX)…\($0.maxX)" } ?? "none"), “\(selected?.name ?? "none")” \(selected.map { "\($0.frame.minX)…\($0.frame.maxX)" } ?? ""), buttons \(after.map { "\($0.minX)…\($0.maxX)" }))")
+            }
+        }
     }
 
     /// The windows of the documents for `urls`, once every one of them has a

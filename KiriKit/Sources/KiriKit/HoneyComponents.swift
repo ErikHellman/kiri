@@ -52,15 +52,24 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     let tabs: [HoneyTab<ID>]
     @Binding var selection: ID
     let onClose: ((ID) -> Void)?
+    let scrollOffset: Binding<CGFloat>?
     @Namespace private var pill
     @FocusState private var focused: ID?
+    @State private var position = ScrollPosition(x: 0)
+    @State private var scrolled = HoneyScrollOffset()
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
     @Environment(\.honeyOffscreen) private var offscreen
 
-    public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, onClose: ((ID) -> Void)? = nil) {
+    /// - Parameter scrollOffset: where a strip that scrolls is scrolled to,
+    ///   for when several strips show the same tabs in turn (Kiri has one
+    ///   per window of a tab group): each starts where the last one was, so
+    ///   the tabs don't jump when one window takes another's place.
+    public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, scrollOffset: Binding<CGFloat>? = nil,
+                onClose: ((ID) -> Void)? = nil) {
         self.tabs = tabs
         _selection = selection
+        self.scrollOffset = scrollOffset
         self.onClose = onClose
     }
 
@@ -86,32 +95,54 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
         let content = CGFloat(layout.contentWidth(spacing: Double(HoneyTabMetrics.spacing)))
         let viewport = layout.overflows ? CGFloat(layout.viewport) : content
         let ids = tabs.map(\.id)
+        /// Where the strip has to be to show tab `id` whole, coming from `offset`.
+        func offset(showing id: ID?, from offset: CGFloat) -> CGFloat {
+            CGFloat(TabWidths.offset(showing: tabs.firstIndex { $0.id == id }, widths: layout.widths,
+                                     spacing: Double(HoneyTabMetrics.spacing), viewport: Double(viewport),
+                                     from: Double(offset)))
+        }
+        /// Scrolls there, at once.
+        func reveal(_ id: ID?) {
+            scrolled.go(to: offset(showing: id, from: scrollOffset?.wrappedValue ?? scrolled.x), with: $position)
+        }
+        // A strip that scrolls changes at once. A scroll view goes no
+        // further than its content reaches at that moment, so while a
+        // newly selected tab at the end was still growing to its width,
+        // it could not be brought whole into view.
+        let change = layout.overflows ? nil : motion.shape
+        func settle(_ transaction: inout Transaction) {
+            guard layout.overflows else { return }
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
         return HStack(spacing: HoneyTabMetrics.spacing) {
             Group {
                 if offscreen {
                     row(layout, motion)
-                        .offset(x: -HoneyTabMetrics.offsetShowing(tabs.firstIndex { $0.id == selection },
-                                                                  widths: layout.widths, viewport: viewport))
+                        .offset(x: -offset(showing: selection, from: 0))
                         .frame(width: viewport, alignment: .leading)
                         .clipped()
                 } else {
-                    ScrollViewReader { proxy in
-                        ScrollView(.horizontal) { row(layout, motion) }
-                            .scrollIndicators(.hidden)
-                            .scrollDisabled(!layout.overflows)
-                            .frame(width: viewport)
-                            .accessibilityLabel("Tabs")
-                            // The selected tab stays in view, and so does
-                            // the one the keyboard is on.
-                            .onChange(of: selection, initial: true) { old, new in
-                                withAnimation(old == new ? nil : motion.shape) { proxy.scrollTo(new) }
-                            }
-                            .onChange(of: ids) { withAnimation(motion.shape) { proxy.scrollTo(selection) } }
-                            .onChange(of: viewport) { proxy.scrollTo(selection) }
-                            .onChange(of: focused) { _, id in
-                                if let id { withAnimation(motion.quick) { proxy.scrollTo(id) } }
-                            }
-                    }
+                    ScrollView(.horizontal) { row(layout, motion) }
+                        .scrollPosition($position)
+                        .scrollIndicators(.hidden)
+                        .scrollDisabled(!layout.overflows)
+                        .frame(width: viewport)
+                        .accessibilityLabel("Tabs")
+                        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x }) { _, x in
+                            scrolled.x = x
+                            scrollOffset?.wrappedValue = x
+                        }
+                        // The selected tab stays in view, and so does the
+                        // one the keyboard is on. A strip that appears
+                        // starts where the last one to show these tabs was.
+                        .onAppear { reveal(selection) }
+                        .onChange(of: selection) { reveal(selection) }
+                        .onChange(of: ids) { reveal(selection) }
+                        .onChange(of: viewport) { reveal(selection) }
+                        .onChange(of: focused) { _, id in
+                            if let id { reveal(id) }
+                        }
                 }
             }
             // Tabs scrolled out of view end at the capsule's edge.
@@ -124,8 +155,10 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
         .honeyGlass(.chrome)
         // Tabs that open and close elsewhere (another window, a menu
         // command) move the strip as a click in it does.
-        .animation(motion.shape, value: ids)
-        .animation(motion.shape, value: selection)
+        .animation(change, value: ids)
+        .animation(change, value: selection)
+        .transaction(value: ids) { settle(&$0) }
+        .transaction(value: selection) { settle(&$0) }
     }
 
     private func row(_ layout: TabWidths.Result, _ motion: HoneyMotion) -> some View {
@@ -241,12 +274,31 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
                     measureDetail: { Double(detailWidth($0)) })
     }
 
-    /// How far a strip that can't scroll (an offscreen picture) is moved to
-    /// show the selected tab: as little as a scroll view would.
-    static func offsetShowing(_ selected: Int?, widths: [Double], viewport: CGFloat) -> CGFloat {
-        guard let selected, selected < widths.count else { return 0 }
-        let end = widths[...selected].reduce(0, +) + Double(spacing) * Double(selected)
-        return max(CGFloat(end) - viewport, 0)
+}
+
+/// Where a strip's scroll view is, kept out of view state (following it
+/// must not redraw the strip on every point scrolled), and where it was
+/// last sent.
+@MainActor private final class HoneyScrollOffset {
+    var x: CGFloat = 0
+    private var wanted: CGFloat?
+    private var asked = 0
+
+    /// Scrolls to `target`, and sees that it got there. A scroll view
+    /// that isn't laid out yet (its window was just shown, or is still
+    /// taking in its tabs) drops the request, and one for the same place
+    /// as the last counts as no change: so each differs by a hair, and is
+    /// made again for a moment until the scroll view is there.
+    func go(to target: CGFloat, with position: Binding<ScrollPosition>, tries: Int = 0) {
+        wanted = target
+        guard abs(target - x) > 0.25 else { return }
+        asked += 1
+        position.wrappedValue.scrollTo(x: target + (asked.isMultiple(of: 2) ? 0.01 : 0))
+        guard tries < 8 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+            guard let self, self.wanted == target else { return }
+            self.go(to: target, with: position, tries: tries + 1)
+        }
     }
 }
 

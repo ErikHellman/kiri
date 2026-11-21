@@ -66,6 +66,24 @@ import SwiftUI
     @ObservationIgnored private(set) var shown: [[Int]] = []
     #endif
 
+    /// Where the tab strip is scrolled to, when it has more tabs than fit.
+    /// Shared by the windows of a tab group: each draws its own strip, and
+    /// the one that shows next starts where the last one was, so the tabs
+    /// stay put when a click swaps one window for another.
+    var stripOffset: CGFloat {
+        get {
+            guard let group = window?.tabGroup, let x = Self.stripOffsets.object(forKey: group) else { return 0 }
+            return CGFloat(x.doubleValue)
+        }
+        set {
+            // Only the strip that is showing says where the strip is.
+            guard let window, let group = window.tabGroup, group.selectedWindow === window else { return }
+            Self.stripOffsets.setObject(NSNumber(value: Double(newValue)), forKey: group)
+        }
+    }
+
+    private static let stripOffsets = NSMapTable<NSWindowTabGroup, NSNumber>.weakToStrongObjects()
+
     private func show(_ next: [Item]) {
         guard next != items else { return }
         items = next

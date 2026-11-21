@@ -134,6 +134,7 @@ struct EditorScreen: View {
                     if !tabs.items.isEmpty {
                         HoneyTabStrip(tabs.tabs,
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
+                                      scrollOffset: Binding(get: { tabs.stripOffset }, set: { tabs.stripOffset = $0 }),
                                       onClose: { tabs.close($0) })
                     }
                     Button {

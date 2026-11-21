@@ -150,6 +150,21 @@ public enum TabWidths {
         return Result(widths: widths, overflows: true, viewport: viewport, hidden: max(count - shown, 1))
     }
 
+    /// How far a strip that scrolls is scrolled to show tab `index` whole,
+    /// coming from `offset`: no further than it takes (a tab already in
+    /// view moves nothing), and never past either end of the tabs.
+    public static func offset(showing index: Int?, widths: [Double], spacing: Double = 2, viewport: Double,
+                              from offset: Double) -> Double {
+        let content = widths.reduce(0, +) + spacing * Double(max(widths.count - 1, 0))
+        let limit = max(content - viewport, 0)
+        var x = min(max(offset, 0), limit)
+        guard let index, widths.indices.contains(index) else { return x }
+        let start = widths[..<index].reduce(0, +) + spacing * Double(index)
+        let end = start + widths[index]
+        if start < x { x = start } else if end > x + viewport { x = end - viewport }
+        return min(max(x, 0), limit)
+    }
+
     /// The width `L` at which `widths`, each cut to `L` at most, add up to `total`.
     private static func level(_ widths: [Double], toFit total: Double) -> Double {
         var left = total

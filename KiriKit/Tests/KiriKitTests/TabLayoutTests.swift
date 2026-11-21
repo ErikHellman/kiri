@@ -182,6 +182,34 @@ import Testing
         }
     }
 
+    @Test func scrollsNoFurtherThanItTakes() {
+        // Ten tabs of 56 with gaps of 2 are 578 wide; 200 show at a time.
+        let widths = [Double](repeating: 56, count: 10)
+        func offset(_ index: Int?, from: Double) -> Double {
+            TabWidths.offset(showing: index, widths: widths, spacing: 2, viewport: 200, from: from)
+        }
+        // In view already: nothing moves, so the tab stays under the pointer.
+        #expect(offset(1, from: 0) == 0)
+        #expect(offset(4, from: 150) == 150)
+        // Off the trailing edge: its end comes to the viewport's end.
+        #expect(offset(4, from: 0) == 88)
+        #expect(offset(9, from: 0) == 378)
+        // Off the leading edge: its start comes to the viewport's start.
+        #expect(offset(2, from: 378) == 116)
+        #expect(offset(0, from: 378) == 0)
+        // Never past the ends, whatever it is told it came from.
+        #expect(offset(9, from: 5000) == 378)
+        #expect(offset(nil, from: 5000) == 378)
+        #expect(offset(nil, from: -20) == 0)
+        #expect(offset(42, from: 100) == 100)
+        // Tabs that all fit don't scroll.
+        #expect(TabWidths.offset(showing: 2, widths: [56, 56, 56], viewport: 400, from: 120) == 0)
+        // A tab wider than the viewport: its end when coming from before
+        // it, its start when coming from after.
+        #expect(TabWidths.offset(showing: 1, widths: [56, 300, 56], viewport: 200, from: 0) == 158)
+        #expect(TabWidths.offset(showing: 1, widths: [56, 300, 56], viewport: 200, from: 216) == 58)
+    }
+
     @Test func emptyStrip() {
         let r = allocate([], selected: nil, available: 100)
         #expect(r.widths.isEmpty && !r.overflows)
