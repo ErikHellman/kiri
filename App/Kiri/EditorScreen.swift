@@ -45,6 +45,10 @@ struct EditorScreen: View {
         .honeyCanvas()
         .background(WindowReader { tabs.attach($0) })
         .focusedSceneValue(\.editorModel, model)
+        .focusedSceneValue(\.windowTabs, tabs)
+        .focusedSceneValue(\.textEncoding, encodingBinding)
+        .focusedSceneValue(\.lineEnding, lineEndingBinding)
+        .focusedSceneValue(\.byteOrderMark, bomBinding)
         .onAppear {
             detectLanguage()
             tabs.resume()
@@ -74,7 +78,7 @@ struct EditorScreen: View {
                         Label("New Tab", systemImage: "plus")
                     }
                     .buttonStyle(.honeyIcon)
-                    .help("New document (⌘N)")
+                    .help("New tab (⌘T)")
                 }
             }
             Spacer(minLength: 0)
@@ -139,7 +143,7 @@ struct EditorScreen: View {
 
             Menu {
                 Picker("Line Endings", selection: lineEndingBinding) {
-                    ForEach(LineEnding.allCases, id: \.self) { Text(lineEndingName($0)).tag($0) }
+                    ForEach(LineEnding.allCases, id: \.self) { Text($0.menuName).tag($0) }
                 }
                 .pickerStyle(.inline)
             } label: {
@@ -159,14 +163,6 @@ struct EditorScreen: View {
 
     private var positionAccessibility: String {
         "Line \(model.line) of \(model.lineCount), column \(model.column)"
-    }
-
-    private func lineEndingName(_ e: LineEnding) -> String {
-        switch e {
-        case .lf: "LF — macOS and Linux"
-        case .crlf: "CRLF — Windows"
-        case .cr: "CR — Classic Mac OS"
-        }
     }
 
     // Changing the save format is an undoable edit, so the document turns dirty.
@@ -250,4 +246,21 @@ private struct GoToLine: View {
 extension FocusedValues {
     /// The front window's editor, for menu commands.
     @Entry var editorModel: EditorModel?
+    /// The front window's tabs, for Window ▸ Next Tab and ⌘1 … ⌘9.
+    @Entry var windowTabs: WindowTabs?
+    /// The front document's save format, for the Format menu (undoable).
+    @Entry var textEncoding: Binding<TextEncoding>?
+    @Entry var lineEnding: Binding<LineEnding>?
+    @Entry var byteOrderMark: Binding<Bool>?
+}
+
+extension LineEnding {
+    /// The status bar and Format menu name.
+    var menuName: String {
+        switch self {
+        case .lf: "LF — macOS and Linux"
+        case .crlf: "CRLF — Windows"
+        case .cr: "CR — Classic Mac OS"
+        }
+    }
 }
