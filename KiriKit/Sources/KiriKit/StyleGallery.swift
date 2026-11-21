@@ -69,10 +69,11 @@ public struct StyleGallery: View {
 
     private var statusBar: some View {
         HoneyStatusBar {
-            HoneyPill("Markdown", systemImage: "doc.text", tone: .accent)
-            HoneyStatusItem("Ln 4, Col 18")
-            HoneyStatusItem("UTF-8")
-            HoneyStatusItem("LF")
+            HoneyStatusMenu("Markdown", name: "Language", tone: .accent) { Button("Markdown") {} }
+            HoneyStatusButton("Ln 4, Col 18", systemImage: "text.cursor") {}
+            HoneyStatusItem("Spaces: 4")
+            HoneyStatusMenu("UTF-8", name: "Encoding") { Button("UTF-8") {} }
+            HoneyStatusMenu("LF", name: "Line endings") { Button("LF") {} }
             if tabs.first(where: { $0.id == selectedTab })?.dirty == true {
                 HoneyStatusItem("Edited", systemImage: "circle.fill")
             }

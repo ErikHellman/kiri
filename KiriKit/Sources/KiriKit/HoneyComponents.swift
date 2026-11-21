@@ -620,36 +620,257 @@ private struct HoneyTaskButtonStyle: ButtonStyle {
 
 // MARK: Status bar
 
-/// A floating glass status bar for the bottom of the editor.
+/// A floating glass status bar for the bottom of the editor. Its items
+/// bring their own side padding (`HoneyStatusMetrics`), so those that can
+/// be pressed have room for the capsule they show on hover.
+///
+/// `resting` fades it to `Honey.restOpacity`, glass and all, for while the
+/// person works in the text it floats over. (The fade is done in here: an
+/// opacity put on glass from outside doesn't reach it.)
 public struct HoneyStatusBar<Content: View>: View {
+    let resting: Bool
     let content: Content
 
-    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+    public init(resting: Bool = false, @ViewBuilder content: () -> Content) {
+        self.resting = resting
+        self.content = content()
+    }
 
     public var body: some View {
-        HStack(spacing: 14) { content }
+        HStack(spacing: 0) { content }
             .font(.honey(.caption, weight: .semibold))
             .foregroundStyle(Color.honeyMuted)
-            .padding(.horizontal, 14)
-            .frame(height: 28)
-            .honeyGlass(.chrome)
+            .padding(.horizontal, HoneyStatusMetrics.inset)
+            .frame(height: HoneyStatusMetrics.barHeight)
+            .opacity(resting ? Honey.restOpacity : 1)
+            .honeyGlass(.chrome, in: Capsule(), resting: resting)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Status bar")
     }
 }
 
-/// A muted status item: an optional icon and a short value.
+/// The status bar's measures.
+public enum HoneyStatusMetrics {
+    public static let barHeight: CGFloat = 28
+    /// Between the bar's capsule and an item's.
+    static let inset: CGFloat = 2
+    /// An item's height: the least a pointer target may be.
+    static let itemHeight: CGFloat = 24
+    /// Beside an item's text.
+    static let side: CGFloat = 9
+    /// A menu's chevron, the gap before it and the room after it. The room
+    /// is always there, so the bar keeps its width when the chevron shows.
+    static let chevron: CGFloat = 7
+    static let chevronGap: CGFloat = 3
+    static let chevronTrailing: CGFloat = 6
+    static var menuTrailing: CGFloat { chevronGap + chevron + chevronTrailing }
+    /// The pill of an accent item at rest: 20 pt high around its text.
+    static let pillInset: CGFloat = 2
+    static var pillTrailingInset: CGFloat { menuTrailing - (side - pillInset) }
+}
+
+/// What a status item that can be pressed shows while the pointer or the
+/// keyboard is on it. Given to an item, it draws that state for a picture.
+public enum HoneyStatusHighlight: Sendable {
+    case hover, focus
+}
+
+/// An icon and a short value in the status bar's type, in the room of the
+/// widest texts it may show (`reserving`), so its neighbours stay put.
+private struct HoneyStatusText: View {
+    let text: String
+    var systemImage: String?
+    var reserving: [String] = []
+    var alignment = Alignment.leading
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let systemImage { Image(systemName: systemImage).font(.system(size: 10, weight: .bold)) }
+            ZStack(alignment: alignment) {
+                ForEach(reserving, id: \.self) { Text($0).hidden().accessibilityHidden(true) }
+                Text(text)
+            }
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+        }
+    }
+}
+
+/// A muted status item that does nothing when pressed: an optional icon
+/// and a short value.
 public struct HoneyStatusItem: View {
     let text: String
     let systemImage: String?
+    let reserving: [String]
 
-    public init(_ text: String, systemImage: String? = nil) {
+    /// - Parameter reserving: the widest texts the item may come to show;
+    ///   it keeps their room and centres `text` in it.
+    public init(_ text: String, systemImage: String? = nil, reserving: [String] = []) {
         self.text = text
         self.systemImage = systemImage
+        self.reserving = reserving
     }
 
     public var body: some View {
-        HStack(spacing: 4) {
-            if let systemImage { Image(systemName: systemImage).font(.system(size: 10, weight: .bold)) }
-            Text(text).monospacedDigit()
+        HoneyStatusText(text: text, systemImage: systemImage, reserving: reserving, alignment: .center)
+            .padding(.horizontal, HoneyStatusMetrics.side)
+            .frame(height: HoneyStatusMetrics.itemHeight)
+    }
+}
+
+/// A status item that opens a menu. On hover, and while the keyboard is on
+/// it, it shows a `surface-2` capsule (the tabs' hover) and a chevron; an
+/// `.accent` item is a small amber pill at rest, which grows to take the
+/// chevron in. VoiceOver hears "`name`, `text`, menu button".
+public struct HoneyStatusMenu<Items: View>: View {
+    let text: String
+    let name: String
+    let tone: HoneyPill.Tone
+    let showing: HoneyStatusHighlight?
+    let onFocusChange: ((Bool) -> Void)?
+    let items: Items
+    @Environment(\.honeyOffscreen) private var offscreen
+
+    /// - Parameters:
+    ///   - text: the value shown, such as "UTF-8".
+    ///   - name: what the value is, such as "Encoding".
+    public init(_ text: String, name: String, tone: HoneyPill.Tone = .neutral, showing: HoneyStatusHighlight? = nil,
+                onFocusChange: ((Bool) -> Void)? = nil, @ViewBuilder items: () -> Items) {
+        self.text = text
+        self.name = name
+        self.tone = tone
+        self.showing = showing
+        self.onFocusChange = onFocusChange
+        self.items = items()
+    }
+
+    public var body: some View {
+        Group {
+            if offscreen {
+                // `ImageRenderer` can't draw a menu button: its label stands in.
+                label
+            } else {
+                Menu { items } label: { label }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+            }
+        }
+        // The capsule, chevron and ring are drawn around the menu button,
+        // not in its label.
+        .modifier(HoneyStatusChrome(tone: tone, chevron: true, showing: showing, onFocusChange: onFocusChange))
+        // A menu button with a name: one whose label is a view of its own
+        // has none, whatever label it is given.
+        .accessibilityRepresentation {
+            Menu("\(name), \(text)") { items }
+        }
+    }
+
+    private var label: some View {
+        HoneyStatusText(text: text)
+            .font(.honey(.caption, weight: tone == .accent ? .heavy : .semibold))
+            .foregroundStyle(tone == .accent ? Color.honeyAccentInk : Color.honeyMuted)
+            .padding(.leading, HoneyStatusMetrics.side)
+            .padding(.trailing, HoneyStatusMetrics.menuTrailing)
+            .frame(height: HoneyStatusMetrics.itemHeight)
+            .contentShape(Capsule())
+    }
+}
+
+/// A status item that does something when pressed, with the hover capsule
+/// and focus ring of `HoneyStatusMenu` and no chevron.
+public struct HoneyStatusButton: View {
+    let text: String
+    let systemImage: String?
+    let reserving: [String]
+    let showing: HoneyStatusHighlight?
+    let onFocusChange: ((Bool) -> Void)?
+    let action: () -> Void
+
+    /// - Parameter reserving: the widest texts the item may come to show;
+    ///   it keeps their room, with `text` at its leading edge.
+    public init(_ text: String, systemImage: String? = nil, reserving: [String] = [], showing: HoneyStatusHighlight? = nil,
+                onFocusChange: ((Bool) -> Void)? = nil, action: @escaping () -> Void) {
+        self.text = text
+        self.systemImage = systemImage
+        self.reserving = reserving
+        self.showing = showing
+        self.onFocusChange = onFocusChange
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HoneyStatusText(text: text, systemImage: systemImage, reserving: reserving)
+                .padding(.horizontal, HoneyStatusMetrics.side)
+                .frame(height: HoneyStatusMetrics.itemHeight)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(HoneyStatusButtonStyle())
+        .modifier(HoneyStatusChrome(tone: .neutral, chevron: false, showing: showing, onFocusChange: onFocusChange))
+    }
+}
+
+/// The hover capsule says the item can be pressed; pressing dims its text.
+private struct HoneyStatusButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// Around a status item that can be pressed: the capsule and (for a menu)
+/// the chevron on hover and keyboard focus, and the Honey focus ring.
+private struct HoneyStatusChrome: ViewModifier {
+    let tone: HoneyPill.Tone
+    let chevron: Bool
+    let showing: HoneyStatusHighlight?
+    let onFocusChange: ((Bool) -> Void)?
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let active = hovering || focused || showing != nil
+        content
+            .focused($focused)
+            .focusEffectDisabled()
+            .background { fill(active: active) }
+            .overlay(alignment: .trailing) {
+                if chevron {
+                    Image(systemName: "chevron.down").font(.system(size: HoneyStatusMetrics.chevron, weight: .heavy))
+                        .foregroundStyle(tone == .accent ? Color.honeyAccentInk : Color.honeyMuted)
+                        .frame(width: HoneyStatusMetrics.chevron)
+                        .padding(.trailing, HoneyStatusMetrics.chevronTrailing)
+                        .opacity(active ? 1 : 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                Capsule().strokeBorder(Color.honeyFocus, lineWidth: focused || showing == .focus ? 2 : 0)
+                    .allowsHitTesting(false)
+            }
+            .onHover { hovering = $0 }
+            .onChange(of: focused) { _, now in onFocusChange?(now) }
+            .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: active)
+    }
+
+    @ViewBuilder private func fill(active: Bool) -> some View {
+        if tone == .accent {
+            // The pill it is at rest grows into the hover capsule.
+            Capsule().fill(Color.honeyAccentSoft)
+                .padding(.leading, active ? 0 : HoneyStatusMetrics.pillInset)
+                .padding(.trailing, active ? 0 : HoneyStatusMetrics.pillTrailingInset)
+                .padding(.vertical, active ? 0 : HoneyStatusMetrics.pillInset)
+        } else if active {
+            // On a bar that is solid `surface-2` (reduce transparency,
+            // increase contrast) the hover is a step darker.
+            Capsule().fill(reduceTransparency || contrast == .increased ? Color.honeySurface3 : Color.honeySurface2.opacity(0.7))
         }
     }
 }

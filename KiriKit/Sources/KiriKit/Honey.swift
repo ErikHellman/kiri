@@ -172,6 +172,9 @@ public enum Honey {
     public static let springDamping = 0.72
     /// How long a "Saved" confirmation stays before the button returns (§7.2).
     public static let doneHold = 1.5
+    /// How much is left of chrome that rests while the person works under
+    /// it (the status bar while typing or scrolling).
+    public static let restOpacity = 0.35
 
     // MARK: Type (§4)
 

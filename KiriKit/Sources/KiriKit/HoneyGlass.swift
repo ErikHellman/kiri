@@ -54,9 +54,13 @@ public enum HoneyGlass: Sendable {
 
 public extension View {
     /// Puts this view on Honey glass in `shape`. `interactive` makes the glass
-    /// react to the pointer and presses (use it for controls).
-    func honeyGlass<S: Shape>(_ kind: HoneyGlass = .chrome, in shape: S, interactive: Bool = false) -> some View {
-        modifier(HoneyGlassModifier(kind: kind, shape: shape, interactive: interactive))
+    /// react to the pointer and presses (use it for controls). `resting`
+    /// takes the glass away and leaves `Honey.restOpacity` of its solid
+    /// fill, for chrome that gets out of the way of the text under it
+    /// (glass at any strength blurs or bends that text); fade the content too.
+    func honeyGlass<S: Shape>(_ kind: HoneyGlass = .chrome, in shape: S, interactive: Bool = false,
+                              resting: Bool = false) -> some View {
+        modifier(HoneyGlassModifier(kind: kind, shape: shape, interactive: interactive, resting: resting))
     }
 
     /// Puts this view on Honey glass in a capsule.
@@ -74,16 +78,25 @@ private struct HoneyGlassModifier<S: Shape>: ViewModifier {
     let kind: HoneyGlass
     let shape: S
     let interactive: Bool
+    var resting = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
     func body(content: Content) -> some View {
         if reduceTransparency || contrast == .increased {
+            let rest = resting ? Honey.restOpacity : 1
             content
-                .background(kind.solid, in: shape)
-                .overlay(shape.stroke(Color.honeyLine, lineWidth: contrast == .increased ? 2 : 1))
+                .background(kind.solid.opacity(rest), in: shape)
+                .overlay(shape.stroke(Color.honeyLine.opacity(rest), lineWidth: contrast == .increased ? 2 : 1))
         } else {
-            content.glassEffect(kind.glass(interactive: interactive), in: shape)
+            content
+                .background {
+                    if resting {
+                        shape.fill(kind.solid.opacity(Honey.restOpacity))
+                            .overlay(shape.stroke(Color.honeyLine.opacity(Honey.restOpacity), lineWidth: 1))
+                    }
+                }
+                .glassEffect(resting ? .identity : kind.glass(interactive: interactive), in: shape)
         }
     }
 }

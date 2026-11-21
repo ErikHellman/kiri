@@ -171,6 +171,9 @@ public struct HoneyMotion: Sendable {
     public var shape: Animation? { off ? nil : reduced ? .honeyQuick : .honeySpring }
     /// Color and hover changes: quick, or nothing when off.
     public var quick: Animation? { off ? nil : .honeyQuick }
+    /// Small movement, and chrome that fades out of the way: 240 ms, or
+    /// nothing when off.
+    public var medium: Animation? { off ? nil : .easeOut(duration: Honey.medium) }
 }
 
 public extension HoneyTheme {
