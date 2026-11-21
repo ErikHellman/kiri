@@ -1,43 +1,66 @@
 import Testing
 @testable import KiriKit
 
-/// The contrast promises in docs/DESIGN.md §3 and §12, in every mode.
+/// The contrast promises in docs/DESIGN.md §3 and §12, in every mode and
+/// every color theme.
 struct HoneyContrastTests {
     static let modes: [(dark: Bool, hc: Bool)] = [(false, false), (true, false), (false, true), (true, true)]
 
-    func ratio(_ a: Honey.Token, on b: Honey.Token, _ m: (dark: Bool, hc: Bool)) -> Double {
-        Honey.contrast(a.value(dark: m.dark, highContrast: m.hc), b.value(dark: m.dark, highContrast: m.hc))
+    func ratio(_ a: Honey.Token, on b: Honey.Token, _ m: (dark: Bool, hc: Bool), _ t: Honey.Theme) -> Double {
+        Honey.contrast(t[a].value(dark: m.dark, highContrast: m.hc), t[b].value(dark: m.dark, highContrast: m.hc))
     }
 
-    @Test func textOnSurfaces() {
+    @Test(arguments: Honey.Theme.all) func textOnSurfaces(_ t: Honey.Theme) {
         for m in Self.modes {
             let text = m.hc ? 7.0 : 4.5
             for bg in [Honey.surface, Honey.surface2, Honey.canvas, Honey.currentLine, Honey.selection] {
-                #expect(ratio(Honey.fg, on: bg, m) >= text, "fg in \(m)")
+                #expect(ratio(Honey.fg, on: bg, m, t) >= text, "\(t.id) fg on \(bg.name) in \(m)")
             }
-            #expect(ratio(Honey.fgMuted, on: Honey.surface, m) >= 4.5, "fg-muted in \(m)")
-            #expect(ratio(Honey.accentInk, on: Honey.surface, m) >= 4.5, "accent-ink in \(m)")
-            #expect(ratio(Honey.accentFg, on: Honey.accent, m) >= 7, "accent-fg in \(m)")
-            #expect(ratio(Honey.ok, on: Honey.surface, m) >= 4.5, "ok in \(m)")
-            #expect(ratio(Honey.danger, on: Honey.surface, m) >= 4.5, "danger in \(m)")
+            #expect(ratio(Honey.fgMuted, on: Honey.surface, m, t) >= 4.5, "\(t.id) fg-muted in \(m)")
+            #expect(ratio(Honey.accentInk, on: Honey.surface, m, t) >= 4.5, "\(t.id) accent-ink in \(m)")
+            #expect(ratio(Honey.accentFg, on: Honey.accent, m, t) >= 7, "\(t.id) accent-fg in \(m)")
+            #expect(ratio(Honey.ok, on: Honey.surface, m, t) >= 4.5, "\(t.id) ok in \(m)")
+            #expect(ratio(Honey.danger, on: Honey.surface, m, t) >= 4.5, "\(t.id) danger in \(m)")
         }
     }
 
-    @Test func editorMarks() {
+    @Test(arguments: Honey.Theme.all) func editorMarks(_ t: Honey.Theme) {
         for m in Self.modes {
             // Line numbers are incidental, but stay ≥ 3:1 (4.5:1 with more contrast).
             let gutter = m.hc ? 4.5 : 3.0
-            #expect(ratio(Honey.gutter, on: Honey.surface, m) >= gutter, "gutter in \(m)")
-            #expect(ratio(Honey.gutter, on: Honey.currentLine, m) >= gutter, "gutter on current line in \(m)")
+            #expect(ratio(Honey.gutter, on: Honey.surface, m, t) >= gutter, "\(t.id) gutter in \(m)")
+            #expect(ratio(Honey.gutter, on: Honey.currentLine, m, t) >= gutter, "\(t.id) gutter on current line in \(m)")
             // The caret and focus ring are UI graphics: ≥ 3:1.
-            #expect(ratio(Honey.caret, on: Honey.surface, m) >= 3, "caret in \(m)")
-            #expect(ratio(Honey.focus, on: Honey.surface2, m) >= 3, "focus in \(m)")
+            #expect(ratio(Honey.caret, on: Honey.surface, m, t) >= 3, "\(t.id) caret in \(m)")
+            #expect(ratio(Honey.focus, on: Honey.surface2, m, t) >= 3, "\(t.id) focus in \(m)")
         }
     }
 
     @Test func tokenNamesAreUnique() {
         let names = Honey.allTokens.map(\.name)
         #expect(Set(names).count == names.count)
+        // Each token's own name matches its DESIGN.md name.
+        for (name, token) in Honey.allTokens { #expect(token.name == name) }
+    }
+}
+
+struct HoneyThemeTests {
+    @Test func everyThemeHasEveryToken() {
+        for t in Honey.Theme.all {
+            for (name, _) in Honey.allTokens { #expect(t.tokens[name] != nil, "\(t.id) lacks \(name)") }
+        }
+    }
+
+    @Test func idsAreUniqueAndHoneyIsFirst() {
+        let ids = Honey.Theme.all.map(\.id)
+        #expect(Set(ids).count == ids.count)
+        #expect(ids.first == "honey")
+        #expect(Honey.Theme.named("tide").id == "tide")
+        #expect(Honey.Theme.named("nope") == .honey)
+    }
+
+    @Test func honeyIsUnchanged() {
+        for (_, token) in Honey.allTokens { #expect(Honey.Theme.honey[token] == token) }
     }
 }
 
@@ -71,14 +94,14 @@ struct HoneyMotionTests {
 /// Syntax colors (DESIGN.md §3.1): readable on the editor surface and the
 /// current line in every mode.
 struct SyntaxContrastTests {
-    @Test func syntaxOnEditor() {
+    @Test(arguments: Honey.Theme.all) func syntaxOnEditor(_ theme: Honey.Theme) {
         for m in HoneyContrastTests.modes {
             let target = m.hc ? 7.0 : 4.5
             for (name, token) in Honey.syntaxTokens {
                 for bg in [Honey.surface, Honey.currentLine] {
-                    let r = Honey.contrast(token.value(dark: m.dark, highContrast: m.hc),
-                                           bg.value(dark: m.dark, highContrast: m.hc))
-                    #expect(r >= target, "\(name) in \(m): \(r)")
+                    let r = Honey.contrast(theme[token].value(dark: m.dark, highContrast: m.hc),
+                                           theme[bg].value(dark: m.dark, highContrast: m.hc))
+                    #expect(r >= target, "\(theme.id) \(name) in \(m): \(r)")
                 }
             }
         }

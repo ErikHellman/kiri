@@ -127,7 +127,7 @@ struct ShortcutGroup: Identifiable {
         ]),
         ShortcutGroup(title: "Menus", systemImage: "menubar.rectangle", items: [
             Item("Language, encoding, line endings", "Format menu"),
-            Item("Theme, motion, typing animations", "View menu"),
+            Item("Theme, appearance, motion, typing animations", "View menu"),
             Item("Open the menu bar", "⌃F2"),
             Item("Search all menus", "⇧⌘/"),
         ]),

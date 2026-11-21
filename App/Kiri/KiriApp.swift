@@ -11,6 +11,7 @@ struct KiriApp: App {
         // Launch into a new, empty document instead of the Open panel.
         UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
         Honey.registerFonts()
+        ThemeController.start()
     }
 
     private var appearance: HoneyAppearance { HoneyAppearance(theme: theme, motion: motion) }

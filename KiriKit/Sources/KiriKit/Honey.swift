@@ -7,12 +7,15 @@ public enum Honey {
     /// A color token: its light and dark values as 0xRRGGBB, and the values
     /// used while the system asks for more contrast (7:1 text, WCAG 1.4.6).
     public struct Token: Sendable, Equatable {
+        /// The DESIGN.md name; themes replace a token by it.
+        public let name: String
         public let light: UInt32
         public let dark: UInt32
         public let hcLight: UInt32
         public let hcDark: UInt32
 
-        public init(light: UInt32, dark: UInt32, hcLight: UInt32? = nil, hcDark: UInt32? = nil) {
+        public init(_ name: String, light: UInt32, dark: UInt32, hcLight: UInt32? = nil, hcDark: UInt32? = nil) {
+            self.name = name
             self.light = light
             self.dark = dark
             self.hcLight = hcLight ?? light
@@ -32,31 +35,31 @@ public enum Honey {
 
     // MARK: Colors (§3), the same values as Ting.
 
-    public static let canvas = Token(light: 0xF5EEE1, dark: 0x16120E, hcLight: 0xFAF6EE, hcDark: 0x000000)
-    public static let surface = Token(light: 0xFFFCF6, dark: 0x251F18, hcLight: 0xFFFFFF, hcDark: 0x0B0907)
-    public static let surface2 = Token(light: 0xF2E8D6, dark: 0x30281F, hcLight: 0xF2EBDF, hcDark: 0x1A1510)
-    public static let surface3 = Token(light: 0xEADCC4, dark: 0x3B3127, hcLight: 0xE6DCCB, hcDark: 0x262019)
-    public static let line = Token(light: 0xE8DAC3, dark: 0x3A3027, hcLight: 0x6B5A4E, hcDark: 0xA89684)
-    public static let fg = Token(light: 0x3B2A2F, dark: 0xF6ECE0, hcLight: 0x1A0F12, hcDark: 0xFFFFFF)
-    public static let fgMuted = Token(light: 0x76615A, dark: 0xB5A492, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
-    public static let accent = Token(light: 0xE09A2D, dark: 0xF2A93B)
-    public static let accentFg = Token(light: 0x2A1A08, dark: 0x2A1A08, hcLight: 0x1A0F04, hcDark: 0x1A0F04)
-    public static let accentInk = Token(light: 0x995A05, dark: 0xF5B656, hcLight: 0x6B3E00, hcDark: 0xFFC978)
-    public static let accentSoft = Token(light: 0xFBE7C2, dark: 0x47331A)
-    public static let focus = Token(light: 0xB8700E, dark: 0xF2A93B, hcLight: 0x6B3E00, hcDark: 0xFFC978)
-    public static let danger = Token(light: 0xC2412D, dark: 0xFF8A70, hcLight: 0x8A2412, hcDark: 0xFFB3A0)
-    public static let dangerFill = Token(light: 0xC2381C, dark: 0xC8432A, hcLight: 0x8E2410, hcDark: 0x8E2410)
-    public static let ok = Token(light: 0x357A4E, dark: 0x7FD09A, hcLight: 0x1F5634, hcDark: 0xA6E8BC)
+    public static let canvas = Token("canvas", light: 0xF5EEE1, dark: 0x16120E, hcLight: 0xFAF6EE, hcDark: 0x000000)
+    public static let surface = Token("surface", light: 0xFFFCF6, dark: 0x251F18, hcLight: 0xFFFFFF, hcDark: 0x0B0907)
+    public static let surface2 = Token("surface-2", light: 0xF2E8D6, dark: 0x30281F, hcLight: 0xF2EBDF, hcDark: 0x1A1510)
+    public static let surface3 = Token("surface-3", light: 0xEADCC4, dark: 0x3B3127, hcLight: 0xE6DCCB, hcDark: 0x262019)
+    public static let line = Token("line", light: 0xE8DAC3, dark: 0x3A3027, hcLight: 0x6B5A4E, hcDark: 0xA89684)
+    public static let fg = Token("fg", light: 0x3B2A2F, dark: 0xF6ECE0, hcLight: 0x1A0F12, hcDark: 0xFFFFFF)
+    public static let fgMuted = Token("fg-muted", light: 0x76615A, dark: 0xB5A492, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
+    public static let accent = Token("accent", light: 0xE09A2D, dark: 0xF2A93B)
+    public static let accentFg = Token("accent-fg", light: 0x2A1A08, dark: 0x2A1A08, hcLight: 0x1A0F04, hcDark: 0x1A0F04)
+    public static let accentInk = Token("accent-ink", light: 0x995A05, dark: 0xF5B656, hcLight: 0x6B3E00, hcDark: 0xFFC978)
+    public static let accentSoft = Token("accent-soft", light: 0xFBE7C2, dark: 0x47331A)
+    public static let focus = Token("focus", light: 0xB8700E, dark: 0xF2A93B, hcLight: 0x6B3E00, hcDark: 0xFFC978)
+    public static let danger = Token("danger", light: 0xC2412D, dark: 0xFF8A70, hcLight: 0x8A2412, hcDark: 0xFFB3A0)
+    public static let dangerFill = Token("danger-fill", light: 0xC2381C, dark: 0xC8432A, hcLight: 0x8E2410, hcDark: 0x8E2410)
+    public static let ok = Token("ok", light: 0x357A4E, dark: 0x7FD09A, hcLight: 0x1F5634, hcDark: 0xA6E8BC)
 
     // MARK: Editor colors (new in Kiri)
 
     /// Selected text background; `fg` on it stays ≥ 7:1.
-    public static let selection = Token(light: 0xF6D9A0, dark: 0x5C4220, hcLight: 0xF2C97A, hcDark: 0x6B4A1C)
+    public static let selection = Token("selection", light: 0xF6D9A0, dark: 0x5C4220, hcLight: 0xF2C97A, hcDark: 0x6B4A1C)
     /// The line with the caret, a step between `surface` and `surface-2`.
-    public static let currentLine = Token(light: 0xFAF3E6, dark: 0x2C251D, hcLight: 0xF7F0E2, hcDark: 0x16120E)
+    public static let currentLine = Token("current-line", light: 0xFAF3E6, dark: 0x2C251D, hcLight: 0xF7F0E2, hcDark: 0x16120E)
     /// Line numbers: incidental text, ≥ 3:1 on `surface` and `currentLine`;
     /// with more contrast they use the `fg-muted` values.
-    public static let gutter = Token(light: 0x9A8478, dark: 0x7E6E60, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
+    public static let gutter = Token("gutter", light: 0x9A8478, dark: 0x7E6E60, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
     /// The caret is the `focus` color (≥ 3:1 on `surface`).
     public static let caret = focus
 
@@ -64,18 +67,18 @@ public enum Honey {
 
     /// Highlighted code. Each is ≥ 4.5:1 on `surface` and `current-line`
     /// (≥ 7:1 with increased contrast); `HoneyTests` checks it.
-    public static let synKeyword = Token(light: 0x9B2C6E, dark: 0xF08BC0, hcLight: 0x8D2864, hcDark: 0xF6A8D0)
-    public static let synString = Token(light: 0x4E7A1F, dark: 0xA8D58A, hcLight: 0x395917, hcDark: 0xBFE6A8)
-    public static let synNumber = Token(light: 0xA34F00, dark: 0xF5B656, hcLight: 0x7F3E00, hcDark: 0xFFC978)
-    public static let synComment = Token(light: 0x7C6A5F, dark: 0xA08E7E, hcLight: 0x5B4E46, hcDark: 0xC9BAAC)
-    public static let synFunction = Token(light: 0x1F6F8B, dark: 0x7FC6E0, hcLight: 0x18566C, hcDark: 0xA6DCEE)
-    public static let synType = Token(light: 0x6A3FA0, dark: 0xC3A6F5, hcLight: 0x562F87, hcDark: 0xD8C4FA)
-    public static let synProperty = Token(light: 0x8A4B2A, dark: 0xF0A07A, hcLight: 0x6E3A1F, hcDark: 0xF7BFA0)
-    public static let synTag = Token(light: 0xB23A2A, dark: 0xFF8A70, hcLight: 0x8F2F22, hcDark: 0xFFB3A0)
-    public static let synAttribute = Token(light: 0x8A5A00, dark: 0xF2C46B, hcLight: 0x6E4800, hcDark: 0xF7D592)
-    public static let synPunctuation = Token(light: 0x76615A, dark: 0xB5A492, hcLight: 0x5D4D47, hcDark: 0xD5C7B8)
-    public static let synHeading = Token(light: 0x995A05, dark: 0xF5B656, hcLight: 0x744404, hcDark: 0xFFC978)
-    public static let synEscape = Token(light: 0xA8327A, dark: 0xF7A8D8, hcLight: 0x8B2965, hcDark: 0xFAC4E4)
+    public static let synKeyword = Token("syn-keyword", light: 0x9B2C6E, dark: 0xF08BC0, hcLight: 0x8D2864, hcDark: 0xF6A8D0)
+    public static let synString = Token("syn-string", light: 0x4E7A1F, dark: 0xA8D58A, hcLight: 0x395917, hcDark: 0xBFE6A8)
+    public static let synNumber = Token("syn-number", light: 0xA34F00, dark: 0xF5B656, hcLight: 0x7F3E00, hcDark: 0xFFC978)
+    public static let synComment = Token("syn-comment", light: 0x7C6A5F, dark: 0xA08E7E, hcLight: 0x5B4E46, hcDark: 0xC9BAAC)
+    public static let synFunction = Token("syn-function", light: 0x1F6F8B, dark: 0x7FC6E0, hcLight: 0x18566C, hcDark: 0xA6DCEE)
+    public static let synType = Token("syn-type", light: 0x6A3FA0, dark: 0xC3A6F5, hcLight: 0x562F87, hcDark: 0xD8C4FA)
+    public static let synProperty = Token("syn-property", light: 0x8A4B2A, dark: 0xF0A07A, hcLight: 0x6E3A1F, hcDark: 0xF7BFA0)
+    public static let synTag = Token("syn-tag", light: 0xB23A2A, dark: 0xFF8A70, hcLight: 0x8F2F22, hcDark: 0xFFB3A0)
+    public static let synAttribute = Token("syn-attribute", light: 0x8A5A00, dark: 0xF2C46B, hcLight: 0x6E4800, hcDark: 0xF7D592)
+    public static let synPunctuation = Token("syn-punctuation", light: 0x76615A, dark: 0xB5A492, hcLight: 0x5D4D47, hcDark: 0xD5C7B8)
+    public static let synHeading = Token("syn-heading", light: 0x995A05, dark: 0xF5B656, hcLight: 0x744404, hcDark: 0xFFC978)
+    public static let synEscape = Token("syn-escape", light: 0xA8327A, dark: 0xF7A8D8, hcLight: 0x8B2965, hcDark: 0xFAC4E4)
 
     /// Every syntax token by name.
     public static let syntaxTokens: [(name: String, token: Token)] = [
@@ -93,6 +96,36 @@ public enum Honey {
         ("danger-fill", dangerFill), ("ok", ok), ("selection", selection), ("current-line", currentLine),
         ("gutter", gutter),
     ] + syntaxTokens
+
+    // MARK: Themes
+
+    /// A color theme: every token above, recolored. Honey is the default; the
+    /// others are generated from it by scripts/themes/make-themes.py and keep
+    /// the same contrast promises (HoneyTests checks every theme).
+    public struct Theme: Sendable, Identifiable, Equatable {
+        public let id: String
+        public let name: String
+        /// One line for Settings.
+        public let blurb: String
+        let tokens: [String: Token]
+
+        public init(id: String, name: String, blurb: String, tokens: [String: Token]) {
+            self.id = id
+            self.name = name
+            self.blurb = blurb
+            self.tokens = tokens
+        }
+
+        /// This theme's version of a Honey token.
+        public subscript(_ t: Token) -> Token { tokens[t.name] ?? t }
+
+        /// The theme with this id, or Honey.
+        public static func named(_ id: String) -> Theme { all.first { $0.id == id } ?? .honey }
+
+        /// Honey itself.
+        public static let honey = Theme(id: "honey", name: "Honey", blurb: "Warm cream and amber. Kiri's own.",
+                                        tokens: Dictionary(uniqueKeysWithValues: Honey.allTokens.map { ($0.name, $0.token) }))
+    }
 
     /// WCAG contrast ratio of two 0xRRGGBB colors.
     public static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
