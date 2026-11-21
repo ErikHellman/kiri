@@ -142,7 +142,7 @@ private struct MasonryColumns: Layout {
 
 /// Key caps for "⌘X  ⌘C  ⌘V" (chords split on double spaces), or a muted
 /// note such as "Format menu".
-private struct KeyCaps: View {
+struct KeyCaps: View {
     let chords: [String]
     let isNote: Bool
 

@@ -15,6 +15,9 @@ import SwiftUI
     var positionReserve = StatusText.Reserve()
     /// What the file indents with (what Shift Left and Right use).
     var indent = IndentStyle.tabs
+    /// The first-run hint shows: the document is untitled, was empty when
+    /// it opened and has had nothing put in it since.
+    var showsStartHint = false
     /// The status bar fades while the person types or scrolls.
     let statusRest = StatusBarRest()
     /// The folder sidebar has the keyboard (⇧⌘E moves it there and back).
@@ -48,6 +51,8 @@ struct EditorView: NSViewRepresentable {
     let model: EditorModel
     let fontScale: Double
     let language: Language
+    /// The document has no file yet.
+    let isUntitled: Bool
     let wrapLines: Bool
     let animation: EditorAnimation
     let letterFade: Bool
@@ -58,6 +63,7 @@ struct EditorView: NSViewRepresentable {
         let view = EditorContainerView(frame: .zero)
         context.coordinator.undoManager = context.environment.undoManager
         context.coordinator.attach(view)
+        context.coordinator.setUntitled(isUntitled)
         context.coordinator.load(document)
         context.coordinator.setLanguage(language)
         view.textView.setAnimation(animation, letterFade: letterFade)
@@ -71,6 +77,7 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ view: EditorContainerView, context: Context) {
         let c = context.coordinator
         c.undoManager = context.environment.undoManager
+        c.setUntitled(isUntitled)
         if c.document !== document { c.load(document) }
         c.setFontScale(fontScale)
         c.setLanguage(language)
@@ -96,6 +103,10 @@ struct EditorView: NSViewRepresentable {
     private var indentWork: DispatchWorkItem?
     /// `load` is putting the document's text in.
     private var loading = false
+    /// For the first-run hint: nothing has been put in a document that
+    /// opened empty, and it has no file.
+    private var untouched = false
+    private var isUntitled = false
     /// The document's undo manager: text edits registered here make the
     /// document dirty, and File ▸ Save cleans it.
     weak var undoManager: UndoManager?
@@ -140,6 +151,8 @@ struct EditorView: NSViewRepresentable {
         longestLine = lineIndex.longestLine
         updateReserve()
         detectIndent()
+        untouched = storage.length == 0
+        updateStartHint()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.undoManager?.removeAllActions()
         assert(lineIndex.length == storage.length, "line index out of sync")
@@ -248,11 +261,16 @@ struct EditorView: NSViewRepresentable {
         model.statusRest.activity()
     }
 
-    // MARK: What the status bar follows
+    // MARK: What the status bar and the first-run hint follow
 
     /// The document's text changed in `range` (of the new text), by typing,
     /// pasting, a drop, undo or a command.
     private func documentEdited(_ range: NSRange) {
+        // The first-run hint goes with the first character and stays gone.
+        if untouched {
+            untouched = false
+            updateStartHint()
+        }
         for line in lineIndex.line(at: range.location)...lineIndex.line(at: NSMaxRange(range)) {
             longestLine = max(longestLine, lineIndex.range(ofLine: line).count)
         }
@@ -276,6 +294,17 @@ struct EditorView: NSViewRepresentable {
         guard let storage = textView?.textStorage else { return }
         let indent = IndentStyle.detect(in: storage.string)
         if indent != model.indent { model.indent = indent }
+    }
+
+    func setUntitled(_ untitled: Bool) {
+        guard untitled != isUntitled else { return }
+        isUntitled = untitled
+        updateStartHint()
+    }
+
+    private func updateStartHint() {
+        let shows = untouched && isUntitled
+        if shows != model.showsStartHint { model.showsStartHint = shows }
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {

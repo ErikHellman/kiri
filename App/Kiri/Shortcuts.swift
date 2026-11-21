@@ -3,6 +3,9 @@ import SwiftUI
 /// Kiri's own key equivalents, shared by the menus and the Keyboard
 /// Shortcuts window so the two can't drift apart.
 enum Keys {
+    /// File ▸ Open… is `DocumentGroup`'s own; its key is here for the
+    /// places that name it (the first-run hint, the Keyboard Shortcuts window).
+    static let open = KeyboardShortcut("o", modifiers: .command)
     static let settings = KeyboardShortcut(",", modifiers: .command)
     static let newTab = KeyboardShortcut("t", modifiers: .command)
     static let find = KeyboardShortcut("f", modifiers: .command)
@@ -41,6 +44,16 @@ extension KeyboardShortcut {
         if modifiers.contains(.command) { s += "⌘" }
         return s + key.glyph
     }
+
+    /// How VoiceOver should say it, such as "Shift Command O".
+    var spoken: String {
+        var words: [String] = []
+        if modifiers.contains(.control) { words.append("Control") }
+        if modifiers.contains(.option) { words.append("Option") }
+        if modifiers.contains(.shift) { words.append("Shift") }
+        if modifiers.contains(.command) { words.append("Command") }
+        return (words + [key.spoken]).joined(separator: " ")
+    }
 }
 
 extension KeyEquivalent {
@@ -56,6 +69,32 @@ extension KeyEquivalent {
         case .leftArrow: "←"
         case .rightArrow: "→"
         default: String(character).uppercased()
+        }
+    }
+
+    var spoken: String {
+        switch self {
+        case .tab: "Tab"
+        case .return: "Return"
+        case .escape: "Escape"
+        case .space: "Space"
+        case .delete: "Delete"
+        case .upArrow: "Up Arrow"
+        case .downArrow: "Down Arrow"
+        case .leftArrow: "Left Arrow"
+        case .rightArrow: "Right Arrow"
+        default:
+            switch character {
+            case "/": "Slash"
+            case ",": "Comma"
+            case ".": "Period"
+            case "[": "Left Bracket"
+            case "]": "Right Bracket"
+            case "+": "Plus"
+            case "-": "Minus"
+            case "`": "Backtick"
+            default: String(character).uppercased()
+            }
         }
     }
 }
@@ -87,7 +126,7 @@ struct ShortcutGroup: Identifiable {
         ShortcutGroup(title: "Files", systemImage: "doc", items: [
             Item("New document", "⌘N"),
             Item("New tab", Keys.newTab),
-            Item("Open…", "⌘O"),
+            Item("Open…", Keys.open),
             Item("Open folder…", Keys.openFolder),
             Item("Save", "⌘S"),
             Item("Duplicate", "⇧⌘S"),

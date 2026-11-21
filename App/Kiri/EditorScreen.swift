@@ -7,6 +7,7 @@ struct EditorScreen: View {
     @ObservedObject var document: KiriDocument
     let fileURL: URL?
     @State private var model = EditorModel()
+    @State private var commandLineTool = CommandLineTool.shared
     @State private var tabs = WindowTabs()
     @State private var saveState = HoneyTaskState.idle
     @State private var saver = SaveObserver()
@@ -73,10 +74,19 @@ struct EditorScreen: View {
         // The bars pop in; with Reduce Motion they fade.
         let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
         return EditorView(document: document, model: model, fontScale: textScale, language: model.language,
-                   wrapLines: wrapLines,
+                   isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations),
                    letterFade: letterFade)
+            // Under the bars: the first-run hint, on the paper of an empty
+            // untitled document until something is typed into it.
+            .overlay {
+                if model.showsStartHint {
+                    StartHint(commandLineTool: commandLineTool.status)
+                        .padding(.bottom, StartHint.bottomClearance)
+                        .transition(.opacity)
+                }
+            }
             .honeyPanel()
             .overlay(alignment: .bottom) {
                 EditorStatusBar(model: model, document: document, encoding: encodingBinding, lineEnding: lineEndingBinding,
@@ -93,6 +103,8 @@ struct EditorScreen: View {
             }
             .animation(motion.shape, value: model.find.isOpen)
             .animation(motion.shape, value: model.goToLine.isOpen)
+            // The hint fades out; with reduced motion it is simply gone.
+            .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint)
     }
 
     /// Opens a sidebar file as a tab of this window. An empty untitled tab
