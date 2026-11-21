@@ -14,6 +14,8 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Typing animations** (Settings ▸ Typing animations, on by default): a honey caret that glides and breathes, a current-line highlight that eases between lines, a pulse on the matching bracket, syntax colors that crossfade instead of flickering, and rolling Ln/Col digits. Reduce Motion keeps the fades and drops movement; Motion: Off turns them all off. A letter fade-in exists in the code but is off: TextKit 2 doesn't yet redraw the fading letter every frame.
 - **Find and replace** in a glass bar that floats over the top of the editor instead of pushing the text down. Matches highlight as you type, with a count ("3 of 12"); match case and regular expressions (ICU; `$1` in the replacement); Replace and Replace All are one undo step each. The query is the system's shared find text, so ⌘E in another app carries over. Long files are searched off the main thread.
 - **Go to Line** shows the line while you type its number; Return keeps it, Esc goes back to where you were.
+- **Status bar**: a glass capsule over the bottom of the text with the language, encoding and line endings (menus: each shows a capsule and a chevron under the pointer), the caret's position (click it for Go to Line; a selection shows its length, "Ln 12, Sel 5") and the indentation Shift Left and Right use ("Spaces: 4" or "Tabs"). It keeps its width as the caret moves, and fades to about a third while you type or scroll so the text under it shows; it is back after a second, or when the pointer comes near. With Reduce Motion or Increase Contrast it stays solid.
+- **A hint in a new document**: an empty untitled document shows Open a file ⌘O, Open a folder ⇧⌘O, Keyboard shortcuts ⌘/ and, until it is installed, Install the kiri command. Each line is a button; the first thing you type takes the hint away.
 - **`kiri` command**: open files and folders from the terminal (see below).
 - Line numbers, current-line highlight, editor text size, line wrapping, File ▸ Open Recent and Revert.
 
@@ -36,14 +38,14 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⌃⌘W | Wrap lines |
 | ⌘/ | Keyboard Shortcuts window (everything, filterable) |
 | ⌘+ / ⌘- / ⌘0 | Bigger / smaller / actual size for the editor text (View ▸ Bigger Text, Smaller Text, Actual Size) |
-| ⌘, | Settings (theme, motion, editor text size, wrapping) |
+| ⌘, | Settings (theme, motion, editor text size, wrapping, the command line tool) |
 
 Everything else is in a menu: Format has language, encoding, BOM and line
 endings; View has theme, motion and typing animations. ⌃F2 opens the menu bar.
 
 ## Command line
 
-Choose **Kiri ▸ Install Command Line Tool…** once. It links `/usr/local/bin/kiri` to the script inside the app (`Kiri.app/Contents/Resources/kiri`, source in `App/CLI/kiri`), asking for an administrator password if needed. To do it by hand: `sudo ln -sf /Applications/Kiri.app/Contents/Resources/kiri /usr/local/bin/kiri`.
+Choose **Kiri ▸ Install Command Line Tool…** once (the item after Settings…), or press Install in Settings, which also says whether the command is installed; an empty new document offers it too until it is. It links `/usr/local/bin/kiri` to the script inside the app (`Kiri.app/Contents/Resources/kiri`, source in `App/CLI/kiri`), asking for an administrator password if needed. To do it by hand: `sudo ln -sf /Applications/Kiri.app/Contents/Resources/kiri /usr/local/bin/kiri`.
 
 ```sh
 kiri                        # open Kiri
@@ -83,13 +85,13 @@ cd App && xcodegen && open Kiri.xcodeproj
 Tests: `cd KiriKit && swift test` (the token, document-model, search, tab-layout and syntax tests; all but the last also run on Linux). Debug builds (or Release with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=KIRI_SELFTEST`) have smoke tests, run as `Kiri.app/Contents/MacOS/Kiri <file> <flag> YES`:
 
 - `-KiriSelfTest`: typing through the event loop, dirty state, byte-exact save, undo, revert, highlighting after revert.
-- `-KiriBehaviorTest`: focus at launch, the find bar (the Edit ▸ Find keys, the count, next and previous, highlights, replace and Replace All with undo, the field's Return, Tab and Escape), Go to Line (preview, Return, Escape), wrapping, the Save button, opening/selecting/closing tabs, the tab strip following edits, saves and renames, the letter fade.
+- `-KiriBehaviorTest`: focus at launch, the find bar (the Edit ▸ Find keys, the count, next and previous, highlights, replace and Replace All with undo, the field's Return, Tab and Escape), Go to Line (preview, Return, Escape), the status bar (its items' names, the position button, a width that holds as the caret moves, resting while typing and scrolling), wrapping, the Save button, opening/selecting/closing tabs, the tab strip following edits, saves and renames, the first-run hint (shown in a new untitled document only, gone with the first key and after undo, its lines' names and clicks), the letter fade.
 - `-KiriPerfTest`: typing and scrolling cost on the open file, and what the find bar costs on it (use a big file).
 
 ## Layout
 
 - `KiriKit/` Swift package:
-  - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer), find and replace on strings (`TextSearch`) and the tab strip's arithmetic (`TabLayout`: shortening names, sharing the width, telling same-named files apart).
+  - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer), find and replace on strings (`TextSearch`), the status bar's position text and indentation detection (`StatusText`, `IndentStyle`) and the tab strip's arithmetic (`TabLayout`: shortening names, sharing the width, telling same-named files apart).
   - `KiriSyntax`: Tree-sitter parsing and highlight queries (macOS only).
 - `App/` the macOS app (XcodeGen spec in `App/project.yml`): `DocumentGroup` documents, the TextKit 2 editor, tabs, settings and commands.
 - `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).

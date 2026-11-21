@@ -99,7 +99,7 @@ Honey is the default; Settings ▸ Theme (and View ▸ Theme) also offers **Matc
 | Token | Value | Use |
 |---|---|---|
 | `Honey.quick` | 140 ms ease-out | Color, opacity, hover |
-| `Honey.medium` | 240 ms | Small movement |
+| `Honey.medium` | 240 ms | Small movement; chrome fading to rest (the status bar) |
 | `Honey.shape` / `.honeySpring` | spring 0.38 s, damping 0.72 | Shape changes, panels |
 
 Signature components in Kiri:
@@ -134,6 +134,23 @@ WindowGroup {
 ```
 
 Call `Honey.registerFonts()` once at launch.
+
+### The status bar
+
+`EditorStatusBar` (built from `HoneyStatusBar`, `HoneyStatusMenu`, `HoneyStatusButton` and `HoneyStatusItem`): a 28 pt `chrome` glass capsule, 8 pt above the bottom of the editor panel. The editor keeps a 44 pt inset below the last line, so the end of a file scrolls clear of it.
+
+- **Items, in order:** the language (a menu), the caret's position (a button: Go to Line), the indentation (a label), the encoding and the line endings (menus). In a panel too narrow for all of them the indentation goes first, then the encoding and line endings, then the language.
+- **What can be pressed says so.** On hover and on keyboard focus an item shows a `surface-2` capsule 24 pt high (the tabs' hover; `surface-3` when the bar is solid), with the 2 pt `focus` ring for the keyboard. A menu also shows a small chevron, in room that is always kept for it, so the bar doesn't change width. The language is an `accent-soft` pill with `accent-ink` text at rest, and the pill grows to take the chevron in. The indentation does nothing when pressed and shows nothing.
+- **A steady width.** The position keeps the room of the widest text the document can show (as many digits as its last line, its longest line and its length need; at least "Ln 88, Sel 888"), in tabular digits, text at the leading edge. A selection's length takes the column's place ("Ln 12, Sel 5"), not more room. The indentation keeps the room of "Spaces: 8". The room changes only when a count passes a power of ten.
+- **Rest.** While the person types or scrolls, the bar fades to `Honey.restOpacity` (35 %) over `Honey.medium`: its content, and the glass gives way to 35 % of its solid fill with a hairline, so the text under it is neither blurred nor bent. It comes back over `Honey.quick` a second after the last key or scroll, when the pointer moves within 40 pt of it, when the keyboard goes to one of its items or when a menu opens; it takes clicks all the while. With reduced motion (the system's or Motion: Reduced or Off) and with increased contrast it stays solid.
+- **Names.** VoiceOver hears "Language, Swift", "Encoding, UTF-8", "Line endings, LF" (pop-up buttons), "Go to Line" with "Line 12 of 340, column 5" as its value, and "Indentation, 4 spaces".
+
+### First-run hint
+
+An untitled document that opened empty shows `StartHint` centred on its paper, above the status bar and behind the find bar and Go to Line: at most four lines, 28 pt high and 216 pt wide, 13 pt `fg-muted` Nunito 600 with the Keyboard Shortcuts window's key caps at the trailing edge. Open a file ⌘O, Open a folder ⇧⌘O, Keyboard shortcuts ⌘/, and "Install the kiri command" in `accent-ink` (a link, no key) until a terminal has the command.
+
+- Each line is a button: on hover a `surface-2` fill with the `small` radius and `fg` text (the link underlines), the `focus` ring for the keyboard. Nothing else in the hint takes clicks, and it never takes the keyboard: the caret is on line 1 and typing starts the document.
+- It goes with the first character put in (typed, pasted or dropped), fading over `Honey.quick` (at once with reduced motion), and doesn't come back in that document, not after undo either. A document with a file never shows it, nor does a panel too small to hold it whole.
 
 ### Bars over the editor: find and Go to Line
 
