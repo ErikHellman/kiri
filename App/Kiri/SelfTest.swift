@@ -11,6 +11,7 @@ import os
 @MainActor enum SelfTest {
     private static var started = false
     private static var typedOnLaunch = false
+    private static var openedFolder = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -189,6 +190,75 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 guard let w = NSApp.windows.first(where: { $0.identifier?.rawValue == ShortcutsView.windowID }) else { return }
                 w.setFrame(NSRect(x: w.frame.minX, y: w.frame.maxY - size[1], width: size[0], height: size[1]), display: true)
+            }
+        }
+        // -KiriDumpAccessibility <window title>: what VoiceOver is given for
+        // that window ("Settings", "Keyboard Shortcuts", "Style Gallery"), as
+        // role, label, value and actions. With -KiriAXPress <label>, then presses the
+        // radio button of that name and prints its group again. (Only press
+        // in the Style Gallery, whose controls change nothing that is saved.)
+        if let title = UserDefaults.standard.string(forKey: "KiriDumpAccessibility") {
+            let press = UserDefaults.standard.string(forKey: "KiriAXPress")
+            // SwiftUI builds its accessibility elements only once an assistive
+            // app has asked this process something, so ask it one question
+            // through the accessibility API first (off the main thread, which
+            // has to answer it), then read the window's own elements.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+                var value: AnyObject?
+                AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard let window = NSApp.windows.first(where: { $0.isVisible && $0.title == title }) else {
+                        print("AX no window “\(title)”"); fflush(stdout); return
+                    }
+                    // SwiftUI's elements answer these without declaring the protocol.
+                    func ask(_ e: Any, _ selector: String) -> Any? {
+                        let o = e as AnyObject, sel = NSSelectorFromString(selector)
+                        return o.responds(to: sel) ? o.perform(sel)?.takeUnretainedValue() : nil
+                    }
+                    func children(_ e: Any) -> [Any] { ask(e, "accessibilityChildren") as? [Any] ?? [] }
+                    func role(_ e: Any) -> String { ask(e, "accessibilityRole") as? String ?? "-" }
+                    func name(_ e: Any) -> String {
+                        ["accessibilityLabel", "accessibilityTitle"].compactMap { ask(e, $0) as? String }.first { !$0.isEmpty } ?? ""
+                    }
+                    func dump(_ e: Any, _ depth: Int, onlyRadio: Bool = false) {
+                        let r = role(e)
+                        if !onlyRadio || r == NSAccessibility.Role.radioGroup.rawValue || r == NSAccessibility.Role.radioButton.rawValue {
+                            let value = ask(e, "accessibilityValue").map { " value=\($0)" } ?? ""
+                            var size = ""
+                            if let o = e as? NSObject, o.responds(to: NSSelectorFromString("accessibilityFrame")),
+                               let frame = (o.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue {
+                                size = String(format: " %g×%g at %g,%g", frame.width, frame.height, frame.minX, frame.minY)
+                            }
+                            print("AX " + String(repeating: "  ", count: depth) + "\(r) “\(name(e))”\(value)\(size)")
+                        }
+                        if depth < 16 { children(e).forEach { dump($0, depth + 1, onlyRadio: onlyRadio) } }
+                    }
+                    func find(_ e: Any, _ label: String) -> Any? {
+                        if role(e) == NSAccessibility.Role.radioButton.rawValue, name(e) == label { return e }
+                        for c in children(e) { if let hit = find(c, label) { return hit } }
+                        return nil
+                    }
+                    dump(window, 0)
+                    if let press {
+                        guard let button = find(window, press) else { print("AX no radio button “\(press)”"); fflush(stdout); return }
+                        let pressed = (button as AnyObject).responds(to: NSSelectorFromString("accessibilityPerformPress"))
+                        _ = (button as AnyObject).perform(NSSelectorFromString("accessibilityPerformPress"))
+                        print("AX press “\(press)” (responds: \(pressed))")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            dump(window, 0, onlyRadio: true)
+                            fflush(stdout)
+                        }
+                    }
+                    fflush(stdout)
+                }
+            }
+        }
+        // Screenshot helper: -KiriOpenFolder <path> opens a folder window, as
+        // `kiri <folder>` does (which can't be used here: it activates the app).
+        if let folder = UserDefaults.standard.string(forKey: "KiriOpenFolder"), !openedFolder {
+            openedFolder = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))]))
             }
         }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {

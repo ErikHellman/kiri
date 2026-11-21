@@ -175,7 +175,7 @@ struct FolderSidebar: View {
                 } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.honeyMuted)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24) // the smallest target Honey allows
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -183,7 +183,7 @@ struct FolderSidebar: View {
                 .accessibilityLabel("Refresh folder")
             }
             .padding(.leading, 14)
-            .padding(.trailing, 8)
+            .padding(.trailing, 7) // the glyph stays 19 pt from the edge
             .frame(height: 38)
             .help(session.root.url.path)
 

@@ -57,7 +57,7 @@ public struct StyleGallery: View {
                 .buttonStyle(.honeyIcon)
                 .help("New tab")
                 Spacer(minLength: 0)
-                HoneySegmentedPicker(selection: $appearance.theme)
+                HoneySegmentedPicker(selection: $appearance.theme).accessibilityLabel("Appearance")
                 HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: save, action: runSave)
             }
         }
@@ -110,7 +110,7 @@ public struct StyleGallery: View {
                 }
                 section("Search") { HoneySearchField("Find in file", text: $query) }
                 section("Motion") {
-                    HoneySegmentedPicker(selection: $appearance.motion)
+                    HoneySegmentedPicker(selection: $appearance.motion).accessibilityLabel("Motion")
                 }
                 section("Empty state") {
                     HoneyEmptyState(title: "Drop a file", message: "Or press ⌘O to open one. Kiri remembers where you were.")

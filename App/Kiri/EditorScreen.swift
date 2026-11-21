@@ -61,6 +61,7 @@ struct EditorScreen: View {
             #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowShortcuts") { openWindow(id: ShortcutsView.windowID) }
+            if UserDefaults.standard.bool(forKey: "KiriShowStyleGallery") { openWindow(id: "style-gallery") }
             #endif
         }
         .onChange(of: fileURL) { detectLanguage() }

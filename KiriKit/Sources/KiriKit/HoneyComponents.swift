@@ -116,6 +116,7 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
 // MARK: Segmented picker
 
 /// A Honey segmented control: a glass capsule with a sliding amber pill (§7.4).
+/// To VoiceOver it is a radio group; give it a name with `accessibilityLabel`.
 public struct HoneySegmentedPicker<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
     @Binding var selection: Value
@@ -149,12 +150,28 @@ public struct HoneySegmentedPicker<Value: Hashable>: View {
                     }
                     .contentShape(Capsule())
                     .onTapGesture { withAnimation(motion.shape) { selection = option.value } }
-                    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(3)
         .fixedSize()
         .honeyGlass(.chrome)
+        // VoiceOver and other assistive apps get the system's own radio
+        // group in place of the hand-drawn segments: its buttons say their
+        // label and whether they are selected, and pressing one selects it.
+        .accessibilityRepresentation {
+            Picker("", selection: Binding(get: { selection },
+                                          set: { new in withAnimation(motion.shape) { selection = new } })) {
+                ForEach(options.indices, id: \.self) { i in
+                    Text(options[i].label).tag(options[i].value)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            // In a row from the leading edge, so each button's frame (where
+            // VoiceOver draws its cursor) lies roughly over its segment.
+            .horizontalRadioGroupLayout()
+            .labelsHidden()
+            .fixedSize()
+        }
         // Keyboard: Tab focuses it with Keyboard Navigation on, as it does a
         // button, and ← → move. (Plain `focusable()` would also take focus,
         // and show its ring, on a click or when its window opens.)

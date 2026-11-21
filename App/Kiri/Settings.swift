@@ -67,13 +67,13 @@ struct SettingsView: View {
                 ThemePicker(selection: $colorTheme)
             }
             row("Appearance", detail: "Follow macOS, or always light or dark.") {
-                HoneySegmentedPicker(selection: $theme)
+                HoneySegmentedPicker(selection: $theme).accessibilityLabel("Appearance")
             }
             row("Motion", detail: "System follows Reduce Motion. Reduced keeps fades only.") {
-                HoneySegmentedPicker(selection: $motion)
+                HoneySegmentedPicker(selection: $motion).accessibilityLabel("Motion")
             }
             row("Typing animations", detail: "The caret glides, lines and brackets glow. Off with Motion Off.") {
-                Toggle("", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
+                Toggle("Typing animations", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
                     .disabled(motion == .off)
             }
             row("Editor text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
@@ -87,7 +87,7 @@ struct SettingsView: View {
                 }
             }
             row("Wrap lines", detail: "Wrap long lines at the window edge.") {
-                Toggle("", isOn: $wrapLines).toggleStyle(.switch).labelsHidden()
+                Toggle("Wrap lines", isOn: $wrapLines).toggleStyle(.switch).labelsHidden()
             }
         }
         .padding(24)
