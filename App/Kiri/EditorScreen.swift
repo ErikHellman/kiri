@@ -112,12 +112,25 @@ struct EditorScreen: View {
         }
     }
 
-    /// The toolbar row on the canvas, level with the traffic lights: the tab
-    /// strip, a new-tab button and Save.
+    /// The toolbar row on the canvas, level with the traffic lights: in a
+    /// folder window the sidebar's button, then the tab strip, a new-tab
+    /// button and Save.
     private var topBar: some View {
         HStack(spacing: 8) {
             HoneyGlassGroup {
                 HStack(spacing: 8) {
+                    if let folder = tabs.folder {
+                        // What View ▸ Hide Sidebar does; the layout slides
+                        // the sidebar when `sidebarVisible` changes.
+                        Button {
+                            folder.sidebarVisible.toggle()
+                            if !folder.sidebarVisible { model.controller?.focus() }
+                        } label: {
+                            Label(folder.sidebarVisible ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
+                        }
+                        .buttonStyle(.honeyIcon)
+                        .help(folder.sidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)")
+                    }
                     if !tabs.items.isEmpty {
                         HoneyTabStrip(tabs.tabs,
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),

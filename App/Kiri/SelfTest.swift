@@ -215,8 +215,9 @@ import os
         // that window ("Settings", "Keyboard Shortcuts", "Style Gallery", or a
         // document's file name), as role, label, value, size, selected state,
         // custom actions and help. With -KiriAXPress <label>, then presses the
-        // radio button of that name and prints its group again. (Only press
-        // in the Style Gallery, whose controls change nothing that is saved.)
+        // radio button or button of that name and prints again (the radio
+        // groups, or after a button everything). Only press what changes
+        // nothing that is saved: the Style Gallery's controls, Hide Sidebar.
         // -KiriDumpDelay <seconds> waits longer than 1.5 s before asking.
         if let title = UserDefaults.standard.string(forKey: "KiriDumpAccessibility") {
             let press = UserDefaults.standard.string(forKey: "KiriAXPress")
@@ -264,18 +265,20 @@ import os
                         if depth < 16 { children(e).forEach { dump($0, depth + 1, onlyRadio: onlyRadio) } }
                     }
                     func find(_ e: Any, _ label: String) -> Any? {
-                        if role(e) == NSAccessibility.Role.radioButton.rawValue, name(e) == label { return e }
+                        if [NSAccessibility.Role.radioButton.rawValue, NSAccessibility.Role.button.rawValue].contains(role(e)),
+                           name(e) == label { return e }
                         for c in children(e) { if let hit = find(c, label) { return hit } }
                         return nil
                     }
                     dump(window, 0)
                     if let press {
-                        guard let button = find(window, press) else { print("AX no radio button “\(press)”"); fflush(stdout); return }
+                        guard let button = find(window, press) else { print("AX no button “\(press)”"); fflush(stdout); return }
                         let pressed = (button as AnyObject).responds(to: NSSelectorFromString("accessibilityPerformPress"))
+                        let radio = role(button) == NSAccessibility.Role.radioButton.rawValue
                         _ = (button as AnyObject).perform(NSSelectorFromString("accessibilityPerformPress"))
                         print("AX press “\(press)” (responds: \(pressed))")
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            dump(window, 0, onlyRadio: true)
+                            dump(window, 0, onlyRadio: radio)
                             fflush(stdout)
                         }
                     }
