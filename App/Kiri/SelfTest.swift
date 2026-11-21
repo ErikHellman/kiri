@@ -144,6 +144,16 @@ import os
                 print("SELFTEST rendered settings \(path)")
             }
         }
+        // -KiriShowSettings YES (opened by EditorScreen): nothing in Settings
+        // may take keyboard focus, and so a focus ring, just by opening.
+        if UserDefaults.standard.bool(forKey: "KiriShowSettings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let w = NSApp.windows.first(where: { $0.identifier?.rawValue == SettingsView.windowID }) else {
+                    report(false, "Settings window opened"); return
+                }
+                report(w.firstResponder === w, "Settings opens with no control focused (first responder \(w.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+            }
+        }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 (textView.delegate as? EditorController)?.model.showGoToLine = true

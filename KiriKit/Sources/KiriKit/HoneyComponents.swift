@@ -155,8 +155,10 @@ public struct HoneySegmentedPicker<Value: Hashable>: View {
         .padding(3)
         .fixedSize()
         .honeyGlass(.chrome)
-        // Keyboard: Tab focuses it (with Keyboard Navigation on), ← → move.
-        .focusable()
+        // Keyboard: Tab focuses it with Keyboard Navigation on, as it does a
+        // button, and ← → move. (Plain `focusable()` would also take focus,
+        // and show its ring, on a click or when its window opens.)
+        .focusable(interactions: .activate)
         .onKeyPress(.leftArrow) { step(-1, motion) }
         .onKeyPress(.rightArrow) { step(1, motion) }
     }

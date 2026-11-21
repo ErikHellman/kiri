@@ -18,7 +18,7 @@ struct EditorScreen: View {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.letterFadeKey) private var letterFade = false
     @Environment(\.undoManager) private var undoManager
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -59,7 +59,7 @@ struct EditorScreen: View {
             detectLanguage()
             tabs.resume()
             #if DEBUG || KIRI_SELFTEST
-            if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openSettings() }
+            if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
             #endif
         }
         .onChange(of: fileURL) { detectLanguage() }

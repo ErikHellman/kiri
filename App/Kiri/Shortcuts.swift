@@ -3,6 +3,7 @@ import SwiftUI
 /// Kiri's own key equivalents, shared by the menus and the Keyboard
 /// Shortcuts window so the two can't drift apart.
 enum Keys {
+    static let settings = KeyboardShortcut(",", modifiers: .command)
     static let newTab = KeyboardShortcut("t", modifiers: .command)
     static let find = KeyboardShortcut("f", modifiers: .command)
     static let findAndReplace = KeyboardShortcut("f", modifiers: [.option, .command])
@@ -92,7 +93,7 @@ struct ShortcutGroup: Identifiable {
             Item("Duplicate", "⇧⌘S"),
             Item("Save as…", "⌥⇧⌘S"),
             Item("Close tab", "⌘W"),
-            Item("Settings…", "⌘,"),
+            Item("Settings…", Keys.settings),
             Item("Quit", "⌘Q"),
         ]),
         ShortcutGroup(title: "Tabs", systemImage: "rectangle.stack", items: [

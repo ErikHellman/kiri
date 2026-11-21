@@ -28,10 +28,18 @@ struct KiriApp: App {
         .defaultSize(width: 900, height: 640)
         .commands { KiriCommands() }
 
-        Settings {
+        // Not a `Settings` scene: that one keeps its system title bar
+        // whatever the window style. As a window of its own, Settings looks
+        // like every other Kiri window; `KiriCommands` adds Kiri ▸ Settings…
+        Window("Settings", id: SettingsView.windowID) {
             SettingsView().honeyRoot(appearance)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        // No "Settings" entry in the Window menu: it lives in the app menu.
+        .commandsRemoved()
 
         Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
             ShortcutsView().honeyRoot(appearance)

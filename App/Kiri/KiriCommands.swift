@@ -23,8 +23,10 @@ struct KiriCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        CommandGroup(after: .appSettings) {
+        CommandGroup(replacing: .appSettings) {
             Button("Install Command Line Tool…") { CLIInstaller.install() }
+            Button("Settings…") { openWindow(id: SettingsView.windowID) }
+                .keyboardShortcut(Keys.settings)
         }
 
         CommandGroup(before: .sidebar) {

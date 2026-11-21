@@ -26,6 +26,8 @@ enum Prefs {
 
 /// Kiri ▸ Settings…: appearance, motion and text size.
 struct SettingsView: View {
+    static let windowID = "settings"
+
     @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
     @AppStorage(Prefs.colorThemeKey) private var colorTheme = Honey.Theme.honey.id
     @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
@@ -35,6 +37,26 @@ struct SettingsView: View {
     @AppStorage(Prefs.letterFadeKey) private var letterFade = false
 
     var body: some View {
+        panel
+            .padding([.horizontal, .bottom], Honey.gap)
+            .honeyCanvas()
+            // Honey on macOS (DESIGN.md §5): no title bar. The title sits on
+            // the canvas in the band the hidden title bar leaves (the top
+            // safe area), level with the traffic lights, the panel below it.
+            .overlay {
+                GeometryReader { window in
+                    Text("Settings")
+                        .font(.honey(.headline, weight: .heavy))
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.leading, 84) // the traffic lights
+                        .frame(height: window.safeAreaInsets.top)
+                        .offset(y: -window.safeAreaInsets.top)
+                }
+                .allowsHitTesting(false) // the band still drags the window
+            }
+    }
+
+    private var panel: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -58,7 +80,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller", systemImage: "minus") }
                         .buttonStyle(.honeyIcon)
-                    Text("\(Int((textScale * 100).rounded())) %")
+                    Text("\(Int((textScale * 100).rounded()))%")
                         .font(.honey(.subheadline, weight: .bold)).monospacedDigit().frame(width: 52)
                     Button { textScale = Prefs.bigger(textScale) } label: { Label("Bigger", systemImage: "plus") }
                         .buttonStyle(.honeyIcon)
@@ -71,8 +93,6 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 600)
         .honeyPanel()
-        .padding(Honey.gap)
-        .honeyCanvas()
     }
 
     private func row<C: View>(_ title: String, detail: String, @ViewBuilder control: () -> C) -> some View {
