@@ -41,27 +41,39 @@ import SwiftUI
         // frontmost document window's tab group instead. A folder window's
         // folder comes along now, so the new tab opens with the sidebar
         // already there instead of sliding it in a moment later.
-        if let host = NSApp.orderedWindows.first(where: {
-            $0 !== window && $0.isVisible && $0.tabbingIdentifier == window.tabbingIdentifier
-        }), let f = FolderSessions.session(for: host) {
+        Self.joining.insert(ObjectIdentifier(window))
+        if let host = Self.host(for: window), let f = FolderSessions.session(for: host) {
             FolderSessions.set(f, for: window)
             folder = f
         }
         DispatchQueue.main.async {
-            let host = NSApp.orderedWindows.first {
-                $0 !== window && $0.isVisible && $0.tabbingIdentifier == window.tabbingIdentifier
-                    && !($0.tabbedWindows?.contains(window) ?? false)
-            }
-            if let host {
+            if let host = Self.host(for: window), !(host.tabbedWindows?.contains(window) ?? false) {
                 host.addTabbedWindow(window, ordered: .above)
                 window.makeKeyAndOrderFront(nil)
             }
+            Self.joining.remove(ObjectIdentifier(window))
             self.refresh()
         }
         refresh()
         timer?.invalidate()
         timer = nil
         resume()
+    }
+
+    /// Windows that are up but haven't joined a tab group yet. Several files
+    /// opened at once (Finder, the Open panel, `kiri a b c`) all have their
+    /// windows, in front, before the first of them joins.
+    private static var joining: Set<ObjectIdentifier> = []
+
+    /// The window whose tab group a new document window joins: the frontmost
+    /// one that isn't itself still waiting to join. Waiting windows would
+    /// otherwise pair up with each other, and then leave again for a third,
+    /// which scatters the files over several windows.
+    private static func host(for window: NSWindow) -> NSWindow? {
+        NSApp.orderedWindows.first {
+            $0 !== window && $0.isVisible && $0.tabbingIdentifier == window.tabbingIdentifier
+                && !joining.contains(ObjectIdentifier($0))
+        }
     }
 
     /// Starts (or restarts, after the view came back) the refresh timer.

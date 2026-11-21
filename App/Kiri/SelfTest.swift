@@ -412,10 +412,108 @@ import os
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     report((window.tabbedWindows?.count ?? 1) == 1, "closing a tab")
                     try? FileManager.default.removeItem(at: url)
-                    NSApp.terminate(nil)
+                    Task { @MainActor in
+                        await manyFiles(window)
+                        NSApp.terminate(nil)
+                    }
                 }
             }
         }
+    }
+
+    // MARK: Several files at once
+
+    /// Several files opened in one go are tabs of one window: the front one,
+    /// a new one (`kiri -n`) or a folder's. Opened the way the `kiri` command
+    /// does (`KiriCLI.open`) and the way Finder and the Open panel do
+    /// (straight to the document controller, without waiting in between).
+    private static func manyFiles(_ original: NSWindow) async {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-many-test-\(getpid())")
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func files(_ prefix: String, _ count: Int) -> [URL] {
+            (1...count).map { i in
+                let url = dir.appendingPathComponent("\(prefix)-\(i).txt")
+                try? "\(prefix) \(i)\n".write(to: url, atomically: true, encoding: .utf8)
+                return url
+            }
+        }
+        func entries(_ urls: [URL]) -> [KiriCLI.Request.Entry] { urls.map { .file($0, line: 0, column: 0) } }
+        func group(_ w: NSWindow) -> Set<ObjectIdentifier> { Set((w.tabbedWindows ?? [w]).map { ObjectIdentifier($0) }) }
+        /// "8 of 8 open, tab groups [9]": how many of the files have a window,
+        /// and the sizes of the tab groups those windows are in.
+        func shape(_ ws: [NSWindow], of count: Int) -> String {
+            "\(ws.count) of \(count) open, tab groups \(Set(ws.map(group)).map(\.count).sorted(by: >))"
+        }
+        /// All of `ws` are tabs of one window.
+        func together(_ ws: [NSWindow]) -> Bool { Set(ws.map(group)).count == 1 }
+
+        // The `kiri` command, eight files: tabs of the front window.
+        let cli = files("cli", 8)
+        KiriCLI.open(KiriCLI.Request(entries: entries(cli)))
+        var ws = await settledWindows(cli)
+        report(ws.count == 8 && together(ws) && group(original).count == 9 && ws.allSatisfy { group($0) == group(original) },
+               "kiri with 8 files: all tabs of the front window (\(shape(ws, of: 8)))")
+
+        // Finder or the Open panel, eight files: the same.
+        let finder = files("finder", 8)
+        for url in finder {
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+        }
+        ws = await settledWindows(finder)
+        report(ws.count == 8 && together(ws) && group(original).count == 17 && ws.allSatisfy { group($0) == group(original) },
+               "8 files opened at once without the kiri command: all tabs of the front window (\(shape(ws, of: 8)))")
+
+        // `kiri -n`, four files: one new window, not the front one.
+        let fresh = files("new", 4)
+        KiriCLI.open(KiriCLI.Request(newWindow: true, entries: entries(fresh)))
+        ws = await settledWindows(fresh)
+        let freshGroup = ws.first.map(group) ?? []
+        report(ws.count == 4 && together(ws) && freshGroup.count == 4 && freshGroup.isDisjoint(with: group(original)),
+               "kiri -n with 4 files: one new window (\(shape(ws, of: 4)); front window has \(group(original).count) tabs)")
+
+        // A folder and three files: one folder window holding the files.
+        let inFolder = files("folder", 3)
+        KiriCLI.open(KiriCLI.Request(entries: [.folder(dir)] + entries(inFolder)))
+        ws = await settledWindows(inFolder)
+        var sessions = ws.map { FolderSessions.session(for: $0) }
+        let folderGroup = ws.first.map(group) ?? []
+        report(ws.count == 3 && together(ws) && folderGroup.count == 3
+               && folderGroup.isDisjoint(with: group(original)) && folderGroup.isDisjoint(with: freshGroup)
+               && sessions.first??.root.url == dir.standardizedFileURL && sessions.allSatisfy { $0 != nil && $0 === sessions.first! },
+               "kiri with a folder and 3 files: one folder window with the files (\(shape(ws, of: 3)), \(sessions.compactMap { $0 }.count) with the sidebar)")
+
+        // Three more files while the folder window is in front: tabs of it.
+        let more = files("more", 3)
+        KiriCLI.open(KiriCLI.Request(entries: entries(more)))
+        ws = await settledWindows(more) + ws
+        sessions = ws.map { FolderSessions.session(for: $0) }
+        report(ws.count == 6 && together(ws) && ws.first.map(group)?.count == 6
+               && sessions.allSatisfy { $0 != nil && $0 === sessions.first! },
+               "3 more files join the folder window (\(shape(ws, of: 6)), \(sessions.compactMap { $0 }.count) with the sidebar)")
+    }
+
+    /// The windows of the documents for `urls`, once every one of them has a
+    /// window and the tab groups have stopped changing (or after 8 s).
+    private static func settledWindows(_ urls: [URL]) async -> [NSWindow] {
+        let names = Set(urls.map(\.lastPathComponent))
+        func windows() -> [NSWindow] {
+            NSDocumentController.shared.documents
+                .filter { names.contains($0.fileURL?.lastPathComponent ?? "") }
+                .compactMap { Editors.window(for: $0) }
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        var last: [[Int]] = [], since = clock.now
+        while clock.now - start < .seconds(8) {
+            let ws = windows()
+            let now = ws.map { w in (w.tabbedWindows ?? [w]).map { ObjectIdentifier($0).hashValue }.sorted() }
+            if now != last { last = now; since = clock.now }
+            if ws.count == names.count, clock.now - since > .milliseconds(700) { return ws }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return windows()
     }
 
     private static func findTextView(in view: NSView?) -> NSTextView? {
