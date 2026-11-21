@@ -32,10 +32,25 @@ struct KiriCommands: Commands {
 
         CommandGroup(before: .sidebar) {
             Button(folder?.sidebarVisible == false ? "Show Sidebar" : "Hide Sidebar") {
-                folder?.sidebarVisible.toggle()
+                guard let folder else { return }
+                folder.sidebarVisible.toggle()
+                if !folder.sidebarVisible { editor?.controller?.focus() }
             }
             .keyboardShortcut(Keys.toggleSidebar)
             .disabled(folder == nil)
+            Button(editor?.sidebarHasFocus == true ? "Focus Editor" : "Focus Sidebar") {
+                guard let editor else { return }
+                if editor.sidebarHasFocus {
+                    editor.controller?.focus()
+                } else {
+                    folder?.sidebarVisible = true
+                    editor.sidebarFocusRequest += 1
+                }
+            }
+            .keyboardShortcut(Keys.focusSidebar)
+            .disabled(folder == nil || editor == nil)
+            Button("Refresh Folder") { folder?.refresh() }
+                .disabled(folder == nil)
         }
 
         // File

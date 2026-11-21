@@ -12,6 +12,10 @@ import SwiftUI
     var language = Language.plainText
     /// Go to Line (⌘L) is showing.
     var showGoToLine = false
+    /// The folder sidebar has the keyboard (⇧⌘E moves it there and back).
+    var sidebarHasFocus = false
+    /// Bumped to ask the sidebar to take the keyboard.
+    var sidebarFocusRequest = 0
     /// Set by the editor once it exists.
     @ObservationIgnored weak var controller: EditorController?
 }
@@ -329,5 +333,21 @@ struct EditorView: NSViewRepresentable {
     func focus() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
+    }
+
+    /// Puts the keyboard in the front window's editor, once a file opened
+    /// from the sidebar (maybe in another tab) has come forward.
+    static func focusKeyWindowEditor() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard let window = NSApp.keyWindow, let view = window.contentView,
+                  let text = findTextView(in: view) else { return }
+            window.makeFirstResponder(text)
+        }
+    }
+
+    private static func findTextView(in view: NSView) -> KiriTextView? {
+        if let t = view as? KiriTextView { return t }
+        for sub in view.subviews { if let t = findTextView(in: sub) { return t } }
+        return nil
     }
 }

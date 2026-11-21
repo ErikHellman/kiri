@@ -16,6 +16,7 @@ enum Keys {
     static let shortcuts = KeyboardShortcut("/", modifiers: .command)
     static let openFolder = KeyboardShortcut("o", modifiers: [.shift, .command])
     static let toggleSidebar = KeyboardShortcut("s", modifiers: [.control, .command])
+    static let focusSidebar = KeyboardShortcut("e", modifiers: [.shift, .command])
 
     /// ⌘1 … ⌘9 pick a tab by position.
     static func tab(_ n: Int) -> KeyboardShortcut {
@@ -104,6 +105,19 @@ struct ShortcutGroup: Identifiable {
             Item("Shift lines left", Keys.shiftLeft),
             Item("Emoji & symbols", "⌃⌘Space"),
         ]),
+        ShortcutGroup(title: "Folder sidebar", systemImage: "sidebar.left", items: [
+            Item("Show / hide sidebar", Keys.toggleSidebar),
+            Item("Jump between sidebar and editor", Keys.focusSidebar),
+            Item("Move up / down", "↑  ↓"),
+            Item("First / last row", "Home  End"),
+            Item("Page up / down", "PgUp  PgDn"),
+            Item("Close folder / go to parent", "←"),
+            Item("Open folder / go inside", "→"),
+            Item("Open file and edit it", "↩"),
+            Item("Open file or folder, stay here", "Space"),
+            Item("Jump to a name", "Type its first letters"),
+            Item("Back to the editor", "⎋"),
+        ]),
         ShortcutGroup(title: "Find", systemImage: "magnifyingglass", items: [
             Item("Find", "⌘F"),
             Item("Find and replace", "⌥⌘F"),
@@ -125,7 +139,6 @@ struct ShortcutGroup: Identifiable {
             Item("Smaller text", Keys.smaller),
             Item("Actual size", Keys.actualSize),
             Item("Wrap lines", Keys.wrapLines),
-            Item("Show / hide folder sidebar", Keys.toggleSidebar),
             Item("Full screen", "⌃⌘F"),
             Item("Keyboard shortcuts", Keys.shortcuts),
         ]),

@@ -24,7 +24,7 @@ struct EditorScreen: View {
             topBar
             HStack(spacing: Honey.gap) {
                 if let folder = tabs.folder, folder.sidebarVisible {
-                    FolderSidebar(session: folder, currentFile: fileURL?.standardizedFileURL, open: openFromSidebar)
+                    FolderSidebar(session: folder, model: model, currentFile: fileURL?.standardizedFileURL, open: openFromSidebar)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 editor

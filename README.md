@@ -23,6 +23,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⌘S / ⇧⌘S | Save / Duplicate |
 | ⇧⌘O | Open folder (a new window with a file sidebar) |
 | ⌃⌘S | Show / hide the folder sidebar |
+| ⇧⌘E | Jump between sidebar and editor (in the sidebar: arrows, Return, Space, type to select, Esc) |
 | ⌘W | Close tab |
 | ⌘F / ⌥⌘F | Find / Find and Replace |
 | ⌘G / ⇧⌘G | Find next / previous |

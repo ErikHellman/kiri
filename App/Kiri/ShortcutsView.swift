@@ -94,7 +94,8 @@ private struct KeyCaps: View {
 
     init(_ keys: String) {
         chords = keys.components(separatedBy: "  ")
-        isNote = !keys.contains(where: { "⌘⌃⌥⇧⎋⇥".contains($0) })
+        // Words, not keys: "Format menu", "Type its first letters".
+        isNote = keys.contains(where: \.isLowercase) && keys.contains(" ") && !keys.contains("  ")
     }
 
     var body: some View {
