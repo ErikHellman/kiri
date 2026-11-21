@@ -857,6 +857,9 @@ private struct HoneyStatusChrome: ViewModifier {
             }
             .onHover { hovering = $0 }
             .onChange(of: focused) { _, now in onFocusChange?(now) }
+            // An item that goes away with the keyboard on it (the bar laid
+            // out anew for a narrower panel) gives it up.
+            .onDisappear { if focused { onFocusChange?(false) } }
             .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: active)
     }
 
