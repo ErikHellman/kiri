@@ -57,7 +57,7 @@ Tests: `cd KiriKit && swift test` (the token, document-model and syntax tests; t
   - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) and the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer).
   - `KiriSyntax`: Tree-sitter parsing and highlight queries (macOS only).
 - `App/` the macOS app (XcodeGen spec in `App/project.yml`): `DocumentGroup` documents, the TextKit 2 editor, tabs, settings and commands.
-- `scripts/` `build.sh` (release build) and `make-icon.swift` (draws the app icon).
+- `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).
 - `docs/DESIGN.md` the design language.
 
 Nunito is licensed under the SIL Open Font License 1.1 (`KiriKit/Sources/KiriKit/Fonts/OFL.txt`). Tree-sitter grammars and queries are MIT licensed (`KiriKit/Sources/KiriSyntax/Queries/LICENSES.txt`).
