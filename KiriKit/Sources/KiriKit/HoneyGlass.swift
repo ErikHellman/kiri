@@ -145,15 +145,24 @@ private struct HoneyGlassButton: View {
 
     private static let height: CGFloat = 30
 
+    /// An icon button shows its icon alone but keeps its title as its name:
+    /// the system's icon-only style gives it to VoiceOver, where a style
+    /// that just leaves the title out makes a button with no name.
+    @ViewBuilder private var label: some View {
+        if kind == .icon {
+            configuration.label.labelStyle(.iconOnly).font(.system(size: 13, weight: .semibold))
+        } else {
+            configuration.label.labelStyle(HoneyButtonLabelStyle()).font(.honey(.subheadline, weight: .bold))
+        }
+    }
+
     var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
         let pressed = configuration.isPressed && !motion.reduced
         let glass: HoneyGlass = kind == .prominent ? .prominent : .chrome
         // A pill is a rounded rectangle at half the height; pressing tightens it.
         let shape = RoundedRectangle(cornerRadius: pressed ? Self.height * 0.36 : Self.height / 2, style: .continuous)
-        configuration.label
-            .font(.honey(.subheadline, weight: .bold))
-            .labelStyle(HoneyButtonLabelStyle(iconOnly: kind == .icon))
+        label
             .foregroundStyle(glass.foreground)
             .padding(.horizontal, kind == .icon ? 0 : 14)
             .frame(minWidth: Self.height, minHeight: Self.height)
@@ -165,18 +174,12 @@ private struct HoneyGlassButton: View {
     }
 }
 
-/// Icon and title with Honey spacing, or the icon alone for icon buttons.
+/// Icon and title with Honey spacing.
 private struct HoneyButtonLabelStyle: LabelStyle {
-    let iconOnly: Bool
-
     func makeBody(configuration: Configuration) -> some View {
-        if iconOnly {
-            configuration.icon.font(.system(size: 13, weight: .semibold))
-        } else {
-            HStack(spacing: 6) {
-                configuration.icon.font(.system(size: 12, weight: .bold))
-                configuration.title
-            }
+        HStack(spacing: 6) {
+            configuration.icon.font(.system(size: 12, weight: .bold))
+            configuration.title
         }
     }
 }
