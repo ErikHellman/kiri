@@ -86,7 +86,9 @@ import QuartzCore
 
         // Caret.
         if let caretRect, showCaret {
-            let r = NSRect(x: caretRect.minX - 0.5, y: caretRect.minY, width: 2, height: caretRect.height)
+            let ink = textView.caretInkGaps(at: caretRect)
+            let r = Self.caretFrame(insertion: caretRect, inkBefore: ink.before, inkAfter: ink.after,
+                                    scale: textView.window?.backingScaleFactor ?? 2)
             if animated, mode == .full, let last = lastCaretRect, !caretLayer.isHidden,
                hypot(last.midX - r.midX, last.midY - r.midY) > 0.5 {
                 ease(caretLayer, key: "position", from: caretLayer.position, to: CGPoint(x: r.midX, y: r.midY),
@@ -102,6 +104,28 @@ import QuartzCore
             lastCaretRect = nil
         }
         CATransaction.commit()
+    }
+
+    /// The caret bar's width in points (DESIGN.md §6).
+    static let caretWidth: CGFloat = 2
+    /// The air the bar keeps to the letters beside it, where there is room.
+    static let caretClearance: CGFloat = 0.5
+
+    /// The bar for an insertion point at `insertion` (a zero-width rect).
+    /// `inkBefore` and `inkAfter` say how far from the insertion point the
+    /// ink of the letters on either side begins (their side bearings;
+    /// `.infinity` without a letter). The bar is centred on the insertion
+    /// point when that keeps it clear of both letters, moves away from a
+    /// letter it would cut into, and sits in the middle of a gap that is
+    /// narrower than itself. Snapped to whole pixels so its edges are crisp.
+    static func caretFrame(insertion: NSRect, inkBefore: CGFloat, inkAfter: CGFloat, scale: CGFloat) -> NSRect {
+        let x = insertion.minX, width = caretWidth
+        let lowest = x - inkBefore + caretClearance, highest = x + inkAfter - caretClearance - width
+        var left = lowest <= highest
+            ? min(max(x - width / 2, lowest), highest)
+            : x + (inkAfter - inkBefore) / 2 - width / 2
+        if scale > 0 { left = (left * scale).rounded() / scale }
+        return NSRect(x: left, y: insertion.minY, width: width, height: insertion.height)
     }
 
     /// Fully visible right after a move, then a slow, soft pulse instead of
@@ -188,6 +212,33 @@ extension KiriTextView {
         r.origin.x += textContainerOrigin.x
         r.origin.y += textContainerOrigin.y
         return r
+    }
+
+    /// How far the ink of the characters around the caret (at `rect`, from
+    /// `caretRect()`) is from the insertion point: the right side bearing of
+    /// the glyph before it and the left side bearing of the glyph after it.
+    /// `.infinity` where nothing is drawn: a line's start or end, white space.
+    func caretInkGaps(at rect: NSRect) -> (before: CGFloat, after: CGFloat) {
+        guard let storage = textStorage, let font else { return (.infinity, .infinity) }
+        let text = storage.string as NSString
+        let index = selectedRange().location
+        /// The glyph's bearings, nil for white space; a character the editor
+        /// font doesn't draw (emoji, CJK) counts as ink right up to its edges.
+        func bearings(_ i: Int) -> (left: CGFloat, right: CGFloat)? {
+            guard i >= 0, i < text.length else { return nil }
+            var ch = text.character(at: i)
+            if let scalar = UnicodeScalar(ch), CharacterSet.whitespacesAndNewlines.contains(scalar) { return nil }
+            var glyph = CGGlyph()
+            guard CTFontGetGlyphsForCharacters(font, &ch, &glyph, 1) else { return (0, 0) }
+            var box = CGRect.zero
+            CTFontGetBoundingRectsForGlyphs(font, .horizontal, &glyph, &box, 1)
+            let advance = CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, nil, 1)
+            return (max(0, box.minX), max(0, advance - box.maxX))
+        }
+        // At the start of a visual line (also a wrapped one) nothing is drawn before the caret.
+        let lineStart = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
+        let before = rect.minX <= lineStart + 0.01 ? nil : bearings(index - 1)
+        return (before?.right ?? .infinity, bearings(index)?.left ?? .infinity)
     }
 
     /// The rect of the bracket matching the one just before or after the

@@ -67,6 +67,34 @@ import os
                 textView.performTextFinderAction({ let i = NSMenuItem(); i.tag = NSTextFinder.Action.nextMatch.rawValue; return i }())
             }
         }
+        // Screenshot helper: -KiriForceCaret YES shows the caret although the
+        // window isn't key (a background launch), keeps it from breathing so
+        // every capture has it at full strength, and says where it is.
+        // -KiriCaretAt <n> puts it before the document's nth character.
+        if UserDefaults.standard.bool(forKey: "KiriForceCaret"), let ktv = textView as? KiriTextView {
+            KiriTextView.forceCaretActive = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                ktv.window?.makeFirstResponder(ktv)
+                let at = min(UserDefaults.standard.integer(forKey: "KiriCaretAt"), (ktv.string as NSString).length)
+                ktv.setSelectedRange(NSRange(location: at, length: 0))
+                Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+                    MainActor.assumeIsolated { ktv.effects?.update(animated: false) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard let rect = ktv.caretRect(), let window = ktv.window else { return }
+                    let ink = ktv.caretInkGaps(at: rect)
+                    let bar = EditorEffects.caretFrame(insertion: rect, inkBefore: ink.before, inkAfter: ink.after,
+                                                       scale: window.backingScaleFactor)
+                    // In window points from the top left, as a capture of the window has them.
+                    let inWindow = { (r: NSRect) -> String in
+                        let w = ktv.convert(r, to: nil)
+                        return String(format: "x=%.2f y=%.2f w=%.2f h=%.2f", w.minX, window.frame.height - w.maxY, w.width, w.height)
+                    }
+                    print("SELFTEST info caret at \(at): insertion \(inWindow(rect)), bar \(inWindow(bar)), ink before \(ink.before) after \(ink.after), effects \(ktv.effects != nil)")
+                    fflush(stdout)
+                }
+            }
+        }
         if let path = UserDefaults.standard.string(forKey: "KiriSnapshot") {
             KiriTextView.forceCaretActive = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
