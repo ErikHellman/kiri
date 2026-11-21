@@ -45,12 +45,15 @@ struct SettingsView: View {
             // safe area), level with the traffic lights, the panel below it.
             .overlay {
                 GeometryReader { window in
-                    Text("Settings")
-                        .font(.honey(.headline, weight: .heavy))
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.leading, 84) // the traffic lights
-                        .frame(height: window.safeAreaInsets.top)
-                        .offset(y: -window.safeAreaInsets.top)
+                    // Without a band (an offscreen render) there is no room for it.
+                    if window.safeAreaInsets.top > 0 {
+                        Text("Settings")
+                            .font(.honey(.headline, weight: .heavy))
+                            .accessibilityAddTraits(.isHeader)
+                            .padding(.leading, 84) // the traffic lights
+                            .frame(height: window.safeAreaInsets.top)
+                            .offset(y: -window.safeAreaInsets.top)
+                    }
                 }
                 .allowsHitTesting(false) // the band still drags the window
             }
