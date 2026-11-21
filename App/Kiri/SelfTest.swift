@@ -1994,6 +1994,28 @@ import os
         NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: second.window)
         report(byNotification && FrontEditor.shared.editor == nil, "the front window is followed by its becoming and resigning main")
 
+        // ⌘S as a key, the way it mostly comes: nobody has opened the File
+        // menu since this window came forward, and the items were last
+        // drawn off (no document window in front). The key has to find
+        // Save on all the same.
+        FrontEditor.shared.selfTestMain(second.window)
+        second.text.insertText("keyed ", replacementRange: NSRange(location: 0, length: 0))
+        await settle(250)
+        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: second.window.windowNumber, context: nil, characters: "s",
+                                   charactersIgnoringModifiers: "s", isARepeat: false, keyCode: 1)
+        let saveBefore = item("Save", in: file)?.isEnabled
+        // Through the app's own event queue, as a pressed key comes.
+        if let key { NSApp.postEvent(key, atStart: false) }
+        let keyed = await wait { !doc.isDocumentEdited }
+        report(saveBefore == false && keyed && (try? String(contentsOf: url, encoding: .utf8)) == "keyed edited second window\n",
+               "⌘S saves the document in front though the File menu was last drawn with Save off and hasn't been opened since")
+        let start = clock.now
+        for _ in 0..<20 { MainMenu.refresh() }
+        let each = (clock.now - start) / 20
+        report(each < .milliseconds(4), "bringing the menus up to date before a key costs \(each.formatted(.units(allowed: [.microseconds])))")
+        FrontEditor.shared.selfTestMain(nil)
+
         second.window.performClose(nil)
         _ = await wait { (original.tabbedWindows?.count ?? 1) == 1 }
         await front(original)

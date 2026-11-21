@@ -59,6 +59,15 @@ import SwiftUI
                 if let window = object as? NSWindow { FrontEditor.shared.windowResignedMain(window) }
             }
         }
+        // SwiftUI brings a menu's items up to date when the menu is about
+        // to open, and a key equivalent doesn't open it: ⌘S in a window
+        // that has just come forward would find Save as it was for the
+        // window before (off, after Settings) and do nothing. So a key
+        // that may be a menu's has the menus brought up to date first.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if !event.modifierFlags.intersection([.command, .control]).isEmpty { MainActor.assumeIsolated { MainMenu.refresh() } }
+            return event
+        }
     }
 
     #if DEBUG || KIRI_SELFTEST
@@ -84,5 +93,18 @@ import SwiftUI
         if editor != nil { editor = nil }
         if tabs != nil { tabs = nil }
         if document != nil { document = nil }
+    }
+}
+
+/// The menu bar's menus.
+@MainActor enum MainMenu {
+    /// Brings every menu's items up to date, as opening it would.
+    static func refresh() {
+        if let menu = NSApp.mainMenu { refresh(menu) }
+    }
+
+    private static func refresh(_ menu: NSMenu) {
+        menu.delegate?.menuNeedsUpdate?(menu)
+        for item in menu.items { if let submenu = item.submenu { refresh(submenu) } }
     }
 }
