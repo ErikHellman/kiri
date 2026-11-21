@@ -16,6 +16,7 @@ import os
     private static var renderedTabs = false
     private static var renderedFind = false
     private static var renderedChrome = false
+    private static var renderedSave = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -283,6 +284,30 @@ import os
             }
             fflush(stdout)
         }
+        // -KiriRenderSave <folder>: the Save button's states in the top bar's
+        // row, in every color theme, light and dark, one sheet for each
+        // (offscreen: the solid Honey fills stand in for the glass).
+        if let folder = UserDefaults.standard.string(forKey: "KiriRenderSave"), !renderedSave {
+            renderedSave = true
+            let chosen = Honey.theme
+            for (name, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+                let blocks: [NSImage] = Honey.Theme.all.compactMap { theme in
+                    // For this picture only; the saved theme comes back below.
+                    Honey.theme = theme
+                    let renderer = ImageRenderer(content: SaveButtonSample.block(theme, scheme))
+                    renderer.scale = 2
+                    return renderer.nsImage
+                }
+                let path = "\(folder)/save-button-\(name).png"
+                if let png = contactSheet(blocks, columns: 2) {
+                    try? png.write(to: URL(fileURLWithPath: path))
+                    print("SELFTEST rendered save \(path)")
+                }
+            }
+            Honey.theme = chosen
+            print("SELFTEST info Save widths: resting \(SaveButtonSample.width(.idle, pending: false)), pill \(SaveButtonSample.width(.idle, pending: true)), a plain label pill \(SaveButtonSample.plainPillWidth)")
+            fflush(stdout)
+        }
         // -KiriShowSettings YES (opened by EditorScreen): nothing in Settings
         // may take keyboard focus, and so a focus ring, just by opening.
         if UserDefaults.standard.bool(forKey: "KiriShowSettings") {
@@ -547,6 +572,28 @@ import os
     static func updateMenu(_ menu: NSMenu) {
         menu.delegate?.menuNeedsUpdate?(menu)
         for item in menu.items { if let sub = item.submenu { updateMenu(sub) } }
+    }
+
+    /// Pictures side by side in rows of `columns`, as one PNG.
+    static func contactSheet(_ images: [NSImage], columns: Int) -> Data? {
+        guard let first = images.first else { return nil }
+        let cell = images.reduce(first.size) { NSSize(width: max($0.width, $1.size.width), height: max($0.height, $1.size.height)) }
+        let rows = (images.count + columns - 1) / columns
+        let size = NSSize(width: cell.width * CGFloat(columns), height: cell.height * CGFloat(rows))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        // In points, before the context is made: it draws at 2x then.
+        rep.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        for (i, image) in images.enumerated() {
+            let origin = NSPoint(x: CGFloat(i % columns) * cell.width, y: size.height - CGFloat(i / columns + 1) * cell.height)
+            image.draw(in: NSRect(origin: origin, size: image.size))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
     }
 
     static func report(_ ok: Bool, _ what: String) {
@@ -1868,9 +1915,12 @@ import os
         report(within(typed) && typed.tab! <= .milliseconds(100),
                "a keystroke turns the tab dirty within 50 ms of the document (document \(ms(typed.document)), tab \(ms(typed.tab)) after the key; safety net off)")
 
+        await saveButtonShows(window, unsaved: true)
+
         doc.save(withDelegate: nil, didSave: nil, contextInfo: nil)
         let saved = await lag(dirty: false)
         report(within(saved), "a save clears the tab's dot within 50 ms of the document (document \(ms(saved.document)), tab \(ms(saved.tab)))")
+        await saveButtonShows(window, unsaved: false)
 
         tv.undoManager?.undo()
         let undone = await lag(dirty: true)
@@ -1934,6 +1984,37 @@ import os
         let closed = await time { model.items.map(\.id) == [window.windowNumber] }
         report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed elsewhere leaves the strip (\(ms(closed)))")
         _ = await time { (window.tabbedWindows?.count ?? 1) == 1 }
+    }
+
+    /// Save says what the tab's dot says, by its shape and to VoiceOver:
+    /// one button named Save, a 30 pt circle with "No unsaved changes" for
+    /// its value while there is nothing to save, the wider pill with
+    /// "Unsaved changes" once there is. Read from what VoiceOver is given,
+    /// which SwiftUI keeps current only for a window that can be seen.
+    private static func saveButtonShows(_ window: NSWindow, unsaved: Bool) async {
+        await wakeAccessibility()
+        // Long enough for the spring to come to rest.
+        try? await Task.sleep(for: .milliseconds(500))
+        let named = accessibilityElements(of: window).filter { $0.name == "Save" && $0.role == NSAccessibility.Role.button.rawValue }
+        let width = named.first?.frame.width ?? 0, height = named.first?.frame.height ?? 0
+        let visible = window.occlusionState.contains(.visible)
+        let state = unsaved ? "unsaved" : "saved"
+        // What it says.
+        let said = named.count == 1 && named[0].value == (unsaved ? "Unsaved changes" : "No unsaved changes")
+        if said || visible {
+            report(said, "Save says “\(unsaved ? "Unsaved changes" : "No unsaved changes")” while the tab is \(state) (\(named.count) named Save, value “\(named.first?.value ?? "")”)")
+        } else {
+            print("SELFTEST SKIP what Save says while the tab is \(state) (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // Its shape. Behind a locked screen no frame of the spring is ever
+        // drawn, and the outline stays where it started.
+        let shaped = unsaved ? width >= 60 : abs(width - HoneyTaskButton.height) <= 1
+        let what = "Save is \(unsaved ? "the pill" : "a 30 pt circle") while the tab is \(state)"
+        if shaped && height >= 24 || visible {
+            report(shaped && height >= 24, "\(what) (\(width) × \(height) pt)")
+        } else {
+            print("SELFTEST SKIP \(what) (the window is covered or the screen locked: its spring isn't running; \(width) × \(height) pt)")
+        }
     }
 
     // MARK: The menus act on the window in front
@@ -2271,12 +2352,16 @@ import os
 
 /// The top bar's row laid out as `EditorScreen.topBar` does, around a tab
 /// strip of made-up tabs, for `-KiriRenderTabs`.
-private struct TabStripSample: View {
+struct TabStripSample: View {
     let caption: String
     let tabs: [HoneyTab<Int>]
     let selected: Int
     var sidebar = false
     let width: CGFloat
+    var save = HoneyTaskState.idle
+
+    /// As in a window: Save is the pill while the tab that shows is unsaved.
+    private var unsaved: Bool { tabs.first { $0.id == selected }?.dirty ?? false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -2292,7 +2377,7 @@ private struct TabStripSample: View {
                     }
                 }
                 Spacer(minLength: 0)
-                HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: .idle) {}
+                HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: save, pending: unsaved) {}
             }
             .padding(.leading, 84)
             .frame(height: 32)
@@ -2345,6 +2430,46 @@ private struct TabStripSample: View {
         .background(Color.honeyCanvas)
         .environment(\.honeyOffscreen, true)
         .honeyRoot(HoneyAppearance())
+    }
+}
+
+/// The Save button's states in the top bar's row, for `-KiriRenderSave`.
+enum SaveButtonSample {
+    /// One theme's rows. `Honey.theme` is that theme while it is drawn.
+    @MainActor static func block(_ theme: Honey.Theme, _ scheme: ColorScheme) -> some View {
+        let one = TabStripSample.tabs(["sample.swift"], dirty: []), edited = TabStripSample.tabs(["sample.swift"], dirty: [0])
+        let many = Array(TabStripSample.names.prefix(12))
+        let rows: [TabStripSample] = [
+            TabStripSample(caption: "nothing to save: a glass circle", tabs: one, selected: 0, width: 480),
+            TabStripSample(caption: "unsaved changes: the accent pill", tabs: edited, selected: 0, width: 480),
+            TabStripSample(caption: "saving", tabs: edited, selected: 0, width: 480, save: .busy),
+            TabStripSample(caption: "saved, for 1.5 s", tabs: one, selected: 0, width: 480, save: .done),
+            TabStripSample(caption: "12 tabs at 480 pt, nothing to save", tabs: TabStripSample.tabs(many, dirty: []), selected: 5, width: 480),
+            TabStripSample(caption: "12 tabs at 480 pt, unsaved: the strip gives the pill its room",
+                           tabs: TabStripSample.tabs(many, dirty: [5]), selected: 5, width: 480),
+        ]
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(theme.name).font(.honey(.subheadline, weight: .heavy)).foregroundStyle(Color.honeyFg)
+                .padding(.leading, Honey.gap).padding(.top, 8)
+            ForEach(rows.indices, id: \.self) { rows[$0] }
+        }
+        .padding(.bottom, 8)
+        .background(Color.honeyCanvas)
+        .environment(\.honeyOffscreen, true)
+        .environment(\.colorScheme, scheme)
+        .honeyRoot(HoneyAppearance())
+    }
+
+    /// The button's width as SwiftUI lays it out.
+    @MainActor static func width(_ state: HoneyTaskState, pending: Bool) -> CGFloat {
+        ImageRenderer(content: HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: state, pending: pending) {}
+            .honeyRoot(HoneyAppearance())).nsImage?.size.width ?? 0
+    }
+
+    /// The pill as it was before it had a resting look: a plain `Label`.
+    @MainActor static var plainPillWidth: CGFloat {
+        ImageRenderer(content: Label("Save", systemImage: "square.and.arrow.down").font(.honey(.subheadline, weight: .bold))
+            .padding(.horizontal, 14).frame(height: 30).honeyRoot(HoneyAppearance())).nsImage?.size.width ?? 0
     }
 }
 

@@ -541,49 +541,87 @@ public extension HoneySegmentedPicker where Value: CaseIterable & RawRepresentab
 
 // MARK: Busy → done button
 
-/// The state of an action that does async work (§7.2).
-public enum HoneyTaskState: Sendable, Equatable {
-    case idle, busy, done, failed
-}
-
-/// A primary button for async work such as saving: an amber pill while idle,
-/// a circle with a spinner while busy, a green check with `doneLabel` when
-/// done. Set `.done` back to `.idle` after `Honey.doneHold` seconds.
+/// A primary button for async work such as saving. Shape tells state
+/// (`HoneyTaskState.Look`): with nothing to do it rests as a chrome glass
+/// circle with the icon alone; with work waiting (`pending`: unsaved
+/// changes) it springs open into the amber pill; busy is a circle with a
+/// spinner, done a green check with `doneLabel`. Set `.done` back to
+/// `.idle` after `Honey.doneHold` seconds.
+///
+/// VoiceOver hears `title` in every state, with the state as its value
+/// ("Unsaved changes", "No unsaved changes", "Saving", "Saved").
 public struct HoneyTaskButton: View {
     let title: String
     let systemImage: String
     let doneLabel: String
+    let busyLabel: String
+    let pendingLabel: String
+    let restingLabel: String
     let state: HoneyTaskState
+    let pending: Bool
     let action: () -> Void
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
 
-    public init(_ title: String, systemImage: String, doneLabel: String = "Saved", state: HoneyTaskState,
-                action: @escaping () -> Void) {
+    /// The height of every look, and the width of the round ones: the
+    /// icon buttons' size, so a resting Save sits level with them.
+    public static let height: CGFloat = 30
+
+    /// - Parameter pending: there is work for the button to do. A button
+    ///   that always has (the default) is the pill whenever it is idle.
+    public init(_ title: String, systemImage: String, doneLabel: String = "Saved", busyLabel: String = "Saving",
+                pendingLabel: String = "Unsaved changes", restingLabel: String = "No unsaved changes",
+                state: HoneyTaskState, pending: Bool = true, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.doneLabel = doneLabel
+        self.busyLabel = busyLabel
+        self.pendingLabel = pendingLabel
+        self.restingLabel = restingLabel
         self.state = state
+        self.pending = pending
         self.action = action
     }
 
     public var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
+        let look = state.look(pending: pending)
         Button(action: action) {
-            content.frame(height: 30)
+            content(look).frame(height: Self.height)
         }
-        .buttonStyle(HoneyTaskButtonStyle(state: state))
+        .buttonStyle(HoneyTaskButtonStyle(look: look))
         .disabled(state == .busy)
-        .animation(motion.shape, value: state)
-        .accessibilityLabel(state == .done ? doneLabel : title)
+        // The spring for the outline (a quick ease when reduced, nothing
+        // when off); what is inside fades.
+        .animation(motion.shape, value: look)
+        .accessibilityLabel(title)
+        .accessibilityValue(value(look))
     }
 
-    @ViewBuilder private var content: some View {
-        switch state {
-        case .idle:
-            Label(title, systemImage: systemImage).transition(.opacity)
+    private func value(_ look: HoneyTaskState.Look) -> String {
+        switch look {
+        case .resting: restingLabel
+        case .pill: pendingLabel
+        case .busy: busyLabel
+        case .done: doneLabel
+        case .failed: "Failed"
+        }
+    }
+
+    @ViewBuilder private func content(_ look: HoneyTaskState.Look) -> some View {
+        switch look {
+        case .resting, .pill:
+            // One icon for both, so it glides from the middle of the
+            // circle to its place in the pill while the title fades in.
+            HStack(spacing: HoneyTaskButtonStyle.labelSpacing) {
+                Image(systemName: systemImage)
+                    .font(look == .pill ? nil : .system(size: 13, weight: .semibold))
+                if look == .pill { Text(title).fixedSize().transition(.opacity) }
+            }
+            .frame(minWidth: look == .pill ? nil : Self.height)
+            .transition(.opacity)
         case .busy:
-            ProgressView().controlSize(.small).tint(Color.honeyAccentFg).frame(width: 30).transition(.opacity)
+            ProgressView().controlSize(.small).tint(Color.honeyAccentFg).frame(width: Self.height).transition(.opacity)
         case .done:
             Label(doneLabel, systemImage: "checkmark").foregroundStyle(Color.honeyOK).transition(.opacity)
         case .failed:
@@ -594,25 +632,30 @@ public struct HoneyTaskButton: View {
 }
 
 private struct HoneyTaskButtonStyle: ButtonStyle {
-    let state: HoneyTaskState
+    let look: HoneyTaskState.Look
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
+
+    /// Between the pill's icon and its title, as a `Label` sets them.
+    static let labelSpacing: CGFloat = 8
 
     func makeBody(configuration: Configuration) -> some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
         let pressed = configuration.isPressed && !motion.reduced
-        // Busy is a circle, done a rounded rectangle, idle a pill.
-        let radius: CGFloat = switch state {
+        let idle = look == .pill || look == .resting
+        // Resting and busy are circles, done a rounded rectangle, the pill a pill.
+        let radius: CGFloat = switch look {
         case .busy: 15
         case .done, .failed: 10
-        case .idle: pressed ? 11 : 15
+        case .pill, .resting: pressed ? 11 : 15
         }
-        let glass: HoneyGlass = state == .idle || state == .busy ? .prominent : .chrome
+        // Amber is for work: waiting (the pill) or under way.
+        let glass: HoneyGlass = look == .pill || look == .busy ? .prominent : .chrome
         configuration.label
             .font(.honey(.subheadline, weight: .bold))
             .foregroundStyle(glass.foreground)
-            .padding(.horizontal, state == .busy ? 0 : 14)
-            .honeyGlass(glass, in: RoundedRectangle(cornerRadius: radius, style: .continuous), interactive: state == .idle)
+            .padding(.horizontal, look == .busy || look == .resting ? 0 : 14)
+            .honeyGlass(glass, in: RoundedRectangle(cornerRadius: radius, style: .continuous), interactive: idle)
             .scaleEffect(pressed ? 0.96 : 1)
             .animation(motion.shape, value: configuration.isPressed)
     }

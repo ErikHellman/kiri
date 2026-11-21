@@ -216,6 +216,37 @@ public struct HoneyAppearance: Equatable, Sendable {
     }
 }
 
+/// The state of an action that does async work, such as saving (§7.2).
+public enum HoneyTaskState: Sendable, Equatable {
+    case idle, busy, done, failed
+
+    /// What a task button shows. Shape tells state: each look has an
+    /// outline of its own.
+    public enum Look: Sendable, Equatable {
+        /// Idle with nothing to do (a saved document): a chrome glass
+        /// circle with the icon alone. It still works when pressed.
+        case resting
+        /// Idle with work waiting (unsaved changes): the amber pill.
+        case pill
+        /// A circle with a spinner.
+        case busy
+        /// The green check and its word, for `Honey.doneHold`.
+        case done
+        case failed
+    }
+
+    /// `pending`: there is work for the button (unsaved changes). Only an
+    /// idle button shows it; busy and done look the same either way.
+    public func look(pending: Bool) -> Look {
+        switch self {
+        case .idle: pending ? .pill : .resting
+        case .busy: .busy
+        case .done: .done
+        case .failed: .failed
+        }
+    }
+}
+
 /// How the editor animates typing (caret glide, glyph fade-in, line and
 /// bracket highlights), resolved from the motion setting, the OS Reduce
 /// Motion switch and the Typing animations toggle.

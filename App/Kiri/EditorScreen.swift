@@ -136,8 +136,14 @@ struct EditorScreen: View {
     /// The toolbar row on the canvas, level with the traffic lights: in a
     /// folder window the sidebar's button, then the tab strip, a new-tab
     /// button and Save.
+    ///
+    /// Save says whether there is anything to save by its shape: a glass
+    /// circle while the document is as its file is, the amber pill once it
+    /// has unsaved changes (`WindowTabs.dirty`, set in the same refresh as
+    /// the tab's dot). A crowded tab strip gets the width the circle frees.
     private var topBar: some View {
-        HStack(spacing: 8) {
+        let saveLook = saveState.look(pending: tabs.dirty)
+        return HStack(spacing: 8) {
             HoneyGlassGroup {
                 HStack(spacing: 8) {
                     if let folder = tabs.folder {
@@ -168,10 +174,12 @@ struct EditorScreen: View {
                 }
             }
             Spacer(minLength: 0)
-            HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, action: save)
+            HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, pending: tabs.dirty, action: save)
                 .help("Save (⌘S)")
-                .opacity(tabs.dirty || saveState != .idle ? 1 : 0.55)
         }
+        // The whole row moves with Save's outline, on the same spring: the
+        // strip takes up or gives back the width without a jump.
+        .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: saveLook)
         .padding(.leading, 84) // the traffic lights
         .frame(height: 32)
         .padding(.top, Honey.gap)

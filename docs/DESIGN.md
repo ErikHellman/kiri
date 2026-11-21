@@ -6,7 +6,7 @@ Kiri uses Honey, the design language from Ting (agreed with Erik 2026-11-17), co
 
 - **Warm, not sweet.** Cream and honey surfaces, plum-brown ink, one amber accent. No gradients on chrome.
 - **Glass for chrome, paper for text.** Tabs, toolbar buttons, the status bar, find and quick-open float as warm Liquid Glass. The document itself sits on a solid `surface` panel, because text people read and edit must never sit on blur.
-- **Shape tells state.** A control changes shape when its meaning changes (dirty dot → close button, Save pill → busy circle → "Saved" check). Color alone never carries state.
+- **Shape tells state.** A control changes shape when its meaning changes (dirty dot → close button; Save: glass circle → amber pill → busy circle → "Saved" check). Color alone never carries state.
 - **Spring, then settle.** ≈380 ms spring with slight overshoot for shape changes, under 200 ms for hover and color.
 - **Respect the person.** Follow reduce motion, reduce transparency and increase contrast; keep WCAG 2.2 AA contrast in both themes.
 
@@ -16,7 +16,7 @@ Kiri uses Honey, the design language from Ting (agreed with Erik 2026-11-17), co
 |---|---|---|
 | `chrome` | `Glass.regular` tinted with `surface` at 35 % | Tab strip, icon buttons, status bar, search field, toasts |
 | `honey` | `Glass.regular` tinted with `accent` at 32 % | Something selected or active on glass |
-| `prominent` | `Glass.regular` tinted `accent`, `accent-fg` text | The primary action (Save) |
+| `prominent` | `Glass.regular` tinted `accent`, `accent-fg` text | The primary action, while it has work: Save with unsaved changes |
 | `tinted(color, foreground:)` | Any tint | One-offs |
 
 - Apply with `.honeyGlass(kind, in: shape)` (or `radius:`); controls pass `interactive: true` so the glass reacts to the pointer.
@@ -106,7 +106,7 @@ Signature components in Kiri:
 
 1. **Sliding selection pill** for tabs and segmented controls (`HoneyTabStrip`, `HoneySegmentedPicker`).
 2. **Dirty dot ↔ close:** an unsaved tab shows an amber dot that becomes the close button on hover.
-3. **Busy → done** (`HoneyTaskButton`): Save squeezes into a circle with a spinner, opens into a green "Saved" check for 1.5 s, then returns.
+3. **Rest → work → busy → done** (`HoneyTaskButton`, `HoneyTaskState.Look`): with nothing to save, Save rests as a 30 pt `chrome` glass circle with the icon alone, at full strength and still a working button (in an untitled document it opens the Save panel). Unsaved changes spring it open into the amber "Save" pill, the one saturated thing in the window, so amber means "you have unsaved changes"; it follows `WindowTabs.dirty`, set in the same refresh as the tab's dot. Pressed, it squeezes into a circle with a spinner, opens into a green "Saved" check for 1.5 s, then returns to the circle. The top bar's row moves on the same spring, so a crowded tab strip takes up the width the circle frees; with reduced motion the change is the quick ease without the spring, with Motion: Off it is immediate. VoiceOver hears "Save" in every state, with "No unsaved changes", "Unsaved changes", "Saving" or "Saved" as its value; the tooltip is "Save (⌘S)".
 4. **Press squish** (`HoneyGlassButtonStyle`): 0.96 scale and tighter corners while pressed.
 5. **Pop in** (`AnyTransition.honeyPop`) for toasts and popovers.
 

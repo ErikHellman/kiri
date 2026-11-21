@@ -98,6 +98,22 @@ struct HoneyMotionTests {
     }
 }
 
+/// Save's shape says whether there is anything to save (DESIGN.md §6).
+struct HoneyTaskLookTests {
+    @Test func idleShowsWhetherThereIsWork() {
+        #expect(HoneyTaskState.idle.look(pending: false) == .resting)
+        #expect(HoneyTaskState.idle.look(pending: true) == .pill)
+    }
+
+    @Test func busyAndDoneLookTheSameEitherWay() {
+        for pending in [false, true] {
+            #expect(HoneyTaskState.busy.look(pending: pending) == .busy)
+            #expect(HoneyTaskState.done.look(pending: pending) == .done)
+            #expect(HoneyTaskState.failed.look(pending: pending) == .failed)
+        }
+    }
+}
+
 /// Syntax colors (DESIGN.md §3.1): readable on the editor surface and the
 /// current line in every mode.
 struct SyntaxContrastTests {
