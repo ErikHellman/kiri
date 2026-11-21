@@ -24,20 +24,22 @@ import Testing
         #expect(TabText.middleTruncated("AppDelegate+NotificationHandling.swift", maxCharacters: 20) == "AppDelegate+N….swift")
         #expect(TabText.middleTruncated("a-very-long-configuration-file-name.production.yaml", maxCharacters: 16)
             == "a-very-lon….yaml")
-        // Three letters of the stem are the least worth keeping an extension for.
+        // Down to two letters of the stem.
         #expect(TabText.middleTruncated("README.md", maxCharacters: 7) == "REA….md")
-        #expect(TabText.middleTruncated("README.md", maxCharacters: 6) == "READM…")
+        #expect(TabText.middleTruncated("README.md", maxCharacters: 6) == "RE….md")
+        #expect(TabText.middleTruncated("Greeter.swift", maxCharacters: 9) == "Gr….swift")
     }
 
     @Test func theEndGoesWhenTheExtensionWouldLeaveNoName() {
         #expect(TabText.middleTruncated("README.md", maxCharacters: 5) == "READ…")
         #expect(TabText.middleTruncated("Greeter.swift", maxCharacters: 8) == "Greeter…")
+        #expect(TabText.middleTruncated("index.html", maxCharacters: 7) == "index…")
         #expect(TabText.middleTruncated("Greeter.swift", maxCharacters: 4) == "Gre…")
         #expect(TabText.middleTruncated("Makefile", maxCharacters: 5) == "Make…")
         #expect(TabText.middleTruncated(".gitignore", maxCharacters: 6) == ".giti…")
         // Never a piece of the extension: "ab.swi…" says less than "ab…".
         #expect(TabText.middleTruncated("ab.swift", maxCharacters: 7) == "ab…")
-        #expect(TabText.middleTruncated("config.yaml", maxCharacters: 8) == "config…")
+        #expect(TabText.middleTruncated("config.yaml", maxCharacters: 7) == "config…")
     }
 
     @Test func nothingFits() {
@@ -57,7 +59,7 @@ import Testing
         // Wide letters: "W" counts 3, everything else 1.
         let wide: (String) -> Double = { $0.reduce(0) { $0 + ($1 == "W" ? 3 : 1) } }
         #expect(TabText.middleTruncated("WWWW.md", toFit: 13, measure: wide) == "WWW….md")
-        #expect(TabText.middleTruncated("WWWW.md", toFit: 10, measure: wide) == "WWW…")
+        #expect(TabText.middleTruncated("WWWW.md", toFit: 10, measure: wide) == "WW….md")
         #expect(TabText.middleTruncated("WWWW.md", toFit: 9, measure: wide) == "WW…")
         #expect(TabText.middleTruncated("WWWW.md", toFit: 6, measure: wide) == "W…")
     }
@@ -71,7 +73,7 @@ import Testing
     @Test func titleGivesWayBeforeItsFolder() {
         #expect(fit("index.ts", "api", 14) == "index.ts · api")
         #expect(fit("index.ts", "api", 13) == "ind….ts · api")
-        #expect(fit("index.ts", "api", 12) == "index… · api")
+        #expect(fit("index.ts", "api", 12) == "in….ts · api")
         #expect(fit("index.ts", "api", 11) == "inde… · api")
         #expect(fit("index.ts", "api", 9) == "in… · api")
         // Not even two letters beside the folder: the folder goes.

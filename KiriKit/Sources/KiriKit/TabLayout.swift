@@ -24,15 +24,15 @@ public enum TabText {
     }
 
     /// `name` shortened to fit `width`, as `measure` counts widths. The
-    /// middle goes first, so the extension survives ("Greet….swift"). When
-    /// that would leave fewer than three letters of the stem, the extension
-    /// goes instead ("Gre…"): the start of a name says more than its type.
+    /// middle goes first, so the extension survives ("Greet….swift",
+    /// "Gr….swift"). Only when not even two letters of the stem fit beside
+    /// it does the extension go instead ("Gre…").
     public static func middleTruncated(_ name: String, toFit width: Double, measure: (String) -> Double) -> String {
         if measure(name) <= width { return name }
         let (stem, ext) = split(name)
         let letters = Array(stem)
-        if !ext.isEmpty, letters.count > 3,
-           let kept = longest(3...(letters.count - 1), where: { measure(String(letters[..<$0]) + ellipsis + ext) <= width }) {
+        if !ext.isEmpty, letters.count > 2,
+           let kept = longest(2...(letters.count - 1), where: { measure(String(letters[..<$0]) + ellipsis + ext) <= width }) {
             return String(letters[..<kept]) + ellipsis + ext
         }
         // Without its extension a whole stem may stay: "Greeter…".
