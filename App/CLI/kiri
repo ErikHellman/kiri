@@ -1,0 +1,171 @@
+#!/bin/sh
+# kiri: open files and folders in Kiri from the command line.
+#
+# This script ships inside Kiri.app (Contents/Resources/kiri) and is usually
+# symlinked into /usr/local/bin by Kiri ▸ Install Command Line Tool. It
+# writes a small request file and hands it to the app with a kiri:// URL,
+# so a running Kiri opens the files as tabs instead of starting again.
+set -eu
+
+usage() {
+    cat <<'EOF'
+Usage: kiri [options] [path[:line[:column]] ...]
+
+Opens files and folders in Kiri. With no paths, opens or brings up Kiri.
+
+  kiri notes.md            open a file as a tab in the front window
+  kiri src/main.swift:42:5 open at line 42, column 5
+  kiri ~/project           open a folder in a new window with a file sidebar
+  kiri new.txt             a file that doesn't exist yet opens empty; saving creates it
+  git diff | kiri -        open standard input in a new untitled tab
+
+Options:
+  -n, --new-window  open in a new window instead of the front one
+  -w, --wait        wait until the opened tabs are closed (for EDITOR and git)
+  -h, --help        show this help
+  -v, --version     show Kiri's version
+
+Use Kiri as your editor:  export EDITOR="kiri -w"
+                          git config --global core.editor "kiri -w"
+EOF
+}
+
+die() { echo "kiri: $*" >&2; exit 1; }
+
+# Kiri.app is two levels above this script, once symlinks are followed.
+self=$0
+while [ -L "$self" ]; do
+    link=$(readlink "$self")
+    case $link in
+        /*) self=$link ;;
+        *) self=$(dirname "$self")/$link ;;
+    esac
+done
+app=$(cd "$(dirname "$self")/../.." 2>/dev/null && pwd -P) || app=
+case $app in
+    *.app) ;;
+    *) app= ;;
+esac
+
+launch() {
+    if [ -n "$app" ]; then open -a "$app" "$@"; else open -b se.hellsoft.kiri "$@"; fi
+}
+
+new_window=no
+wait=no
+read_stdin=no
+nl='
+'
+entries=""
+
+add() { entries="$entries$1$nl"; }
+
+abs() {
+    case $1 in
+        /*) printf '%s' "$1" ;;
+        *) printf '%s/%s' "$(pwd)" "$1" ;;
+    esac
+}
+
+add_path() {
+    arg=$1
+    case $arg in *"$nl"*) die "file names with line breaks aren't supported: $arg" ;; esac
+    path=$arg
+    line=0
+    col=0
+    # file:line or file:line:column, unless that is the file's real name.
+    if [ ! -e "$arg" ]; then
+        if printf '%s' "$arg" | grep -Eq '.:[0-9]+:[0-9]+$'; then
+            col=${arg##*:}
+            rest=${arg%:*}
+            line=${rest##*:}
+            path=${rest%:*}
+        elif printf '%s' "$arg" | grep -Eq '.:[0-9]+$'; then
+            line=${arg##*:}
+            path=${arg%:*}
+        fi
+    fi
+    full=$(abs "$path")
+    if [ -d "$full" ]; then
+        add "folder $full"
+    elif [ -e "$full" ]; then
+        add "file $line $col $full"
+    else
+        parent=$(dirname "$full")
+        [ -d "$parent" ] || die "no such directory: $parent"
+        add "file $line $col $full"
+    fi
+}
+
+options=yes
+for arg in "$@"; do
+    if [ $options = yes ]; then
+        case $arg in
+            -h | --help) usage; exit 0 ;;
+            -v | --version)
+                version=
+                [ -n "$app" ] && version=$(defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)
+                echo "kiri ${version:-unknown}"
+                exit 0
+                ;;
+            -n | --new-window) new_window=yes; continue ;;
+            -w | --wait) wait=yes; continue ;;
+            -nw | -wn) new_window=yes; wait=yes; continue ;;
+            --) options=no; continue ;;
+            -) read_stdin=yes; continue ;;
+            -*) die "unknown option: $arg (see kiri --help)" ;;
+        esac
+    fi
+    add_path "$arg"
+done
+
+if [ -z "$entries" ] && [ $read_stdin = no ] && [ $wait = no ]; then
+    if [ $new_window = yes ]; then add "untitled"; else launch; exit 0; fi
+fi
+
+# Requests live in the per-user temporary folder, which Kiri reads too.
+tmp=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
+[ -n "$tmp" ] || tmp=${TMPDIR:-/tmp}
+dir="${tmp%/}/kiri-cli"
+mkdir -p "$dir"
+chmod 700 "$dir"
+request=$(mktemp "$dir/request.XXXXXXXX")
+id=$(basename "$request")
+
+if [ $read_stdin = yes ]; then
+    input="$dir/$id.stdin"
+    cat >"$input"
+    add "stdin $input"
+fi
+# Waiting with nothing to open (kiri -w) waits for a new untitled tab.
+[ -n "$entries" ] || add "untitled"
+
+marker="$dir/$id.wait"
+{
+    echo "kiri 1"
+    echo "window $( [ $new_window = yes ] && echo new || echo front )"
+    if [ $wait = yes ]; then echo "wait $marker"; fi
+    printf '%s' "$entries"
+} >"$request.tmp"
+[ $wait = yes ] && : >"$marker"
+# Kiri only picks up complete requests.
+mv "$request.tmp" "$request.req"
+rm -f "$request"
+
+launch "kiri://open?id=$id"
+
+[ $wait = yes ] || exit 0
+
+# Kiri deletes the request when it reads it, and the marker when the tabs
+# close. Stop waiting if Kiri never picks it up or quits.
+tries=0
+while [ -e "$request.req" ]; do
+    tries=$((tries + 1))
+    [ $tries -lt 100 ] || { rm -f "$request.req" "$marker"; die "Kiri didn't respond"; }
+    sleep 0.1
+done
+while [ -e "$marker" ]; do
+    pgrep -qx Kiri || { rm -f "$marker"; break; }
+    sleep 0.2
+done
+exit 0

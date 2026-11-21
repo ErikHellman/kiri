@@ -10,6 +10,7 @@ import SwiftUI
 /// lists them; its contents live next to the keys in `Shortcuts.swift`.
 struct KiriCommands: Commands {
     @FocusedValue(\.editorModel) private var editor
+    @FocusedValue(\.folderSession) private var folder
     @FocusedValue(\.windowTabs) private var tabs
     @FocusedBinding(\.textEncoding) private var encoding
     @FocusedBinding(\.lineEnding) private var lineEnding
@@ -25,10 +26,24 @@ struct KiriCommands: Commands {
     var body: some Commands {
         TextEditingCommands()
 
+        CommandGroup(after: .appSettings) {
+            Button("Install Command Line Tool…") { CLIInstaller.install() }
+        }
+
+        CommandGroup(before: .sidebar) {
+            Button(folder?.sidebarVisible == false ? "Show Sidebar" : "Hide Sidebar") {
+                folder?.sidebarVisible.toggle()
+            }
+            .keyboardShortcut(Keys.toggleSidebar)
+            .disabled(folder == nil)
+        }
+
         // File
         CommandGroup(after: .newItem) {
             Button("New Tab") { NSDocumentController.shared.newDocument(nil) }
                 .keyboardShortcut(Keys.newTab)
+            Button("Open Folder…") { FolderSessions.openFolderPanel() }
+                .keyboardShortcut(Keys.openFolder)
         }
 
         // Edit

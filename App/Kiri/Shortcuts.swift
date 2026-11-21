@@ -14,6 +14,8 @@ enum Keys {
     static let nextTab = KeyboardShortcut("]", modifiers: [.shift, .command])
     static let previousTab = KeyboardShortcut("[", modifiers: [.shift, .command])
     static let shortcuts = KeyboardShortcut("/", modifiers: .command)
+    static let openFolder = KeyboardShortcut("o", modifiers: [.shift, .command])
+    static let toggleSidebar = KeyboardShortcut("s", modifiers: [.control, .command])
 
     /// ⌘1 … ⌘9 pick a tab by position.
     static func tab(_ n: Int) -> KeyboardShortcut {
@@ -78,6 +80,7 @@ struct ShortcutGroup: Identifiable {
             Item("New document", "⌘N"),
             Item("New tab", Keys.newTab),
             Item("Open…", "⌘O"),
+            Item("Open folder…", Keys.openFolder),
             Item("Save", "⌘S"),
             Item("Duplicate", "⇧⌘S"),
             Item("Save as…", "⌥⇧⌘S"),
@@ -122,6 +125,7 @@ struct ShortcutGroup: Identifiable {
             Item("Smaller text", Keys.smaller),
             Item("Actual size", Keys.actualSize),
             Item("Wrap lines", Keys.wrapLines),
+            Item("Show / hide folder sidebar", Keys.toggleSidebar),
             Item("Full screen", "⌃⌘F"),
             Item("Keyboard shortcuts", Keys.shortcuts),
         ]),

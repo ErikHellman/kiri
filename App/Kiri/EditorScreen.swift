@@ -22,21 +22,14 @@ struct EditorScreen: View {
     var body: some View {
         VStack(spacing: Honey.gap) {
             topBar
-            EditorView(document: document, model: model, fontScale: textScale, language: model.language,
-                       wrapLines: wrapLines,
-                       animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                          typingAnimations: typingAnimations),
-                       letterFade: letterFade)
-                .honeyPanel()
-                .overlay(alignment: .bottom) {
-                    statusBar.padding(.bottom, 8)
+            HStack(spacing: Honey.gap) {
+                if let folder = tabs.folder, folder.sidebarVisible {
+                    FolderSidebar(session: folder, currentFile: fileURL?.standardizedFileURL, open: openFromSidebar)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                .overlay(alignment: .top) {
-                    if model.showGoToLine {
-                        GoToLine(model: model).padding(.top, 12).transition(.honeyPop)
-                    }
-                }
-                .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: model.showGoToLine)
+                editor
+            }
+            .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: tabs.folder?.sidebarVisible)
         }
         .padding(.horizontal, Honey.gap)
         .padding(.bottom, Honey.gap)
@@ -45,6 +38,7 @@ struct EditorScreen: View {
         .honeyCanvas()
         .background(WindowReader { tabs.attach($0) })
         .focusedSceneValue(\.editorModel, model)
+        .focusedSceneValue(\.folderSession, tabs.folder)
         .focusedSceneValue(\.windowTabs, tabs)
         .focusedSceneValue(\.textEncoding, encodingBinding)
         .focusedSceneValue(\.lineEnding, lineEndingBinding)
@@ -58,6 +52,50 @@ struct EditorScreen: View {
         }
         .onChange(of: fileURL) { detectLanguage() }
         .onDisappear { tabs.invalidate() }
+    }
+
+    private var editor: some View {
+        EditorView(document: document, model: model, fontScale: textScale, language: model.language,
+                   wrapLines: wrapLines,
+                   animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
+                                                      typingAnimations: typingAnimations),
+                   letterFade: letterFade)
+            .honeyPanel()
+            .overlay(alignment: .bottom) {
+                statusBar.padding(.bottom, 8)
+            }
+            .overlay(alignment: .top) {
+                if model.showGoToLine {
+                    GoToLine(model: model).padding(.top, 12).transition(.honeyPop)
+                }
+            }
+            .animation(HoneyMotion(appearance, systemReduced: reduceMotion).shape, value: model.showGoToLine)
+    }
+
+    /// Opens a sidebar file as a tab of this window. An empty untitled tab
+    /// (what a folder window starts with) gives its place to the file.
+    private func openFromSidebar(_ url: URL) {
+        let blank = fileURL == nil && document.text.isEmpty && !(tabs.document?.isDocumentEdited ?? true)
+        let blankWindow = tabs.window
+        let folder = tabs.folder
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, alreadyOpen, error in
+            MainActor.assumeIsolated {
+                if let error { _ = NSApp.presentError(error); return }
+                guard let doc else { return }
+                if alreadyOpen, let w = Editors.window(for: doc) {
+                    w.tabGroup?.selectedWindow = w
+                    w.makeKeyAndOrderFront(nil)
+                }
+                guard blank, !alreadyOpen, let blankWindow, let folder else { return }
+                Editors.whenReady(doc) { _ in
+                    guard let w = Editors.window(for: doc), blankWindow.tabbedWindows?.contains(w) ?? false else { return }
+                    FolderSessions.set(folder, for: w)
+                    if let d = NSDocumentController.shared.document(for: blankWindow), d.fileURL == nil, !d.isDocumentEdited {
+                        blankWindow.performClose(nil)
+                    }
+                }
+            }
+        }
     }
 
     /// The toolbar row on the canvas, level with the traffic lights: the tab
@@ -248,6 +286,8 @@ extension FocusedValues {
     @Entry var editorModel: EditorModel?
     /// The front window's tabs, for Window ▸ Next Tab and ⌘1 … ⌘9.
     @Entry var windowTabs: WindowTabs?
+    /// The front window's folder, for View ▸ Show Sidebar.
+    @Entry var folderSession: FolderSession?
     /// The front document's save format, for the Format menu (undoable).
     @Entry var textEncoding: Binding<TextEncoding>?
     @Entry var lineEnding: Binding<LineEnding>?

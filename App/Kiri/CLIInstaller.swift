@@ -1,0 +1,61 @@
+import AppKit
+
+/// Kiri ▸ Install Command Line Tool…: links /usr/local/bin/kiri to the
+/// script inside the app bundle, asking for an administrator password when
+/// /usr/local/bin isn't writable.
+@MainActor enum CLIInstaller {
+    static let linkPath = "/usr/local/bin/kiri"
+
+    static func install() {
+        guard let script = Bundle.main.url(forResource: "kiri", withExtension: nil)?.path else {
+            alert("The kiri command isn't in this copy of Kiri.", info: "Rebuild Kiri with scripts/build.sh.", style: .warning)
+            return
+        }
+        let fm = FileManager.default
+        if (try? fm.destinationOfSymbolicLink(atPath: linkPath)) == script {
+            alert("The kiri command is already installed.", info: usage)
+            return
+        }
+        do {
+            try fm.createDirectory(atPath: "/usr/local/bin", withIntermediateDirectories: true)
+            if (try? fm.attributesOfItem(atPath: linkPath)) != nil { try fm.removeItem(atPath: linkPath) }
+            try fm.createSymbolicLink(atPath: linkPath, withDestinationPath: script)
+        } catch {
+            guard installAsAdmin(script) else {
+                alert("Couldn't install the kiri command.",
+                      info: "Link it yourself:\nsudo ln -sf \"\(script)\" \(linkPath)", style: .warning)
+                return
+            }
+        }
+        alert("The kiri command is installed.", info: usage)
+    }
+
+    private static var usage: String {
+        "Open a terminal and run kiri --help. Try kiri file.txt, kiri file.txt:12, kiri ~/project or git diff | kiri -.\n\n"
+            + "To use Kiri as git's editor: git config --global core.editor \"kiri -w\""
+    }
+
+    /// `osascript … with administrator privileges` shows the system's
+    /// password prompt.
+    private static func installAsAdmin(_ script: String) -> Bool {
+        func quoted(_ s: String) -> String {
+            "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+        }
+        let command = "mkdir -p /usr/local/bin && ln -sf \" & quoted form of \(quoted(script)) & \" \(linkPath)"
+        let source = "do shell script \"\(command)\" with administrator privileges"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", source]
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    private static func alert(_ message: String, info: String, style: NSAlert.Style = .informational) {
+        let a = NSAlert()
+        a.messageText = message
+        a.informativeText = info
+        a.alertStyle = style
+        a.runModal()
+    }
+}

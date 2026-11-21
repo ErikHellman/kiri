@@ -6,6 +6,7 @@ import SwiftUI
 struct KiriApp: App {
     @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
     @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
+    @NSApplicationDelegateAdaptor private var delegate: KiriAppDelegate
 
     init() {
         // Launch into a new, empty document instead of the Open panel.
@@ -17,7 +18,7 @@ struct KiriApp: App {
     private var appearance: HoneyAppearance { HoneyAppearance(theme: theme, motion: motion) }
 
     var body: some Scene {
-        DocumentGroup(newDocument: { KiriDocument() }) { file in
+        DocumentGroup(newDocument: { KiriDocument(text: KiriDocument.pendingText ?? "") }) { file in
             EditorScreen(document: file.document, fileURL: file.fileURL)
                 .honeyRoot(appearance)
         }
@@ -48,5 +49,17 @@ struct KiriApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
         .defaultLaunchBehavior(.suppressed)
+    }
+}
+
+/// Takes `kiri` command-line requests (kiri:// URLs).
+final class KiriAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { KiriCLI.install() }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Again, in case SwiftUI set up its own URL handler in between.
+        MainActor.assumeIsolated { KiriCLI.install() }
     }
 }

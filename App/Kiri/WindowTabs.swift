@@ -17,6 +17,8 @@ import SwiftUI
     private(set) var selected = 0
     /// This window's document has unsaved changes.
     private(set) var dirty = false
+    /// The folder this window's sidebar shows (`kiri <folder>`).
+    private(set) var folder: FolderSession?
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored private var timer: Timer?
 
@@ -26,6 +28,15 @@ import SwiftUI
         window.tabbingMode = .preferred
         window.tabbingIdentifier = "se.hellsoft.kiri.document"
         Self.useTallTitleBar(window)
+        // `kiri -n` and folders get a window of their own.
+        if let placement = WindowPlacement.take() {
+            if let folder = placement.folder { FolderSessions.set(folder, for: window) }
+            refresh()
+            timer?.invalidate()
+            timer = nil
+            resume()
+            return
+        }
         // SwiftUI opens each document in a window of its own; join the
         // frontmost document window's tab group instead.
         DispatchQueue.main.async {
@@ -69,6 +80,8 @@ import SwiftUI
         if sel != selected { selected = sel }
         let d = NSDocumentController.shared.document(for: window)?.isDocumentEdited ?? false
         if d != dirty { dirty = d }
+        let f = FolderSessions.session(for: window)
+        if f !== folder { folder = f }
     }
 
     /// An empty unified toolbar makes the title bar 52 pt tall, and macOS

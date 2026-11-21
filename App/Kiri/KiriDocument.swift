@@ -42,6 +42,10 @@ final class KiriDocument: ReferenceFileDocument, @unchecked Sendable {
     private var _text: String
     private let lock = NSLock()
 
+    /// Text for the next new document (`kiri -`), since DocumentGroup
+    /// makes new documents with a fixed closure. Main thread only.
+    nonisolated(unsafe) static var pendingText: String?
+
     init(text: String = "") {
         file = TextFile(text: text)
         _text = text
