@@ -690,12 +690,148 @@ import os
                     report((window.tabbedWindows?.count ?? 1) == 1, "closing a tab")
                     try? FileManager.default.removeItem(at: url)
                     Task { @MainActor in
+                        await tabState(window)
                         await manyFiles(window)
+                        // The last line of a run that got to its end.
+                        print("SELFTEST DONE behavior")
+                        fflush(stdout)
                         NSApp.terminate(nil)
                     }
                 }
             }
         }
+    }
+
+    // MARK: The tab strip follows its tabs
+
+    /// `WindowTabs` learns of changes by observation, not by asking four
+    /// times a second: a keystroke, a save, undo, Save As, a tab opening,
+    /// closing or coming back all show in its `items` within a run-loop
+    /// turn or two. Run with its safety-net timer off, so only the
+    /// observation can be what did it.
+    private static func tabState(_ window: NSWindow) async {
+        guard let model = WindowTabs.model(for: window), let doc = NSDocumentController.shared.document(for: window),
+              let tv = findTextView(in: window.contentView) else { report(false, "the window's tab model"); return }
+        WindowTabs.safetyNetEnabled = false
+        defer { WindowTabs.safetyNetEnabled = true }
+        let clock = ContinuousClock()
+        let quick = Duration.milliseconds(50)
+        func ms(_ d: Duration?) -> String { d.map { "\(Int($0 / .milliseconds(1))) ms" } ?? "never" }
+        /// How long until `done`, or nil after 3 s.
+        func time(_ done: () -> Bool) async -> Duration? {
+            let start = clock.now
+            while clock.now - start < .seconds(3) {
+                if done() { return clock.now - start }
+                try? await Task.sleep(for: .milliseconds(2))
+            }
+            return nil
+        }
+        /// How long the tab takes to show `dirty` once the document says so.
+        func lag(dirty: Bool) async -> (document: Duration?, tab: Duration?) {
+            let start = clock.now
+            var document: Duration?
+            while clock.now - start < .seconds(3) {
+                if document == nil, doc.isDocumentEdited == dirty { document = clock.now - start }
+                if document != nil, model.items.first?.dirty == dirty, model.dirty == dirty { return (document, clock.now - start) }
+                try? await Task.sleep(for: .milliseconds(2))
+            }
+            return (document, nil)
+        }
+        func within(_ t: (document: Duration?, tab: Duration?)) -> Bool {
+            guard let d = t.document, let tab = t.tab else { return false }
+            return tab - d <= quick
+        }
+
+        if doc.isDocumentEdited {
+            doc.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+            _ = await time { !doc.isDocumentEdited && model.items.first?.dirty == false }
+        }
+        report(model.items.count == 1 && model.items.first?.dirty == false && !model.dirty,
+               "the tab starts clean (\(model.items.map { "\($0.title) dirty=\($0.dirty)" }))")
+
+        // One key, typed like a person: through the event loop.
+        window.makeFirstResponder(tv)
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0,
+                                        windowNumber: window.windowNumber, context: nil, characters: "x",
+                                        charactersIgnoringModifiers: "x", isARepeat: false, keyCode: 7) {
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        // The tab follows at the end of the run-loop turn that handles the
+        // key, which a Debug build spends 15 to 40 ms coloring and laying
+        // out: 50 ms after the document at most, and 100 ms after the key.
+        let typed = await lag(dirty: true)
+        report(within(typed) && typed.tab! <= .milliseconds(100),
+               "a keystroke turns the tab dirty within 50 ms of the document (document \(ms(typed.document)), tab \(ms(typed.tab)) after the key; safety net off)")
+
+        doc.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+        let saved = await lag(dirty: false)
+        report(within(saved), "a save clears the tab's dot within 50 ms of the document (document \(ms(saved.document)), tab \(ms(saved.tab)))")
+
+        tv.undoManager?.undo()
+        let undone = await lag(dirty: true)
+        report(within(undone), "undo past the save turns the tab dirty again (document \(ms(undone.document)), tab \(ms(undone.tab)))")
+        tv.undoManager?.redo()
+        let redone = await lag(dirty: false)
+        report(within(redone), "redo back to the save clears it (document \(ms(redone.document)), tab \(ms(redone.tab)))")
+
+        // A second tab, renamed with Save As while it shows.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-tabstate-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = dir.appendingPathComponent("first-name.txt"), second = dir.appendingPathComponent("second-name.txt")
+        try? "a tab\n".write(to: first, atomically: true, encoding: .utf8)
+        let opened: NSDocument? = await withCheckedContinuation { c in
+            NSDocumentController.shared.openDocument(withContentsOf: first, display: true) { d, _, _ in
+                c.resume(returning: d)
+            }
+        }
+        guard let d2 = opened, await time({ Editors.window(for: d2).map { window.tabbedWindows?.contains($0) ?? false } ?? false }) != nil,
+              let w2 = Editors.window(for: d2), let model2 = WindowTabs.model(for: w2) else {
+            report(false, "a second tab opens for the tab model checks"); return
+        }
+        let joined = await time { model2.items.map(\.id) == [window.windowNumber, w2.windowNumber] && model2.selected == w2.windowNumber }
+        report(joined != nil, "a new tab's strip shows both tabs, itself selected (\(model2.items.map(\.title)), \(ms(joined)))")
+        /// The native tab bar's title bar accessory is there and hidden.
+        func barHidden(_ w: NSWindow) -> Bool {
+            !w.titlebarAccessoryViewControllers.isEmpty && w.titlebarAccessoryViewControllers.allSatisfy(\.isHidden)
+        }
+        let hidden2 = await time { barHidden(w2) }
+        report(hidden2.map { $0 <= quick } ?? false, "the native tab bar is hidden in the new tab (\(ms(hidden2)))")
+        // Its own tab grows in beside the ones it joined; it never showed
+        // itself alone with the others arriving around it.
+        report(model2.shown == [[window.windowNumber], [window.windowNumber, w2.windowNumber]],
+               "a new tab first shows the tabs it joins, then itself (\(model2.shown.map(\.count)))")
+        report(model2.tabs.last?.tooltip == d2.fileURL.map { TabNames.abbreviatingHome($0.path, home: NSHomeDirectory()) }
+               && model2.tabs.first?.tooltip != nil,
+               "tabs carry their paths as tooltips (\(model2.tabs.last?.tooltip ?? "none"))")
+
+        let renameStart = clock.now
+        var renameDone: Duration?
+        d2.save(to: second, ofType: d2.fileType ?? "public.plain-text", for: .saveAsOperation) { _ in
+            MainActor.assumeIsolated { renameDone = clock.now - renameStart }
+        }
+        let renamed = await time { model2.items.last?.path == d2.fileURL?.path && d2.fileURL?.lastPathComponent == "second-name.txt"
+            && model2.items.last?.title == d2.displayName }
+        _ = await time { renameDone != nil }
+        report(renamed != nil && renameDone != nil && renamed! - renameDone! <= quick,
+               "Save As renames the tab within 50 ms of the save (“\(model2.items.last?.title ?? "")”, save \(ms(renameDone)), tab \(ms(renamed)))")
+
+        // Back to the first tab: its strip stopped watching while it was
+        // away, and is current the moment it shows.
+        window.tabGroup?.selectedWindow = window
+        let back = await time { model.selected == window.windowNumber && model.items.count == 2 && model.items.last?.path == d2.fileURL?.path }
+        report(back.map { $0 <= quick } ?? false, "a tab that comes back shows the group as it is now (\(ms(back)))")
+        let hidden1 = await time { barHidden(window) }
+        report(hidden1.map { $0 <= quick } ?? false, "and has the native tab bar hidden (\(ms(hidden1)))")
+
+        // The other tab closes while this one shows.
+        w2.performClose(nil)
+        let closed = await time { model.items.map(\.id) == [window.windowNumber] }
+        report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed elsewhere leaves the strip (\(ms(closed)))")
+        _ = await time { (window.tabbedWindows?.count ?? 1) == 1 }
     }
 
     // MARK: Several files at once

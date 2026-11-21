@@ -6,6 +6,13 @@ import SwiftUI
 /// Kiri uses native window tabbing (each document is a window, ⌘N/⌘O open
 /// new tabs, Window ▸ Merge All Windows works) but hides the native tab bar
 /// and draws its own.
+///
+/// The strip follows the tab group by observation, so a change shows in the
+/// next run-loop turn: the group's `windows` and `selectedWindow` and each
+/// window's `title` are key-value observable; a document turning dirty is
+/// not (SwiftUI's documents never set their window's `isDocumentEdited`),
+/// but every edit, undo and redo closes an undo group, and a save sets the
+/// document's `fileModificationDate`.
 @MainActor @Observable final class WindowTabs {
     struct Item: Equatable {
         let id: Int
@@ -34,20 +41,52 @@ import SwiftUI
     /// The folder this window's sidebar shows (`kiri <folder>`).
     private(set) var folder: FolderSession?
     @ObservationIgnored weak var window: NSWindow?
-    @ObservationIgnored private var timer: Timer?
+    /// Set while this object watches its tab group (while its view shows).
+    @ObservationIgnored private var observer: TabObserver?
+    @ObservationIgnored private var watches: [Watch] = []
+    @ObservationIgnored private var tokens: [NSObjectProtocol] = []
+    @ObservationIgnored private var refreshPending = false
+    @ObservationIgnored private var safetyNet: Timer?
+
+    /// A key of a window or document that `observer` is registered for.
+    private struct Watch {
+        weak var object: NSObject?
+        let keyPath: String
+        let id: ObjectIdentifier
+    }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// The self-test turns the safety net off, to show that the strip
+    /// follows its tabs without it.
+    static var safetyNetEnabled = true
+    private static let models = NSMapTable<NSWindow, WindowTabs>.weakToWeakObjects()
+    /// The tabs model of a document window, for the self-test.
+    static func model(for window: NSWindow) -> WindowTabs? { models.object(forKey: window) }
+    /// Every list of tabs this model has shown, in order.
+    @ObservationIgnored private(set) var shown: [[Int]] = []
+    #endif
+
+    private func show(_ next: [Item]) {
+        guard next != items else { return }
+        items = next
+        #if DEBUG || KIRI_SELFTEST
+        shown.append(next.map(\.id))
+        #endif
+    }
 
     func attach(_ window: NSWindow) {
         guard self.window !== window else { resume(); return }
+        invalidate()
         self.window = window
+        #if DEBUG || KIRI_SELFTEST
+        Self.models.setObject(self, forKey: window)
+        #endif
         window.tabbingMode = .preferred
         window.tabbingIdentifier = "se.hellsoft.kiri.document"
         Self.useTallTitleBar(window)
         // `kiri -n` and folders get a window of their own.
         if let placement = WindowPlacement.take() {
             if let folder = placement.folder { FolderSessions.set(folder, for: window) }
-            refresh()
-            timer?.invalidate()
-            timer = nil
             resume()
             return
         }
@@ -56,9 +95,17 @@ import SwiftUI
         // folder comes along now, so the new tab opens with the sidebar
         // already there instead of sliding it in a moment later.
         Self.joining.insert(ObjectIdentifier(window))
-        if let host = Self.host(for: window), let f = FolderSessions.session(for: host) {
-            FolderSessions.set(f, for: window)
-            folder = f
+        if let host = Self.host(for: window) {
+            if let f = FolderSessions.session(for: host) {
+                FolderSessions.set(f, for: window)
+                folder = f
+            }
+            // Until this window has joined, its strip shows the host's
+            // tabs as they are; its own tab then grows in at the end and
+            // the selection slides to it, instead of the others arriving
+            // around a tab that stood alone for a moment.
+            show(Self.items(of: host.tabbedWindows ?? [host]))
+            selected = (host.tabGroup?.selectedWindow ?? host).windowNumber
         }
         DispatchQueue.main.async {
             if let host = Self.host(for: window), !(host.tabbedWindows?.contains(window) ?? false) {
@@ -68,9 +115,6 @@ import SwiftUI
             Self.joining.remove(ObjectIdentifier(window))
             self.refresh()
         }
-        refresh()
-        timer?.invalidate()
-        timer = nil
         resume()
     }
 
@@ -90,33 +134,124 @@ import SwiftUI
         }
     }
 
-    /// Starts (or restarts, after the view came back) the refresh timer.
+    /// Starts (or restarts, after the view came back) watching the tab
+    /// group. What changed while the view was away shows at once, without
+    /// the strip animating its way there.
     func resume() {
-        guard timer == nil, window != nil else { return }
-        // Titles and dirty state change without notifications we can watch
-        // cheaply; four checks a second cost nothing.
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+        guard observer == nil, let window else { return }
+        let observer = TabObserver { [weak self] in
+            MainActor.assumeIsolated { self?.setNeedsRefresh() }
         }
-        refresh()
+        self.observer = observer
+        // Through `tabGroup`, so a window that moves to another group
+        // (dragged out, merged) is followed there.
+        for keyPath in ["tabGroup.windows", "tabGroup.selectedWindow"] {
+            window.addObserver(observer, forKeyPath: keyPath, options: [], context: nil)
+            watches.append(Watch(object: window, keyPath: keyPath, id: ObjectIdentifier(window)))
+        }
+        let center = NotificationCenter.default
+        func on(_ name: Notification.Name, of object: AnyObject? = nil) {
+            tokens.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setNeedsRefresh() }
+            })
+        }
+        // An edit, an undo or a redo, in any tab: its document's change
+        // count follows before the turn is over.
+        on(.NSUndoManagerDidCloseUndoGroup)
+        on(.NSUndoManagerDidUndoChange)
+        on(.NSUndoManagerDidRedoChange)
+        on(FolderSessions.didChange)
+        // A tab closing; when it is this window, there is nothing left to watch.
+        let ownWindow = ObjectIdentifier(window)
+        tokens.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
+            let own = (note.object as AnyObject?).map { ObjectIdentifier($0) } == ownWindow
+            MainActor.assumeIsolated { if own { self?.invalidate() } else { self?.setNeedsRefresh() } }
+        })
+        // macOS brings the native tab bar back in a few places; `refresh`
+        // hides it again.
+        on(NSWindow.didBecomeKeyNotification, of: window)
+        on(NSWindow.didEnterFullScreenNotification, of: window)
+        on(NSWindow.didExitFullScreenNotification, of: window)
+        // Not what keeps the strip current (the self-test runs without
+        // it): a net under whatever changes a document's state by a path
+        // none of the above sees.
+        safetyNet = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                #if DEBUG || KIRI_SELFTEST
+                guard Self.safetyNetEnabled else { return }
+                #endif
+                self?.refresh()
+            }
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { refresh() }
+    }
+
+    /// One refresh at the end of this run-loop turn, however many things
+    /// changed in it. (The notifications arrive in the middle of AppKit
+    /// moving tabs about, and before a document has counted its change.)
+    private func setNeedsRefresh() {
+        guard !refreshPending else { return }
+        refreshPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.refreshPending = false
+            self.refresh()
+        }
     }
 
     func refresh() {
         guard let window else { return }
         hideNativeTabBar(window)
+        // A window on its way into a tab group shows the group it is
+        // joining (see `attach`), not itself alone.
+        let joining = Self.joining.contains(ObjectIdentifier(window)) && !items.isEmpty
         let windows = window.tabbedWindows ?? [window]
-        let next = windows.map { w in
-            let doc = NSDocumentController.shared.document(for: w)
-            return Item(id: w.windowNumber, title: doc?.displayName ?? w.title, path: doc?.fileURL?.path,
-                        dirty: doc?.isDocumentEdited ?? false)
+        if !joining {
+            show(Self.items(of: windows))
+            let sel = (window.tabGroup?.selectedWindow ?? window).windowNumber
+            if sel != selected { selected = sel }
         }
-        if next != items { items = next }
-        let sel = (window.tabGroup?.selectedWindow ?? window).windowNumber
-        if sel != selected { selected = sel }
         let d = NSDocumentController.shared.document(for: window)?.isDocumentEdited ?? false
         if d != dirty { dirty = d }
         let f = FolderSessions.session(for: window)
         if f !== folder { folder = f }
+        if observer != nil { watch(windows) }
+    }
+
+    private static func items(of windows: [NSWindow]) -> [Item] {
+        windows.map { w in
+            let doc = NSDocumentController.shared.document(for: w)
+            return Item(id: w.windowNumber, title: doc?.displayName ?? w.title, path: doc?.fileURL?.path,
+                        dirty: doc?.isDocumentEdited ?? false)
+        }
+    }
+
+    /// Watches what the group's windows and documents can say about
+    /// themselves: a title (a rename, Save As, a move in Finder) and a save.
+    private func watch(_ windows: [NSWindow]) {
+        guard let observer, let window else { return }
+        var wanted: [Watch] = []
+        for w in windows {
+            wanted.append(Watch(object: w, keyPath: "title", id: ObjectIdentifier(w)))
+            if let doc = NSDocumentController.shared.document(for: w) {
+                wanted.append(Watch(object: doc, keyPath: "fileModificationDate", id: ObjectIdentifier(doc)))
+            }
+        }
+        // A watch whose object is gone says nothing about a new one at its address.
+        watches.removeAll { $0.object == nil }
+        let own = ObjectIdentifier(window)
+        func same(_ a: Watch, _ b: Watch) -> Bool { a.id == b.id && a.keyPath == b.keyPath }
+        func fromGroup(_ w: Watch) -> Bool { w.id == own && w.keyPath.hasPrefix("tabGroup.") }
+        for old in watches where !fromGroup(old) && !wanted.contains(where: { same($0, old) }) {
+            old.object?.removeObserver(observer, forKeyPath: old.keyPath)
+        }
+        let kept = watches.filter { old in fromGroup(old) || wanted.contains { same($0, old) } }
+        for new in wanted where !kept.contains(where: { same($0, new) }) {
+            new.object?.addObserver(observer, forKeyPath: new.keyPath, options: [], context: nil)
+        }
+        watches = kept + wanted.filter { new in !kept.contains { same($0, new) } }
     }
 
     /// An empty unified toolbar makes the title bar 52 pt tall, and macOS
@@ -178,9 +313,29 @@ import SwiftUI
 
     var document: NSDocument? { window.flatMap { NSDocumentController.shared.document(for: $0) } }
 
+    /// Stops watching (the view went away: a tab that isn't showing).
     func invalidate() {
-        timer?.invalidate()
-        timer = nil
+        if let observer {
+            for watch in watches { watch.object?.removeObserver(observer, forKeyPath: watch.keyPath) }
+        }
+        watches = []
+        observer = nil
+        tokens.forEach(NotificationCenter.default.removeObserver)
+        tokens = []
+        safetyNet?.invalidate()
+        safetyNet = nil
+    }
+}
+
+/// Tells a `WindowTabs` that a key it watches changed.
+private final class TabObserver: NSObject {
+    private let changed: @Sendable () -> Void
+
+    init(_ changed: @escaping @Sendable () -> Void) { self.changed = changed }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
+                               context: UnsafeMutableRawPointer?) {
+        changed()
     }
 }
 

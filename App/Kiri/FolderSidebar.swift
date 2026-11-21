@@ -62,9 +62,13 @@ import SwiftUI
 
     struct WeakWindow { weak var window: NSWindow? }
 
+    /// Posted when a window gets a folder, so its tabs show the sidebar.
+    static let didChange = Notification.Name("KiriFolderSessionsDidChange")
+
     static func set(_ session: FolderSession, for window: NSWindow) {
         observe()
         byWindow[ObjectIdentifier(window)] = (WeakWindow(window: window), session)
+        NotificationCenter.default.post(name: didChange, object: nil)
     }
 
     static func session(for window: NSWindow) -> FolderSession? {
