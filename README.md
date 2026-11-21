@@ -67,6 +67,8 @@ scripts/build.sh            # release build → build/Kiri.app (ad-hoc signed)
 scripts/build.sh --install  # …and copy it to /Applications
 ```
 
+The first build downloads the Tree-sitter grammars, about 1.4 GB of git history, which takes several minutes. SwiftPM keeps them in `~/Library/Caches/org.swift.swiftpm`, so later builds start in seconds.
+
 For development, generate the project and open it in Xcode:
 
 ```sh

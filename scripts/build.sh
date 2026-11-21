@@ -15,12 +15,79 @@ SIGN_IDENTITY=${SIGN_IDENTITY:--}
 DERIVED="$ROOT/build/DerivedData"
 ARCH=${ARCH:-$(uname -m)}
 APP="$ROOT/build/Kiri.app"
+PROJECT=App/Kiri.xcodeproj
 
 command -v xcodegen >/dev/null || { echo "xcodegen not found: brew install xcodegen" >&2; exit 1; }
 
+# xcodebuild runs git (package fetches) and its build service in process
+# groups of their own, so Ctrl+C in the terminal never reaches them: git keeps
+# downloading and xcodebuild keeps waiting. So xcodebuild runs as a job in its
+# own process group (set -m), and on Ctrl+C the script stops every group under
+# it, then xcodebuild itself.
+XCODEBUILD_PID=
+descendants() {
+    for child in $(pgrep -P "$1" 2>/dev/null); do
+        echo "$child"
+        descendants "$child"
+    done
+}
+stop_xcodebuild() {
+    trap - INT TERM HUP
+    set +e # clean up even if a step fails (say, the terminal is gone)
+    echo >&2
+    echo "Interrupted, stopping xcodebuild..." >&2
+    if [ -n "$XCODEBUILD_PID" ]; then
+        exec 2>/dev/null # no "Terminated" job notices from the shell
+        # Note the groups under xcodebuild before it exits and they're orphaned.
+        own_group=$(ps -o pgid= -p $$ | tr -d ' ')
+        groups=
+        for pid in $(descendants "$XCODEBUILD_PID"); do
+            group=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ') || continue
+            [ -n "$group" ] && [ "$group" != "$own_group" ] && groups="$groups $group"
+        done
+        # Let xcodebuild cancel the build itself, then stop whatever is left.
+        kill -TERM -- "-$XCODEBUILD_PID" 2>/dev/null || kill -TERM "$XCODEBUILD_PID" 2>/dev/null
+        tries=0
+        while kill -0 "$XCODEBUILD_PID" 2>/dev/null && [ $tries -lt 20 ]; do
+            sleep 0.25
+            tries=$((tries + 1))
+        done
+        for group in $groups; do
+            kill -TERM -- "-$group" 2>/dev/null
+        done
+        kill -KILL -- "-$XCODEBUILD_PID" 2>/dev/null
+        wait "$XCODEBUILD_PID" 2>/dev/null || true
+    fi
+    exit 130
+}
+run_xcodebuild() {
+    trap stop_xcodebuild INT TERM HUP
+    set -m
+    xcodebuild "$@" </dev/null &
+    XCODEBUILD_PID=$!
+    set +m
+    status=0
+    wait "$XCODEBUILD_PID" || status=$?
+    trap - INT TERM HUP
+    XCODEBUILD_PID=
+    return "$status"
+}
+
 (cd App && xcodegen --quiet)
-xcodebuild build -project App/Kiri.xcodeproj -scheme Kiri -configuration Release \
-    -destination 'platform=macOS' -derivedDataPath "$DERIVED" \
+
+# Fetching the Tree-sitter grammars is the slow part of a first build (about
+# 1.4 GB of git history), so it runs as its own step with progress shown.
+if [ -d "$DERIVED/SourcePackages/checkouts" ]; then
+    echo "==> Checking Swift packages"
+    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED" -quiet
+else
+    echo "==> Fetching Swift packages (the first build downloads about 1.4 GB)"
+    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED"
+fi
+
+echo "==> Building Kiri (Release, $ARCH)"
+run_xcodebuild build -project "$PROJECT" -scheme Kiri -configuration Release \
+    -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath "$DERIVED" -skipPackageUpdates \
     ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO -quiet
 
 rm -rf "$APP"
