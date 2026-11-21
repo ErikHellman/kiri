@@ -33,18 +33,14 @@ extension SelfTest {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        await periodicRecovery(dir)
-        await anyFileSavesInPlace(dir)
-        await closeDirty(dir)
-        await backgroundTab(dir)
-        await revert(dir)
-        await changedOnDisk(dir)
-        await untitled(dir)
-        await waiting(dir)
-        await newFile(dir)
-        await standardInput(dir)
-        await openRecent(dir)
-        await closeAll(dir)
+        // -KiriSaveStage <name> runs one of them alone.
+        let only = UserDefaults.standard.string(forKey: "KiriSaveStage")
+        let stages: [(String, (URL) async -> Void)] = [
+            ("recovery", periodicRecovery), ("types", anyFileSavesInPlace), ("close", closeDirty), ("tab", backgroundTab),
+            ("revert", revert), ("disk", changedOnDisk), ("untitled", untitled), ("wait", waiting), ("new", newFile),
+            ("stdin", standardInput), ("recent", openRecent), ("closeAll", closeAll),
+        ]
+        for (name, stage) in stages where only == nil || only == name { await stage(dir) }
         report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
         print("SELFTEST DONE save")
         fflush(stdout)
@@ -441,6 +437,12 @@ extension SelfTest {
 
     /// A document that has no file yet: Save asks where, with a name that
     /// can be anything; the tab then follows its file.
+    ///
+    /// The Save panel is the system's, drawn by another process, and a test
+    /// can only look at it and cancel it: told a folder in-process it stays
+    /// where it was (the person's own last folder), and pressing its Save
+    /// from here crashes. So each panel is checked and cancelled, and the
+    /// save it would lead to is made the way the document makes it.
     private static func untitled(_ dir: URL) async {
         guard let doc = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true), let tab = await tab(of: doc) else {
             report(false, "a new untitled document opens"); return
@@ -455,24 +457,19 @@ extension SelfTest {
             tab.doc.close()
             return
         }
-        report(panel.nameFieldStringValue == tab.doc.displayName + ".txt" && panel.allowedContentTypes.isEmpty && panel.accessoryView == nil,
-               "Save on an untitled document asks where, offering “\(panel.nameFieldStringValue)” with any extension allowed and no format pop-up")
-        // The panel itself is the system's and out of reach of a test:
-        // cancel it, and save where a chosen name would.
+        report(panel.nameFieldStringValue == tab.doc.displayName + ".txt" && panel.allowedContentTypes.isEmpty && panel.accessoryView == nil
+               && tab.doc.fileTypeFromLastRunSavePanel == tab.doc.fileType && tab.doc.fileNameExtension(forType: tab.doc.fileType ?? "", saveOperation: .saveAsOperation) == nil,
+               "Save on an untitled document asks where, offering “\(panel.nameFieldStringValue)” with any extension allowed, no format pop-up and no extension added afterwards")
         panel.cancel(nil)
         _ = await wait { tab.window.attachedSheet == nil }
         report(isOpen(tab.doc) && tab.doc.isDocumentEdited && tab.doc.fileURL == nil && exists(copy),
                "cancelling the panel leaves the document as it was")
 
         let url = dir.appendingPathComponent("named.py")
-        let saved: Bool = await withCheckedContinuation { c in
-            tab.doc.save(to: url, ofType: tab.doc.fileType ?? "public.plain-text", for: .saveAsOperation) { error in
-                c.resume(returning: error == nil)
-            }
-        }
-        report(saved && (try? Data(contentsOf: url)) == Data("print(1)\n".utf8) && !tab.doc.isDocumentEdited && !exists(copy)
-               && tab.doc.location?.standardizedFileURL == url.standardizedFileURL,
-               "saved under a name, the file holds the text, the document is clean and its recovery copy gone")
+        let saved = await save(tab.doc, as: url)
+        report(saved && named("named", in: dir) == ["named.py"] && (try? Data(contentsOf: url)) == Data("print(1)\n".utf8) && !tab.doc.isDocumentEdited
+               && !exists(copy) && tab.doc.location?.standardizedFileURL == url.standardizedFileURL,
+               "saved as named.py, there is that file and no other, holding the text; the document is clean and its recovery copy gone")
         // The screen follows the file: no longer untitled, and colored by its name.
         let followed = await wait(2) { tab.controller.model.language == .python }
         if followed || tab.window.occlusionState.contains(.visible) {
@@ -480,7 +477,53 @@ extension SelfTest {
         } else {
             print("SELFTEST SKIP the tab follows its new file (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }
+
+        // File ▸ Save As…: the current name is offered; a name without an
+        // extension is kept so.
+        await insert("# more\n", in: tab)
+        tab.doc.saveAs(nil)
+        let offered = (await sheet(on: tab.window) as? NSSavePanel)?.nameFieldStringValue
+        (tab.window.attachedSheet as? NSSavePanel)?.cancel(nil)
+        _ = await wait { tab.window.attachedSheet == nil }
+        let second = dir.appendingPathComponent("Rakefile")
+        let savedAs = await save(tab.doc, as: second)
+        report(offered == "named.py" && savedAs && named("Rakefile", in: dir) == ["Rakefile"]
+               && (try? Data(contentsOf: second)) == Data("# more\nprint(1)\n".utf8) && (try? Data(contentsOf: url)) == Data("print(1)\n".utf8)
+               && tab.doc.location?.standardizedFileURL == second.standardizedFileURL && !tab.doc.isDocumentEdited,
+               "Save As… offers the current name; saved as Rakefile it has no extension added, and the first file is left as it was")
         tab.doc.close()
+
+        // Closing an untitled tab and choosing Save: the panel; cancelling
+        // that keeps the tab.
+        guard let other = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true), let last = await self.tab(of: other) else {
+            report(false, "another untitled document opens"); return
+        }
+        await insert("kept\n", in: last)
+        last.window.performClose(nil)
+        _ = await sheet(on: last.window)
+        buttons(in: last.window.attachedSheet?.contentView).first { $0.title == "Save" }?.performClick(nil)
+        let askedWhere = await wait { last.window.attachedSheet is NSSavePanel }
+        (last.window.attachedSheet as? NSSavePanel)?.cancel(nil)
+        _ = await wait { last.window.attachedSheet == nil }
+        await settle(200)
+        report(askedWhere && isOpen(last.doc) && last.doc.isDocumentEdited && last.text.string == "kept\n",
+               "closing an untitled tab and choosing Save asks where, and cancelling that keeps the tab and its text")
+        last.doc.close()
+    }
+
+    /// Saves under a new name, as the document does once the Save panel
+    /// has given it one.
+    private static func save(_ doc: KiriDocument, as url: URL) async -> Bool {
+        await withCheckedContinuation { c in
+            doc.save(to: url, ofType: doc.fileTypeFromLastRunSavePanel ?? doc.fileType ?? "public.plain-text", for: .saveAsOperation) { error in
+                c.resume(returning: error == nil)
+            }
+        }
+    }
+
+    /// The files in `dir` whose names start with `prefix`.
+    private static func named(_ prefix: String, in dir: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasPrefix(prefix) }.sorted()
     }
 
     /// `kiri -w`: the marker goes when the tab has really closed, and not
@@ -538,16 +581,20 @@ extension SelfTest {
         guard let (marker3, tab3) = await request(3) else { report(false, "kiri -w opens its file a third time"); return }
         await insert("Quit? ", in: tab3)
         var question: [String] = []
-        let answer = Timer(timeInterval: 0.6, repeats: false) { _ in
+        // Asked again until the question is there, however late it comes:
+        // `terminate` doesn't return before it is answered.
+        let answer = Timer(timeInterval: 0.2, repeats: true) { _ in
             MainActor.assumeIsolated {
                 // One document with changes: its own sheet. More: an alert.
                 let asking = NSApp.modalWindow ?? tab3.window.attachedSheet
+                guard question.isEmpty, let cancel = buttons(in: asking?.contentView).first(where: { $0.title == "Cancel" }) else { return }
                 question = buttons(in: asking?.contentView).map(\.title)
-                buttons(in: asking?.contentView).first { $0.title == "Cancel" }?.performClick(nil)
+                cancel.performClick(nil)
             }
         }
         RunLoop.main.add(answer, forMode: .common)
         NSApp.terminate(nil)
+        answer.invalidate()
         _ = await wait(3) { !question.isEmpty && tab3.window.attachedSheet == nil }
         report(question.contains("Cancel") && isOpen(tab3.doc) && exists(marker3) && FileState(url) == saved,
                "quitting while a changed tab is waited for asks first, and Cancel keeps Kiri and the wait (\(question))")
@@ -570,24 +617,78 @@ extension SelfTest {
 ///   typed text; they are then closed, which deletes the copies.
 /// - `frame-set` / `frame-check`: the document window's frame is kept
 ///   from one launch to the next.
+/// - `restore-quit` (with a file) / `restore-check`, both with
+///   `-NSQuitAlwaysKeepsWindows YES` (the system setting that reopens
+///   windows): the file's window is back, once, with no empty document
+///   beside it.
+/// - `empty-check`: a launch with nothing to restore or recover starts in
+///   one empty document. Run after a quit with no window open, and after
+///   the app was killed (when AppKit doesn't call the launch a default
+///   one, though there is nothing to bring back).
+/// - `idle`: does nothing, for the runner to kill.
 extension SelfTest {
+    /// A phase that waits for an editor says so if none ever comes.
+    static func watchRelaunch() {
+        guard let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            guard !relaunchStarted else { return }
+            report(false, "\(phase): no document window 8 s after launch (\(NSDocumentController.shared.documents.count) documents)")
+            exit(1)
+        }
+    }
+
+    private static var relaunchStarted = false
+
     static func relaunch(_ phase: String, _ textView: NSTextView) {
         guard !isKiriItself else {
             report(false, "the relaunch tests run only in a copy with another bundle identifier, not in Kiri itself")
             exit(2)
         }
+        relaunchStarted = true
         Task { @MainActor in
             switch phase {
             case "crash": await crash(textView)
             case "recover": await recover()
             case "frame-set": frameSet(textView)
             case "frame-check": frameCheck(textView)
+            case "restore-check": await restoreCheck()
+            case "empty-check": await emptyCheck()
+            case "restore-quit":
+                // A quit as the person's: the document is not closed
+                // first, AppKit saves what is open.
+                await settle(500)
+                report(NSDocumentController.shared.documents.count == 1 && !NSDocumentController.shared.documents.contains(where: \.isDocumentEdited),
+                       "quitting with one clean document open")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
+            case "idle":
+                await settle(1000)
+                print("SELFTEST info idle with \(NSDocumentController.shared.documents.map { $0.fileURL?.lastPathComponent ?? "untitled" }), waiting to be killed")
+                fflush(stdout)
+                return
             default: report(false, "relaunch phase “\(phase)”")
             }
             print("SELFTEST DONE relaunch \(phase)")
             fflush(stdout)
             quit()
         }
+    }
+
+    private static func restoreCheck() async {
+        await settle(1500)
+        let docs = NSDocumentController.shared.documents
+        let windows = NSApp.windows.filter { $0.isVisible && DocumentWindow.isDocumentWindow($0) }
+        report(docs.count == 1 && docs.first?.fileURL?.lastPathComponent == "crash.swift" && docs.first?.isDocumentEdited == false && windows.count == 1,
+               "the window that was open at the quit is back, once, and no empty document with it (\(docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }), \(windows.count) windows)")
+    }
+
+    private static func emptyCheck() async {
+        await settle(1500)
+        let docs = NSDocumentController.shared.documents
+        report(docs.count == 1 && docs.first?.fileURL == nil && docs.first?.isDocumentEdited == false,
+               "with nothing to bring back, the launch starts in one empty document (\(docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }))")
     }
 
     private static func pause(_ seconds: Double = 5, until done: () -> Bool) async -> Bool {

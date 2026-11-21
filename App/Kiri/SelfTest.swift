@@ -21,6 +21,7 @@ import os
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
 
     static func run(textView: NSTextView) {
+        if isTestLaunch { closeDocumentsWhenStopped() }
         if UserDefaults.standard.bool(forKey: "KiriBehaviorTest"), !started {
             started = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { behavior(textView) }
@@ -497,20 +498,30 @@ import os
             fflush(stdout)
             exit(2)
         }
-        // A test that is stopped (`kill`) leaves no recovery copies behind.
-        signal(SIGTERM, SIG_IGN)
-        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler {
-            MainActor.assumeIsolated {
-                discardDocuments()
-                exit(0)
-            }
-        }
-        source.resume()
-        terminationSource = source
+        watchRelaunch()
     }
 
-    private static var terminationSource: DispatchSourceSignal?
+    /// A test that is stopped (`kill`) leaves no recovery copies behind: its
+    /// documents are closed first. If the main thread is stuck and can't do
+    /// that, the process goes anyway two seconds later.
+    private static func closeDocumentsWhenStopped() {
+        guard stopSources.isEmpty else { return }
+        signal(SIGTERM, SIG_IGN)
+        let close = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        close.setEventHandler {
+            discardDocuments()
+            exit(0)
+        }
+        let giveUp = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+        giveUp.setEventHandler { @Sendable in
+            Thread.sleep(forTimeInterval: 2)
+            _exit(1)
+        }
+        for source in [close, giveUp] { source.resume() }
+        stopSources = [close, giveUp]
+    }
+
+    private static var stopSources: [DispatchSourceSignal] = []
 
     /// This launch has a Debug flag (`-Kiri…`): it is a test or a picture.
     static let isTestLaunch = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-Kiri") }

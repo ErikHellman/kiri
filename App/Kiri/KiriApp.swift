@@ -78,26 +78,21 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
             // Unsaved text is kept for a crash: a recovery copy this long
             // after an edit (AppKit's default is never).
             NSDocumentController.shared.autosavingDelay = KiriDocumentController.recoveryDelay
+            LaunchDocument.watchRestoration()
         }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // SwiftUI's app delegate, which is in front of this one, never asks
-        // to open an untitled document, so launching into an empty editor
-        // is done here. Only when Kiri was simply started: not when it was
-        // launched with a file or a kiri:// request, and not when windows
-        // are being restored or unsaved documents recovered, all of which
-        // arrive after this.
-        let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? false
+        // What Kiri was launched for: simply to be opened (the "open
+        // application" event is being handled now), or to open documents or
+        // a kiri:// request, which then come by themselves a moment later
+        // (no event is current here in that case).
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let simplyOpened = event.map { $0.eventClass == kCoreEventClass && $0.eventID == kAEOpenApplication } ?? false
         MainActor.assumeIsolated {
             // Again, in case SwiftUI set up its own URL handler in between.
             KiriCLI.install()
-            guard plain else { return }
-            // A turn later: a file named on the command line is open by now.
-            DispatchQueue.main.async {
-                guard NSDocumentController.shared.documents.isEmpty, !KiriCLI.hasOpenedSomething else { return }
-                NSDocumentController.shared.newDocument(nil)
-            }
+            LaunchDocument.finishedLaunching(simplyOpened: simplyOpened)
         }
     }
 
@@ -108,6 +103,45 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
             guard !flag, NSDocumentController.shared.documents.isEmpty else { return true }
             NSDocumentController.shared.newDocument(nil)
             return false
+        }
+    }
+}
+
+/// Launching into an empty editor. SwiftUI's app delegate, which is in front
+/// of Kiri's, never asks for an untitled document, so it is done here: when
+/// Kiri was simply opened and, once launching and window restoration are
+/// both over, nothing else is open. Files named on the command line,
+/// restored windows and the unsaved documents AppKit brings back after a
+/// crash are all there by then. (AppKit's "default launch" flag is no
+/// guide: it is off after a crash or a forced quit even when there is
+/// nothing to restore, which would leave Kiri without a window.)
+@MainActor enum LaunchDocument {
+    private static var launched = false
+    private static var restored = false
+    private static var wanted = false
+
+    static func watchRestoration() {
+        NotificationCenter.default.addObserver(forName: NSApplication.didFinishRestoringWindowsNotification, object: nil,
+                                               queue: .main) { _ in
+            MainActor.assumeIsolated {
+                restored = true
+                openIfNothingElse()
+            }
+        }
+    }
+
+    static func finishedLaunching(simplyOpened: Bool) {
+        launched = true
+        wanted = simplyOpened
+        openIfNothingElse()
+    }
+
+    private static func openIfNothingElse() {
+        guard launched, restored, wanted else { return }
+        wanted = false
+        DispatchQueue.main.async {
+            guard NSDocumentController.shared.documents.isEmpty, !KiriCLI.hasOpenedSomething else { return }
+            NSDocumentController.shared.newDocument(nil)
         }
     }
 }
