@@ -323,12 +323,13 @@ import KiriKit
     }
 }
 
-private final class URLEventHandler: NSObject {
+/// Apple events arrive on the main thread.
+@MainActor private final class URLEventHandler: NSObject {
     static let shared = URLEventHandler()
 
     @objc func handle(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: string) else { return }
-        MainActor.assumeIsolated { KiriCLI.handle(url) }
+        KiriCLI.handle(url)
     }
 }
