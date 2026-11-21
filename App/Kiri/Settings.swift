@@ -17,14 +17,14 @@ enum Prefs {
     /// letterFade -bool YES` turns it on for development.
     static let letterFadeKey = "letterFade"
 
-    /// Text size steps for ⌘+ / ⌘-.
+    /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
 
     static func bigger(_ s: Double) -> Double { textScales.first { $0 > s + 0.001 } ?? textScales.last! }
     static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
 }
 
-/// Kiri ▸ Settings…: appearance, motion and text size.
+/// Kiri ▸ Settings…: appearance, motion and the editor's text size.
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -76,13 +76,13 @@ struct SettingsView: View {
                 Toggle("", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
                     .disabled(motion == .off)
             }
-            row("Text size", detail: "⌘+ and ⌘- change it from any window.") {
+            row("Editor text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
                 HStack(spacing: 8) {
-                    Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller", systemImage: "minus") }
+                    Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller Text", systemImage: "minus") }
                         .buttonStyle(.honeyIcon)
                     Text("\(Int((textScale * 100).rounded()))%")
                         .font(.honey(.subheadline, weight: .bold)).monospacedDigit().frame(width: 52)
-                    Button { textScale = Prefs.bigger(textScale) } label: { Label("Bigger", systemImage: "plus") }
+                    Button { textScale = Prefs.bigger(textScale) } label: { Label("Bigger Text", systemImage: "plus") }
                         .buttonStyle(.honeyIcon)
                 }
             }

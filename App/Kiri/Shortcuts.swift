@@ -142,8 +142,8 @@ struct ShortcutGroup: Identifiable {
             Item("Extend selection", "⇧ + any move"),
         ]),
         ShortcutGroup(title: "View", systemImage: "textformat.size", items: [
-            Item("Bigger text", Keys.bigger),
-            Item("Smaller text", Keys.smaller),
+            Item("Bigger editor text", Keys.bigger),
+            Item("Smaller editor text", Keys.smaller),
             Item("Actual size", Keys.actualSize),
             Item("Wrap lines", Keys.wrapLines),
             Item("Full screen", "⌃⌘F"),

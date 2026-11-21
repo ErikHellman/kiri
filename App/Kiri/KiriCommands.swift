@@ -93,11 +93,12 @@ struct KiriCommands: Commands {
                 .disabled(editor == nil)
         }
 
-        // View
+        // View. The size is the editor text's (and its line numbers'), not
+        // the interface's, so the items say "Text".
         CommandGroup(before: .toolbar) {
-            Button("Bigger") { textScale = Prefs.bigger(textScale) }
+            Button("Bigger Text") { textScale = Prefs.bigger(textScale) }
                 .keyboardShortcut(Keys.bigger)
-            Button("Smaller") { textScale = Prefs.smaller(textScale) }
+            Button("Smaller Text") { textScale = Prefs.smaller(textScale) }
                 .keyboardShortcut(Keys.smaller)
             Button("Actual Size") { textScale = 1 }
                 .keyboardShortcut(Keys.actualSize)

@@ -13,7 +13,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Tabs**: documents open as tabs in one window (native window tabbing under a Honey tab strip, with dirty dots).
 - **Typing animations** (Settings ▸ Typing animations, on by default): a honey caret that glides and breathes, a current-line highlight that eases between lines, a pulse on the matching bracket, syntax colors that crossfade instead of flickering, and rolling Ln/Col digits. Reduce Motion keeps the fades and drops movement; Motion: Off turns them all off. A letter fade-in exists in the code but is off: TextKit 2 doesn't yet redraw the fading letter every frame.
 - **`kiri` command**: open files and folders from the terminal (see below).
-- Line numbers, current-line highlight, find and replace, Go to Line, text size, line wrapping, File ▸ Open Recent and Revert.
+- Line numbers, current-line highlight, find and replace, Go to Line, editor text size, line wrapping, File ▸ Open Recent and Revert.
 
 ## Keyboard shortcuts
 
@@ -32,8 +32,8 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⇧⌘] / ⇧⌘[ , ⌘1–⌘9 | Next / previous tab, go to tab |
 | ⌃⌘W | Wrap lines |
 | ⌘/ | Keyboard Shortcuts window (everything, filterable) |
-| ⌘+ / ⌘- / ⌘0 | Bigger / smaller / actual text size |
-| ⌘, | Settings (theme, motion, text size, wrapping) |
+| ⌘+ / ⌘- / ⌘0 | Bigger / smaller / actual size for the editor text (View ▸ Bigger Text, Smaller Text, Actual Size) |
+| ⌘, | Settings (theme, motion, editor text size, wrapping) |
 
 Everything else is in a menu: Format has language, encoding, BOM and line
 endings; View has theme, motion and typing animations. ⌃F2 opens the menu bar.
