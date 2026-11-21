@@ -9,6 +9,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Instant launch** into an empty editor (about 0.3 s to the first window on an M-series Mac, measured with `-KiriLaunchTiming YES`).
 - **Honey + Liquid Glass design**: glass chrome (tab strip, Save, status bar, find bar, Go to Line) over a warm canvas, the text on a solid panel. Light, dark and high-contrast; follows Reduce Motion and Reduce Transparency.
 - **Any text file**: plain text, Markdown, JSON, YAML, TOML, XML, CSV, logs, source code. Kiri detects the encoding (UTF-8, UTF-16/32 with or without BOM, Windows Latin 1) and line endings (LF, CRLF, CR) and saves them back unchanged; change either from the status bar.
+- **Saving is yours**: the file changes when you save (⌘S, the Save button, File ▸ Save As…) and at no other time. Closing a tab or quitting with unsaved changes asks first. What you haven't saved is kept for a crash: five seconds after an edit Kiri writes a recovery copy (in `~/Library/Autosave Information`, never beside your file), and the next launch brings the document back with its changes, still unsaved; saving, reverting or closing deletes the copy. File ▸ Revert to Saved goes back to the file. A file changed by something else (git, a formatter) is taken up when the document has no unsaved changes; otherwise Save asks before writing over it.
 - **Syntax highlighting** with Tree-sitter for Swift, JSON, YAML, Markdown, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS, Go, Rust, Java, Kotlin, C#, C, C++ and Zig, and a lightweight lexer for TOML, INI, XML, Objective-C and more. Only the visible text is colored, so large files stay fast.
 - **Tabs**: documents open as tabs in one window (native window tabbing under a Honey tab strip, with dirty dots). The selected tab shows its whole name and the others shorten in the middle ("Greet….swift"); with more tabs than fit, the strip scrolls and a menu at its end lists them all. A tab's tooltip is its file's path, and files with the same name show their folder ("index.ts · api").
 - **Typing animations** (Settings ▸ Typing animations, on by default): a honey caret that glides and breathes, a current-line highlight that eases between lines, a pulse on the matching bracket, syntax colors that crossfade instead of flickering, and rolling Ln/Col digits. Reduce Motion keeps the fades and drops movement; Motion: Off turns them all off. A letter fade-in exists in the code but is off: TextKit 2 doesn't yet redraw the fading letter every frame.
@@ -17,18 +18,18 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Status bar**: a glass capsule over the bottom of the text with the language, encoding and line endings (menus: each shows a capsule and a chevron under the pointer), the caret's position (click it for Go to Line; a selection shows its length, "Ln 12, Sel 5") and the indentation Shift Left and Right use ("Spaces: 4" or "Tabs"). It keeps its width as the caret moves, and fades to about a third while you type or scroll so the text under it shows; it is back after a second, or when the pointer comes near. With Reduce Motion or Increase Contrast it stays solid.
 - **A hint in a new document**: an empty untitled document shows Open a file ⌘O, Open a folder ⇧⌘O, Keyboard shortcuts ⌘/ and, until it is installed, Install the kiri command. Each line is a button; the first thing you type takes the hint away.
 - **`kiri` command**: open files and folders from the terminal (see below).
-- Line numbers, current-line highlight, editor text size, line wrapping, File ▸ Open Recent and Revert.
+- Line numbers, current-line highlight, editor text size, line wrapping and File ▸ Open Recent.
 
 ## Keyboard shortcuts
 
 | Keys | Action |
 |---|---|
 | ⌘N or ⌘T / ⌘O | New tab / open (as a tab) |
-| ⌘S / ⇧⌘S | Save / Duplicate |
+| ⌘S / ⌥⇧⌘S | Save / Save As |
 | ⇧⌘O | Open folder (a new window with a file sidebar) |
 | ⌃⌘S | Show / hide the folder sidebar (also the button left of the tabs) |
 | ⇧⌘E | Jump between sidebar and editor (in the sidebar: arrows, Return, Space, type to select, Esc) |
-| ⌘W | Close tab |
+| ⌘W / ⌥⌘W | Close tab / close all (a tab with unsaved changes asks) |
 | ⌘F / ⌥⌘F | Find / Find and Replace (in the bar: Return and ⇧Return for next and previous, Tab between the fields, Esc to close with the match selected) |
 | ⌘G / ⇧⌘G | Find next / previous, with the bar open or closed |
 | ⌘E / ⌘J | Use the selection as the find text / scroll to the selection |
@@ -55,7 +56,7 @@ kiri ~/project              # a new window with a file sidebar for the folder
 kiri new.md                 # a file that doesn't exist yet opens empty; saving creates it
 git diff | kiri -           # standard input in a new untitled tab
 kiri -n file.txt            # in a new window
-kiri -w file.txt            # wait until the tab is closed
+kiri -w file.txt            # wait until the tab is closed (save first: closing asks if you haven't)
 ```
 
 Use Kiri as your editor with `export EDITOR="kiri -w"` and `git config --global core.editor "kiri -w"`.
@@ -82,18 +83,19 @@ cd App && xcodegen && open Kiri.xcodeproj
 
 `Kiri.xcodeproj` and `Info.plist` are generated from `App/project.yml` and not checked in. To sign with your own identity, set `DEVELOPMENT_TEAM` in `App/project.yml` (Xcode) or `SIGN_IDENTITY` for `scripts/build.sh`.
 
-Tests: `cd KiriKit && swift test` (the token, document-model, search, tab-layout and syntax tests; all but the last also run on Linux). Debug builds (or Release with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=KIRI_SELFTEST`) have smoke tests, run as `Kiri.app/Contents/MacOS/Kiri <file> <flag> YES`:
+Tests: `cd KiriKit && swift test` (the token, document-model, search, tab-layout and syntax tests; all but the last also run on Linux). Debug builds (or Release with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=KIRI_SELFTEST`) have smoke tests, run as `Kiri.app/Contents/MacOS/Kiri <file> <flag> YES -ApplePersistenceIgnoreState YES`. The last argument is required: it keeps AppKit from restoring your windows or reopening your unsaved documents into the test, and puts the test's recovery copies in the temporary folder; a launch with a `-Kiri…` flag refuses to run without it.
 
-- `-KiriSelfTest`: typing through the event loop, dirty state, byte-exact save, undo, revert, highlighting after revert.
-- `-KiriBehaviorTest`: focus at launch, the find bar (the Edit ▸ Find keys, the count, next and previous, highlights, replace and Replace All with undo, the field's Return, Tab and Escape), Go to Line (preview, Return, Escape), the status bar (its items' names, the position button, a width that holds as the caret moves, resting while typing and scrolling), wrapping, the Save button, opening/selecting/closing tabs, the tab strip following edits, saves and renames, the first-run hint (shown in a new untitled document only, gone with the first key and after undo, its lines' names and clicks), the letter fade.
+- `-KiriSelfTest`: typing through the event loop, dirty state, byte-exact save, undo, revert, highlighting after revert; and that saving is explicit: nothing reaches the file before Save (bytes, date and inode, also after an autosave), the recovery copy (written by itself, kept out of the file's folder, deleted by Save, Revert and close), Save in place for files of any type, the close question's Cancel, Don't Save and Save, Revert to Saved, a file changed on disk, Save on an untitled document, File ▸ Open Recent, and `kiri -w` waiting through Cancel, Save, Don't Save and a cancelled quit.
+- `-KiriBehaviorTest`: focus at launch, the find bar (the Edit ▸ Find keys, the count, next and previous, highlights, replace and Replace All with undo, the field's Return, Tab and Escape), Go to Line (preview, Return, Escape), the status bar (its items' names, the position button, a width that holds as the caret moves, resting while typing and scrolling), wrapping, the Save button, opening/selecting/closing tabs, the tab strip following edits, saves and renames, the menus acting on the window in front (Find, Save, Revert to Saved), the first-run hint (shown in a new untitled document only, gone with the first key and after undo, its lines' names and clicks), the letter fade.
 - `-KiriPerfTest`: typing and scrolling cost on the open file, and what the find bar costs on it (use a big file).
+- `-KiriRelaunchTest crash`, then `recover`: unsaved documents come back after `kill -9`. This needs AppKit to reopen them, which `-ApplePersistenceIgnoreState YES` turns off, so it runs only in a copy of the app with another bundle identifier and name (so that its recovery record is not Kiri's), without that argument.
 
 ## Layout
 
 - `KiriKit/` Swift package:
   - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer), find and replace on strings (`TextSearch`), the status bar's position text and indentation detection (`StatusText`, `IndentStyle`) and the tab strip's arithmetic (`TabLayout`: shortening names, sharing the width, telling same-named files apart).
   - `KiriSyntax`: Tree-sitter parsing and highlight queries (macOS only).
-- `App/` the macOS app (XcodeGen spec in `App/project.yml`): `DocumentGroup` documents, the TextKit 2 editor, tabs, settings and commands.
+- `App/` the macOS app (XcodeGen spec in `App/project.yml`): `NSDocument` documents in windows that host SwiftUI, the TextKit 2 editor, tabs, settings and commands.
 - `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).
 - `docs/DESIGN.md` the design language.
 
