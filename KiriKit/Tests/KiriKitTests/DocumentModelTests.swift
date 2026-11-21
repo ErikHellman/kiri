@@ -81,6 +81,14 @@ import Testing
 }
 
 @Suite struct LineIndexTests {
+    @Test func longestLine() {
+        #expect(LineIndex().longestLine == 0)
+        #expect(LineIndex("abc").longestLine == 3)
+        #expect(LineIndex("ab\ncdef\n\ng").longestLine == 4)
+        #expect(LineIndex("ab\n").longestLine == 2)
+        #expect(LineIndex("a\nbcdefg").longestLine == 6)
+    }
+
     @Test func buildsFromText() {
         let index = LineIndex("ab\ncd\n\nef")
         #expect(index.starts == [0, 3, 6, 7])

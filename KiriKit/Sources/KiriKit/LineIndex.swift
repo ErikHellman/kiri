@@ -36,6 +36,13 @@ public struct LineIndex: Equatable, Sendable {
         return start..<end
     }
 
+    /// The UTF-16 length of the longest line, without its "\n".
+    public var longestLine: Int {
+        var longest = length - starts[starts.count - 1]
+        for i in 1..<starts.count { longest = max(longest, starts[i] - starts[i - 1] - 1) }
+        return longest
+    }
+
     /// Applies an edit: the UTF-16 `range` of the old text was replaced by `text`.
     public mutating func replace(range: Range<Int>, with text: String) {
         precondition(range.lowerBound >= 0 && range.upperBound <= length, "edit outside the text")
