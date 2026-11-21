@@ -329,8 +329,14 @@ import SwiftUI
     }
 
     func close(_ id: Int) {
-        let w = (window?.tabbedWindows ?? [window].compactMap { $0 }).first { $0.windowNumber == id }
-        w?.performClose(nil)
+        guard let w = (window?.tabbedWindows ?? [window].compactMap { $0 }).first(where: { $0.windowNumber == id }) else { return }
+        // A tab with unsaved changes asks before it closes, in a sheet on
+        // its own window: it comes forward first, so the question is seen.
+        if NSDocumentController.shared.document(for: w)?.isDocumentEdited == true, w.tabGroup?.selectedWindow !== w {
+            w.tabGroup?.selectedWindow = w
+            w.makeKeyAndOrderFront(nil)
+        }
+        w.performClose(nil)
     }
 
     var document: NSDocument? { window.flatMap { NSDocumentController.shared.document(for: $0) } }

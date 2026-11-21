@@ -119,6 +119,11 @@ final class KiriDocumentController: NSDocumentController {
     static let recoveryDelay: TimeInterval = 5
 
     override func noteNewRecentDocumentURL(_ url: URL) {
+        #if DEBUG || KIRI_SELFTEST
+        // A test launch opens temporary files by the dozen: they stay out
+        // of the person's Open Recent, which every copy of Kiri shares.
+        if SelfTest.isTestLaunch { return }
+        #endif
         super.noteNewRecentDocumentURL(url)
         RecentDocuments.shared.refresh()
     }
@@ -138,4 +143,10 @@ final class KiriDocumentController: NSDocumentController {
         let now = NSDocumentController.shared.recentDocumentURLs
         if now != urls { urls = now }
     }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// The self-test shows a list of its own: its files never go into the
+    /// real one.
+    func selfTestShow(_ list: [URL]) { urls = list }
+    #endif
 }

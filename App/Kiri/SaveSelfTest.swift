@@ -36,9 +36,12 @@ extension SelfTest {
         await periodicRecovery(dir)
         await anyFileSavesInPlace(dir)
         await closeDirty(dir)
+        await backgroundTab(dir)
         await revert(dir)
+        await changedOnDisk(dir)
         await untitled(dir)
         await waiting(dir)
+        await openRecent(dir)
         report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
         print("SELFTEST DONE save")
         fflush(stdout)
@@ -120,6 +123,12 @@ extension SelfTest {
         guard let view else { return [] }
         if let button = view as? NSButton { return [button] }
         return view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    private static func texts(in view: NSView?) -> [String] {
+        guard let view else { return [] }
+        if let field = view as? NSTextField { return field.stringValue.isEmpty ? [] : [field.stringValue] }
+        return view.subviews.flatMap { texts(in: $0) }
     }
 
     /// The sheet on `window`, once it is up.
@@ -231,6 +240,98 @@ extension SelfTest {
         let saved = await wait { !isOpen(tab.doc) }
         report(saved && (try? Data(contentsOf: url)) == Data("kept one\n".utf8) && !exists(second),
                "Save writes the file, closes the tab and deletes the recovery copy")
+    }
+
+    /// The close button of a tab that isn't showing: with unsaved changes
+    /// the tab comes forward first, so its question is seen.
+    private static func backgroundTab(_ dir: URL) async {
+        let one = file("behind.txt", "behind\n", in: dir), two = file("showing.txt", "showing\n", in: dir)
+        guard let behind = await open(one), let showing = await open(two) else { report(false, "two files open for the tab check"); return }
+        await insert("typed ", in: behind)
+        showing.window.tabGroup?.selectedWindow = showing.window
+        _ = await wait { showing.window.tabGroup?.selectedWindow === showing.window }
+        await settle(200)
+        guard let strip = WindowTabs.model(for: showing.window), behind.window.tabGroup === showing.window.tabGroup else {
+            report(false, "the two files are tabs of one window"); behind.doc.close(); showing.doc.close(); return
+        }
+        strip.close(behind.window.windowNumber)
+        let asked = await sheet(on: behind.window)
+        report(asked != nil && behind.window.tabGroup?.selectedWindow === behind.window && isOpen(behind.doc),
+               "closing a tab that isn't showing brings it forward to ask about its changes")
+        await press("Cancel", on: behind.window)
+        behind.doc.close()
+        showing.doc.close()
+    }
+
+    /// A file changed by something else: a document without unsaved changes
+    /// takes it up; one with changes keeps them, and Save doesn't write
+    /// over the file without asking.
+    private static func changedOnDisk(_ dir: URL) async {
+        let url = file("shared.txt", "first\n", in: dir)
+        guard let tab = await open(url) else { report(false, "a file opens for the changed-on-disk check"); return }
+        func write(_ text: String) {
+            try? Data(text.utf8).write(to: url)
+            // A different modification date, whatever the clock's grain.
+            let later = (tab.doc.fileModificationDate ?? Date()).addingTimeInterval(2 + Double.random(in: 0..<1))
+            try? FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: url.path)
+        }
+        write("changed by git\n")
+        let reloaded = await wait(4) { tab.text.string == "changed by git\n" }
+        report(reloaded && !tab.doc.isDocumentEdited && isOpen(tab.doc) && tab.controller.document === tab.doc,
+               "a file changed on disk is taken up by its document when that has no unsaved changes (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
+
+        await insert("mine ", in: tab)
+        write("theirs\n")
+        await settle(1200)
+        report(tab.text.string == "mine changed by git\n" && tab.doc.isDocumentEdited,
+               "a document with unsaved changes keeps them when its file changes on disk")
+        tab.doc.save(nil)
+        let asked = await sheet(on: tab.window)
+        let titles = buttons(in: asked?.contentView).map(\.title)
+        let words = texts(in: asked?.contentView).joined(separator: " ")
+        report(asked != nil && (try? Data(contentsOf: url)) == Data("theirs\n".utf8),
+               "and its Save asks before writing over the other change (“\(words)” \(titles))")
+        if let cancel = titles.first(where: { $0 == "Cancel" }) ?? titles.last { await press(cancel, on: tab.window) }
+        if let sheet = tab.window.attachedSheet { tab.window.endSheet(sheet) }
+        tab.doc.close()
+    }
+
+    /// File ▸ Open Recent is Kiri's own menu over AppKit's list. (A test
+    /// launch adds nothing to that list, which is the person's.)
+    private static func openRecent(_ dir: URL) async {
+        guard let main = NSApp.mainMenu, let menu = main.item(withTitle: "File")?.submenu?.item(withTitle: "Open Recent")?.submenu else {
+            report(false, "File ▸ Open Recent exists"); return
+        }
+        let recent = NSDocumentController.shared.recentDocumentURLs
+        RecentDocuments.shared.refresh()
+        await settle(250)
+        updateMenu(main)
+        let listed = menu.items.filter { !$0.isSeparatorItem && $0.title != "Clear Menu" }
+        report(listed.count == recent.count && menu.items.last?.title == "Clear Menu" && menu.items.last?.isEnabled == !recent.isEmpty,
+               "File ▸ Open Recent lists the \(recent.count) documents AppKit remembers, then Clear Menu")
+        report(!recent.contains { $0.path.hasPrefix(dir.path) || $0.path.hasPrefix(dir.resolvingSymlinksInPath().path) },
+               "the test's own files are not in Open Recent")
+
+        // With a list of the test's own: two of a name, and a third.
+        let a = dir.appendingPathComponent("a"), b = dir.appendingPathComponent("b")
+        for folder in [a, b] { try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let files = [file("notes.md", "in a\n", in: a), file("notes.md", "in b\n", in: b), file("other.txt", "other\n", in: a)]
+        RecentDocuments.shared.selfTestShow(files)
+        defer { RecentDocuments.shared.refresh() }
+        await settle(250)
+        updateMenu(main)
+        let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+        report(titles == ["notes.md — a", "notes.md — b", "other.txt", "Clear Menu"] && menu.items.last?.isEnabled == true,
+               "recent documents are listed by name, two of a name with their folders (\(titles))")
+        if let i = menu.items.firstIndex(where: { $0.title == "notes.md — b" }) { menu.performActionForItem(at: i) }
+        var chosen: NSDocument?
+        _ = await wait(3) {
+            chosen = NSDocumentController.shared.documents.first { $0.fileURL?.standardizedFileURL == files[1].standardizedFileURL }
+            return chosen != nil
+        }
+        let tab = await tab(of: chosen)
+        report(tab?.text.string == "in b\n", "choosing one opens that file")
+        chosen?.close()
     }
 
     /// File ▸ Revert to Saved: asks, then reads the file into the document
@@ -376,6 +477,140 @@ extension SelfTest {
         _ = await sheet(on: tab3.window)
         await press("Don’t Save", on: tab3.window)
         _ = await wait { !exists(marker3) }
+    }
+}
+
+/// `-KiriRelaunchTest <phase>`: what only a second launch can show, and
+/// only without `-ApplePersistenceIgnoreState YES`, which stops AppKit
+/// reopening anything. So these run in a copy of the app under another
+/// bundle identifier and name (its recovery record, its saved state and
+/// its "Unsaved … Document" are then its own), never in Kiri itself:
+///
+/// - `crash` (with a file): types into the file's document and a new
+///   untitled one, waits for both recovery copies and kills itself.
+/// - `recover` (no arguments): both documents are back, edited, with the
+///   typed text; they are then closed, which deletes the copies.
+/// - `frame-set` / `frame-check`: the document window's frame is kept
+///   from one launch to the next.
+extension SelfTest {
+    static func relaunch(_ phase: String, _ textView: NSTextView) {
+        guard !isKiriItself else {
+            report(false, "the relaunch tests run only in a copy with another bundle identifier, not in Kiri itself")
+            exit(2)
+        }
+        Task { @MainActor in
+            switch phase {
+            case "crash": await crash(textView)
+            case "recover": await recover()
+            case "frame-set": frameSet(textView)
+            case "frame-check": frameCheck(textView)
+            default: report(false, "relaunch phase “\(phase)”")
+            }
+            print("SELFTEST DONE relaunch \(phase)")
+            fflush(stdout)
+            quit()
+        }
+    }
+
+    private static func pause(_ seconds: Double = 5, until done: () -> Bool) async -> Bool {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while clock.now - start < .seconds(seconds) {
+            if done() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return done()
+    }
+
+    private static let typedInFile = "// recovered\n", typedInUntitled = "never saved\n"
+
+    private static func crash(_ textView: NSTextView) async {
+        guard let first = NSDocumentController.shared.documents.first(where: { $0.fileURL != nil }),
+              let second = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true) else {
+            report(false, "a document with a file and a new untitled one"); return
+        }
+        var editors: [NSTextView] = []
+        _ = await pause {
+            editors = [first, second].compactMap { doc in Editors.window(for: doc).flatMap { findTextView(in: $0.contentView) } }
+            return editors.count == 2 && editors.allSatisfy { (($0.delegate as? EditorController)?.document) != nil }
+        }
+        guard editors.count == 2 else { report(false, "both editors are up"); return }
+        for (editor, text) in zip(editors, [typedInFile, typedInUntitled]) {
+            editor.window?.tabGroup?.selectedWindow = editor.window
+            await settle(200)
+            editor.window?.makeFirstResponder(editor)
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+            await settle(200)
+        }
+        let delay = NSDocumentController.shared.autosavingDelay
+        let copied = await pause(delay + 6) { first.autosavedContentsFileURL != nil && second.autosavedContentsFileURL != nil }
+        for doc in [first, second] { print("SELFTEST info recovery copy \(doc.autosavedContentsFileURL?.path ?? "none")") }
+        report(copied && first.isDocumentEdited && second.isDocumentEdited,
+               "both documents have unsaved changes and a recovery copy, written by itself; now the app is killed")
+        fflush(stdout)
+        guard copied else { return }
+        kill(getpid(), SIGKILL)
+    }
+
+    private static func recover() async {
+        var docs: [NSDocument] = []
+        _ = await pause(6) {
+            docs = NSDocumentController.shared.documents.filter { $0.autosavedContentsFileURL != nil }
+            return docs.count == 2
+        }
+        let all = NSDocumentController.shared.documents
+        print("SELFTEST info documents after the relaunch: \(all.map { "\($0.fileURL?.lastPathComponent ?? "untitled") edited=\($0.isDocumentEdited) copy=\($0.autosavedContentsFileURL?.lastPathComponent ?? "none")" })")
+        report(docs.count == 2 && all.count == 2, "the relaunch reopens the two documents that had unsaved changes, and nothing else (\(all.count) open)")
+        func text(_ doc: NSDocument) async -> String? {
+            var found: String?
+            _ = await pause(3) {
+                guard let tv = Editors.window(for: doc).flatMap({ findTextView(in: $0.contentView) }),
+                      ((tv.delegate as? EditorController)?.document) === doc else { return false }
+                found = tv.string
+                return true
+            }
+            return found
+        }
+        func tabIsDirty(_ doc: NSDocument) -> Bool {
+            guard let w = Editors.window(for: doc), let strip = WindowTabs.model(for: w) else { return false }
+            strip.refresh()
+            return strip.items.first { $0.id == w.windowNumber }?.dirty == true
+        }
+        if let doc = docs.first(where: { $0.fileURL != nil }), let url = doc.fileURL {
+            let shown = await text(doc)
+            let onDisk = (try? String(contentsOf: url, encoding: .utf8)) ?? "?"
+            report(shown == typedInFile + onDisk && doc.isDocumentEdited && tabIsDirty(doc) && doc.windowControllers.first?.window?.isDocumentEdited == true,
+                   "the file's document is back at its file (\(url.lastPathComponent)) with the typed text, edited, its tab dirty; the file itself still as it was saved")
+        } else {
+            report(false, "the document with a file came back")
+        }
+        if let doc = docs.first(where: { $0.fileURL == nil }) {
+            let shown = await text(doc)
+            report(shown == typedInUntitled && doc.isDocumentEdited && tabIsDirty(doc),
+                   "the untitled document is back with its text, edited (“\((shown ?? "none").replacingOccurrences(of: "\n", with: "⏎"))”)")
+        } else {
+            report(false, "the untitled document came back")
+        }
+        // The copies are this test's own: closing the documents deletes them.
+        let copies = docs.compactMap(\.autosavedContentsFileURL)
+        for doc in all { doc.close() }
+        report(!copies.isEmpty && copies.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) },
+               "closing them deletes the recovery copies (\(copies.map(\.lastPathComponent)))")
+    }
+
+    private static let testFrame = NSRect(x: 220, y: 180, width: 777, height: 555)
+
+    private static func frameSet(_ textView: NSTextView) {
+        guard let window = textView.window else { report(false, "a document window"); return }
+        window.setFrame(testFrame, display: true)
+        window.performClose(nil)
+        let saved = UserDefaults.standard.string(forKey: "NSWindow Frame KiriDocumentWindow")
+        report(saved != nil, "closing a document window saves its frame (\(saved ?? "nothing"))")
+    }
+
+    private static func frameCheck(_ textView: NSTextView) {
+        guard let window = textView.window else { report(false, "a document window"); return }
+        report(window.frame == testFrame, "the next launch's document window has that frame (\(window.frame))")
     }
 }
 #endif

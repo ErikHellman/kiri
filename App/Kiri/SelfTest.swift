@@ -26,6 +26,12 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { behavior(textView) }
             return
         }
+        if let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") {
+            guard !started else { return }
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { relaunch(phase, textView) }
+            return
+        }
         if UserDefaults.standard.bool(forKey: "KiriDumpMenus") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 func dump(_ m: NSMenu, _ d: Int) {
@@ -483,8 +489,10 @@ import os
     /// their unsaved documents into the test, and keeps the test's own
     /// recovery copies in the temporary folder. Without it, nothing runs.
     static func guardLaunch() {
-        guard ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-Kiri") }) else { return }
-        guard UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") else {
+        guard isTestLaunch else { return }
+        // (A copy under another bundle identifier has state of its own:
+        // the relaunch tests, which need AppKit to reopen things, run so.)
+        guard UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") || !isKiriItself else {
             print("SELFTEST FAIL refusing to run: launch with -ApplePersistenceIgnoreState YES, so the test can't touch your windows or unsaved documents")
             fflush(stdout)
             exit(2)
@@ -503,6 +511,12 @@ import os
     }
 
     private static var terminationSource: DispatchSourceSignal?
+
+    /// This launch has a Debug flag (`-Kiri…`): it is a test or a picture.
+    static let isTestLaunch = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-Kiri") }
+    /// This is Kiri under its own bundle identifier, sharing the person's
+    /// preferences, saved state and recovery records.
+    static let isKiriItself = Bundle.main.bundleIdentifier == "se.hellsoft.kiri"
 
     /// Closes every document as it is: nothing is saved, and AppKit deletes
     /// their recovery copies.

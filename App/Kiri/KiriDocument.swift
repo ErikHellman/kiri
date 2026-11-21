@@ -178,6 +178,25 @@ extension UTType {
         }
     }
 
+    // MARK: Changes on disk
+
+    /// The file was changed by something else (git, a formatter, another
+    /// editor). A document with no unsaved changes takes the file up; one
+    /// with changes keeps them, and its next Save says the file has
+    /// changed and asks which to keep, as AppKit does.
+    override nonisolated func presentedItemDidChange() {
+        super.presentedItemDidChange()
+        DispatchQueue.main.async { [weak self] in self?.reloadIfChangedOnDisk() }
+    }
+
+    private func reloadIfChangedOnDisk() {
+        // The document's own save is not news: it sets `fileModificationDate`.
+        guard !isDocumentEdited, let fileURL, let fileType,
+              let onDisk = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date,
+              onDisk != fileModificationDate else { return }
+        try? revert(toContentsOf: fileURL, ofType: fileType)
+    }
+
     // MARK: The save format
 
     /// Changes the encoding, the line endings or the byte order mark: an
