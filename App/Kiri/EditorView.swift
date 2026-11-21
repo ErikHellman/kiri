@@ -252,6 +252,80 @@ struct EditorView: NSViewRepresentable {
         textView.window?.makeFirstResponder(textView)
     }
 
+    /// ⌘] / ⌘[: indents or outdents every line the selection touches, as
+    /// one undoable edit, with the file's own indent (a tab, or its spaces).
+    func shiftLines(right: Bool) {
+        guard let textView, let storage = textView.textStorage else { return }
+        let ns = storage.string as NSString
+        let sel = textView.selectedRange()
+        // A selection that ends at a line start doesn't take that line along.
+        var probe = sel
+        if probe.length > 0, ns.character(at: NSMaxRange(probe) - 1) == 0x0A { probe.length -= 1 }
+        let block = ns.lineRange(for: probe)
+        let old = ns.substring(with: block)
+        let unit = indentUnit(ns)
+        let width = unit == "\t" ? 4 : unit.count
+
+        var lines = old.components(separatedBy: "\n")
+        let endsWithNewline = old.hasSuffix("\n")
+        if endsWithNewline { lines.removeLast() }
+        var firstDelta = 0
+        for i in lines.indices {
+            let line = lines[i]
+            var delta = 0
+            if right {
+                // Blank lines stay blank, unless the caret is on one.
+                guard !line.isEmpty || lines.count == 1 else { continue }
+                lines[i] = unit + line
+                delta = (unit as NSString).length
+            } else if line.hasPrefix("\t") {
+                lines[i] = String(line.dropFirst())
+                delta = -1
+            } else {
+                let spaces = min(width, line.prefix { $0 == " " }.count)
+                lines[i] = String(line.dropFirst(spaces))
+                delta = -spaces
+            }
+            if i == 0 { firstDelta = delta }
+        }
+        let new = lines.joined(separator: "\n") + (endsWithNewline ? "\n" : "")
+        guard new != old, textView.shouldChangeText(in: block, replacementString: new) else { return }
+        storage.replaceCharacters(in: block, with: NSAttributedString(string: new, attributes: textAttributes))
+        textView.didChangeText()
+        textView.undoManager?.setActionName(right ? "Shift Right" : "Shift Left")
+
+        let newLength = (new as NSString).length
+        if sel.length == 0 {
+            textView.setSelectedRange(NSRange(location: max(block.location, sel.location + firstDelta), length: 0))
+        } else {
+            textView.setSelectedRange(NSRange(location: block.location, length: newLength - (endsWithNewline ? 1 : 0)))
+        }
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
+
+    /// A tab, or the smallest run of leading spaces among the file's first
+    /// indented lines (2 or 4, say).
+    private func indentUnit(_ text: NSString) -> String {
+        var smallest = Int.max
+        var seen = 0
+        let head = text.substring(to: min(text.length, 65_536)) as NSString
+        head.enumerateLines { line, stop in
+            if line.hasPrefix("\t") {
+                if seen == 0 { smallest = 0 }
+                stop.pointee = true
+                return
+            }
+            let n = line.prefix { $0 == " " }.count
+            if n > 0, n < line.count {
+                smallest = min(smallest, n)
+                seen += 1
+                if seen >= 200 { stop.pointee = true }
+            }
+        }
+        if smallest == 0 || smallest == .max { return "\t" }
+        return String(repeating: " ", count: min(smallest, 8))
+    }
+
     func focus() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)

@@ -19,16 +19,23 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 
 | Keys | Action |
 |---|---|
-| ⌘N / ⌘O | New document / open (as a tab) |
+| ⌘N or ⌘T / ⌘O | New tab / open (as a tab) |
+| ⌘S / ⇧⌘S | Save / Duplicate |
 | ⇧⌘O | Open folder (a new window with a file sidebar) |
 | ⌃⌘S | Show / hide the folder sidebar |
-| ⌘S / ⇧⌘S | Save / Save As |
 | ⌘W | Close tab |
 | ⌘F / ⌥⌘F | Find / Find and Replace |
 | ⌘G / ⇧⌘G | Find next / previous |
 | ⌘L | Go to line (`12` or `12:5` for line and column) |
+| ⌘] / ⌘[ | Shift lines right / left |
+| ⇧⌘] / ⇧⌘[ , ⌘1–⌘9 | Next / previous tab, go to tab |
+| ⌃⌘W | Wrap lines |
+| ⌘/ | Keyboard Shortcuts window (everything, filterable) |
 | ⌘+ / ⌘- / ⌘0 | Bigger / smaller / actual text size |
 | ⌘, | Settings (theme, motion, text size, wrapping) |
+
+Everything else is in a menu: Format has language, encoding, BOM and line
+endings; View has theme, motion and typing animations. ⌃F2 opens the menu bar.
 
 ## Command line
 

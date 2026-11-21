@@ -155,6 +155,18 @@ public struct HoneySegmentedPicker<Value: Hashable>: View {
         .padding(3)
         .fixedSize()
         .honeyGlass(.chrome)
+        // Keyboard: Tab focuses it (with Keyboard Navigation on), ← → move.
+        .focusable()
+        .onKeyPress(.leftArrow) { step(-1, motion) }
+        .onKeyPress(.rightArrow) { step(1, motion) }
+    }
+
+    private func step(_ by: Int, _ motion: HoneyMotion) -> KeyPress.Result {
+        guard let i = options.firstIndex(where: { $0.value == selection }) else { return .ignored }
+        let next = min(max(i + by, 0), options.count - 1)
+        guard next != i else { return .handled }
+        withAnimation(motion.shape) { selection = options[next].value }
+        return .handled
     }
 }
 

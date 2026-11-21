@@ -32,6 +32,14 @@ struct KiriApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
+            ShortcutsView().honeyRoot(appearance)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 760, height: 640)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Window("Style Gallery", id: "style-gallery") {
             StyleGallery()
                 .frame(minWidth: 900, minHeight: 600)

@@ -120,6 +120,22 @@ import SwiftUI
         refresh()
     }
 
+    /// ⌘1 … ⌘9: the tab at `position` (0-based).
+    func select(position: Int) {
+        guard items.indices.contains(position) else { return }
+        select(items[position].id)
+    }
+
+    func selectNext() {
+        window?.selectNextTab(nil)
+        refresh()
+    }
+
+    func selectPrevious() {
+        window?.selectPreviousTab(nil)
+        refresh()
+    }
+
     func close(_ id: Int) {
         let w = (window?.tabbedWindows ?? [window].compactMap { $0 }).first { $0.windowNumber == id }
         w?.performClose(nil)
