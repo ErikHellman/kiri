@@ -78,8 +78,14 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
     postBuildScripts:
       - name: Make the kiri command executable
-        script: chmod 755 "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/kiri"
-        basedOnDependencyAnalysis: false
+        # Runs only when the copied script changes (the stamp is its output).
+        script: |
+          chmod 755 "$SCRIPT_INPUT_FILE_0"
+          touch "$SCRIPT_OUTPUT_FILE_0"
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/kiri
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/kiri-executable.stamp
     dependencies:
       - package: KiriKit
         product: KiriKit
