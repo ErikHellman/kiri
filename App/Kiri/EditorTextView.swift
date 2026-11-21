@@ -378,6 +378,8 @@ final class EditorContainerView: NSView {
                                                object: scrollView.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.frameDidChangeNotification,
                                                object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(liveScrolled), name: NSScrollView.didLiveScrollNotification,
+                                               object: scrollView)
         #if DEBUG
         NotificationCenter.default.addObserver(forName: NSTextView.willSwitchToNSLayoutManagerNotification,
                                                object: textView, queue: nil) { _ in
@@ -391,6 +393,39 @@ final class EditorContainerView: NSView {
 
     /// Called when the visible part of the text changes.
     var onScroll: (() -> Void)?
+    /// Called while the person scrolls (a gesture, the wheel or a scroller),
+    /// not when a command moves the text.
+    var onLiveScroll: (() -> Void)?
+    /// The pointer moved over the editor: where, from this view's bottom
+    /// left corner, and this view's size.
+    var onPointer: ((NSPoint, NSSize) -> Void)?
+    private var pointerArea: NSTrackingArea?
+
+    @objc private func liveScrolled() { onLiveScroll?() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        pointerArea.map(removeTrackingArea)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        pointerArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        pointerMoved(to: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        pointerMoved(to: convert(event.locationInWindow, from: nil))
+    }
+
+    /// `point` is in this view's coordinates.
+    func pointerMoved(to point: NSPoint) {
+        onPointer?(NSPoint(x: point.x, y: isFlipped ? bounds.height - point.y : point.y), bounds.size)
+    }
 
     @objc private func scrolled() {
         gutter.needsDisplay = true

@@ -10,6 +10,13 @@ import SwiftUI
     var selectedLength = 0
     var lineCount = 1
     var language = Language.plainText
+    /// The room the status bar keeps for the position, so it doesn't change
+    /// width as the caret moves.
+    var positionReserve = StatusText.Reserve()
+    /// What the file indents with (what Shift Left and Right use).
+    var indent = IndentStyle.tabs
+    /// The status bar fades while the person types or scrolls.
+    let statusRest = StatusBarRest()
     /// The folder sidebar has the keyboard (⇧⌘E moves it there and back).
     var sidebarHasFocus = false
     /// Bumped to ask the sidebar to take the keyboard.
@@ -83,6 +90,12 @@ struct EditorView: NSViewRepresentable {
     private var fontScale = 1.0
     private var lineIndex = LineIndex()
     private var highlighter: SyntaxHighlighter?
+    /// The longest line the document has had since it loaded (UTF-16
+    /// units): it only grows, so the status bar's width does too.
+    private var longestLine = 0
+    private var indentWork: DispatchWorkItem?
+    /// `load` is putting the document's text in.
+    private var loading = false
     /// The document's undo manager: text edits registered here make the
     /// document dirty, and File ▸ Save cleans it.
     weak var undoManager: UndoManager?
@@ -106,6 +119,8 @@ struct EditorView: NSViewRepresentable {
             self?.highlighter?.visibleRangeChanged()
             view?.textView.marksIfLoaded?.setNeedsUpdate()
         }
+        view.onLiveScroll = { [weak self] in self?.model.statusRest.activity() }
+        view.onPointer = { [weak self] point, size in self?.model.statusRest.pointerMoved(to: point, in: size) }
         applyFont()
     }
 
@@ -117,9 +132,14 @@ struct EditorView: NSViewRepresentable {
         // The storage delegate fills the index in from this edit: replacing
         // everything (old length) with `text`.
         lineIndex = LineIndex(storage.string)
+        loading = true
         storage.beginEditing()
         storage.setAttributedString(NSAttributedString(string: text, attributes: textAttributes))
         storage.endEditing()
+        loading = false
+        longestLine = lineIndex.longestLine
+        updateReserve()
+        detectIndent()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.undoManager?.removeAllActions()
         assert(lineIndex.length == storage.length, "line index out of sync")
@@ -190,6 +210,7 @@ struct EditorView: NSViewRepresentable {
             }
             container?.gutter.lineIndex = lineIndex
             container?.updateGutterWidth()
+            if !loading { documentEdited(editedRange) }
             textView?.typingFade.textEdited(range: editedRange, delta: delta)
             highlighter?.lastEdit = editedRange
             model.find.textEdited(old: old, newLength: editedRange.length)
@@ -224,6 +245,37 @@ struct EditorView: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
         if let textView { document?.text = textView.string }
         updateCaret()
+        model.statusRest.activity()
+    }
+
+    // MARK: What the status bar follows
+
+    /// The document's text changed in `range` (of the new text), by typing,
+    /// pasting, a drop, undo or a command.
+    private func documentEdited(_ range: NSRange) {
+        for line in lineIndex.line(at: range.location)...lineIndex.line(at: NSMaxRange(range)) {
+            longestLine = max(longestLine, lineIndex.range(ofLine: line).count)
+        }
+        updateReserve()
+        // The indentation is read from the head of the text: once typing pauses.
+        indentWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.detectIndent() }
+        indentWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.indentPause, execute: work)
+    }
+
+    static let indentPause = 0.3
+
+    /// The model hears of it only when a number of digits changes.
+    private func updateReserve() {
+        let reserve = StatusText.Reserve(lineCount: lineIndex.lineCount, longestLine: longestLine, length: lineIndex.length)
+        if reserve != model.positionReserve { model.positionReserve = reserve }
+    }
+
+    private func detectIndent() {
+        guard let storage = textView?.textStorage else { return }
+        let indent = IndentStyle.detect(in: storage.string)
+        if indent != model.indent { model.indent = indent }
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -318,8 +370,10 @@ struct EditorView: NSViewRepresentable {
         if probe.length > 0, ns.character(at: NSMaxRange(probe) - 1) == 0x0A { probe.length -= 1 }
         let block = ns.lineRange(for: probe)
         let old = ns.substring(with: block)
-        let unit = indentUnit(ns)
-        let width = unit == "\t" ? 4 : unit.count
+        // The file's own indent, as the status bar names it.
+        let style = IndentStyle.detect(in: storage.string)
+        let unit = style.unit
+        let width = style.width
 
         var lines = old.components(separatedBy: "\n")
         let endsWithNewline = old.hasSuffix("\n")
@@ -356,29 +410,6 @@ struct EditorView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: block.location, length: newLength - (endsWithNewline ? 1 : 0)))
         }
         textView.scrollRangeToVisible(textView.selectedRange())
-    }
-
-    /// A tab, or the smallest run of leading spaces among the file's first
-    /// indented lines (2 or 4, say).
-    private func indentUnit(_ text: NSString) -> String {
-        var smallest = Int.max
-        var seen = 0
-        let head = text.substring(to: min(text.length, 65_536)) as NSString
-        head.enumerateLines { line, stop in
-            if line.hasPrefix("\t") {
-                if seen == 0 { smallest = 0 }
-                stop.pointee = true
-                return
-            }
-            let n = line.prefix { $0 == " " }.count
-            if n > 0, n < line.count {
-                smallest = min(smallest, n)
-                seen += 1
-                if seen >= 200 { stop.pointee = true }
-            }
-        }
-        if smallest == 0 || smallest == .max { return "\t" }
-        return String(repeating: " ", count: min(smallest, 8))
     }
 
     func focus() {

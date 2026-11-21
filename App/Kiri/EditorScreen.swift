@@ -79,7 +79,8 @@ struct EditorScreen: View {
                    letterFade: letterFade)
             .honeyPanel()
             .overlay(alignment: .bottom) {
-                statusBar.padding(.bottom, 8)
+                EditorStatusBar(model: model, document: document, encoding: encodingBinding, lineEnding: lineEndingBinding,
+                                byteOrderMark: bomBinding)
             }
             .overlay(alignment: .top) {
                 // One at a time: opening one closes the other.
@@ -176,66 +177,6 @@ struct EditorScreen: View {
             guard saved else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + Honey.doneHold) { saveState = .idle }
         }
-    }
-
-    private var statusBar: some View {
-        HoneyStatusBar {
-            Menu {
-                Picker("Language", selection: $model.language) {
-                    ForEach(Language.all) { Text($0.name).tag($0) }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                HoneyPill(model.language.name, tone: .accent)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("Language")
-
-            HoneyStatusItem(position, systemImage: "text.cursor")
-                // Digits roll to their new values (a fade with Reduce Motion).
-                .contentTransition(reduceMotion || appearance.motion != .full && appearance.motion != .system
-                    ? .opacity : .numericText())
-                .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: position)
-                .accessibilityLabel(positionAccessibility)
-
-            Menu {
-                Picker("Encoding", selection: encodingBinding) {
-                    ForEach(TextEncoding.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.inline)
-                Toggle("Byte Order Mark", isOn: bomBinding).disabled(!document.encoding.isUnicode)
-            } label: {
-                HoneyStatusItem(document.encoding.label + (document.hasBOM && document.encoding.isUnicode ? " BOM" : ""))
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("Text encoding used when saving")
-
-            Menu {
-                Picker("Line Endings", selection: lineEndingBinding) {
-                    ForEach(LineEnding.allCases, id: \.self) { Text($0.menuName).tag($0) }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                HoneyStatusItem(document.lineEnding.label)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("Line endings used when saving")
-        }
-    }
-
-    private var position: String {
-        let base = "Ln \(model.line), Col \(model.column)"
-        return model.selectedLength > 0 ? base + " (\(model.selectedLength) selected)" : base
-    }
-
-    private var positionAccessibility: String {
-        "Line \(model.line) of \(model.lineCount), column \(model.column)"
     }
 
     // Changing the save format is an undoable edit, so the document turns dirty.
