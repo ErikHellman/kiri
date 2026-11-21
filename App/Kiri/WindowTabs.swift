@@ -161,12 +161,8 @@ import SwiftUI
             MainActor.assumeIsolated { self?.setNeedsRefresh() }
         }
         self.observer = observer
-        // Through `tabGroup`, so a window that moves to another group
-        // (dragged out, merged) is followed there.
-        for keyPath in ["tabGroup.windows", "tabGroup.selectedWindow"] {
-            window.addObserver(observer, forKeyPath: keyPath, options: [], context: nil)
-            watches.append(Watch(object: window, keyPath: keyPath, id: ObjectIdentifier(window)))
-        }
+        // The tab group itself is watched from `watch`, with the titles
+        // and the documents.
         let center = NotificationCenter.default
         func on(_ name: Notification.Name, of object: AnyObject? = nil) {
             tokens.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
@@ -251,6 +247,16 @@ import SwiftUI
     private func watch(_ windows: [NSWindow]) {
         guard let observer, let window else { return }
         var wanted: [Watch] = []
+        // The group itself, not the window's "tabGroup.windows": a window
+        // that closes leaves its group without telling KVO, and taking an
+        // observer of such a path off it then throws. A window that moves
+        // to another group (dragged out, merged) changes the group it
+        // leaves, and the refresh that follows watches the new one.
+        if let group = window.tabGroup {
+            for keyPath in ["windows", "selectedWindow"] {
+                wanted.append(Watch(object: group, keyPath: keyPath, id: ObjectIdentifier(group)))
+            }
+        }
         for w in windows {
             wanted.append(Watch(object: w, keyPath: "title", id: ObjectIdentifier(w)))
             if let doc = NSDocumentController.shared.document(for: w) {
@@ -259,13 +265,11 @@ import SwiftUI
         }
         // A watch whose object is gone says nothing about a new one at its address.
         watches.removeAll { $0.object == nil }
-        let own = ObjectIdentifier(window)
         func same(_ a: Watch, _ b: Watch) -> Bool { a.id == b.id && a.keyPath == b.keyPath }
-        func fromGroup(_ w: Watch) -> Bool { w.id == own && w.keyPath.hasPrefix("tabGroup.") }
-        for old in watches where !fromGroup(old) && !wanted.contains(where: { same($0, old) }) {
+        for old in watches where !wanted.contains(where: { same($0, old) }) {
             old.object?.removeObserver(observer, forKeyPath: old.keyPath)
         }
-        let kept = watches.filter { old in fromGroup(old) || wanted.contains { same($0, old) } }
+        let kept = watches.filter { old in wanted.contains { same($0, old) } }
         for new in wanted where !kept.contains(where: { same($0, new) }) {
             new.object?.addObserver(observer, forKeyPath: new.keyPath, options: [], context: nil)
         }

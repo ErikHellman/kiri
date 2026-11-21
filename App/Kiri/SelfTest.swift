@@ -1413,10 +1413,8 @@ import os
     /// undo. The first key also rests the status bar, which comes back
     /// after its pause. And where the `kiri` command counts as installed.
     ///
-    /// The last stage: it leaves its two documents open. (Closing an
-    /// untitled tab from here raises an exception in `WindowTabs.invalidate`,
-    /// which removes a "tabGroup.windows" observer from a window that has
-    /// already left its tab group.)
+    /// It ends by closing its two tabs while each is the one showing, which
+    /// once threw from `WindowTabs.invalidate`.
     private static func startHintStage(_ original: NSWindow) async {
         guard let ktv = findTextView(in: original.contentView) as? KiriTextView,
               let controller = ktv.delegate as? EditorController else { report(false, "the first window's editor"); return }
@@ -1556,6 +1554,20 @@ import os
         } else {
             report(false, "an empty file opens as a tab")
         }
+
+        // Closing the tab that is showing (⌘W): its strip is watching the
+        // tab group at that moment. The untitled one is clean again after
+        // the undo, so neither asks anything.
+        let before = original.tabbedWindows?.count ?? 1
+        for document in [opened, doc].compactMap({ $0 }) {
+            guard let w = Editors.window(for: document) else { continue }
+            w.tabGroup?.selectedWindow = w
+            await settle(300)
+            w.performClose(nil)
+            await settle(300)
+        }
+        let left = await wait(2) { (original.tabbedWindows?.count ?? 1) == before - 2 }
+        report(left, "the tab that is showing closes, an untitled one too (\(before) tabs, then \(original.tabbedWindows?.count ?? 1))")
     }
 
     /// Edit ▸ Transformations, on a selected word.
