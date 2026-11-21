@@ -12,13 +12,25 @@ import SwiftUI
 public struct HoneyTab<ID: Hashable & Sendable>: Identifiable, Sendable {
     public let id: ID
     public var title: String
+    /// What tells this tab from another with the same title, shown muted
+    /// after it: the file's folder ("index.ts · api").
+    public var detail: String?
+    /// The tooltip: where the file is.
+    public var tooltip: String?
     /// Unsaved changes: shows a dot that turns into the close button on hover.
     public var dirty: Bool
 
-    public init(id: ID, title: String, dirty: Bool = false) {
+    public init(id: ID, title: String, detail: String? = nil, tooltip: String? = nil, dirty: Bool = false) {
         self.id = id
         self.title = title
+        self.detail = detail
+        self.tooltip = tooltip
         self.dirty = dirty
+    }
+
+    /// The title and what tells it apart, for menus and VoiceOver.
+    func name(separator: String) -> String {
+        detail.map { title + separator + $0 } ?? title
     }
 }
 
@@ -169,7 +181,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     /// unsaved ones.
     private func moreItems(_ motion: HoneyMotion) -> some View {
         ForEach(tabs) { tab in
-            Toggle(tab.dirty ? "\(tab.title) •" : tab.title,
+            Toggle(tab.name(separator: TabText.detailSeparator) + (tab.dirty ? " •" : ""),
                    isOn: Binding(get: { tab.id == selection }, set: { if $0 { select(tab.id, motion) } }))
         }
     }
@@ -199,7 +211,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     static var chrome: CGFloat { leading + slotGap + slot + trailing }
 
     static func naturalWidth<ID>(_ tab: HoneyTab<ID>, selected: Bool) -> CGFloat {
-        titleWidth(tab.title, selected: selected) + chrome
+        titleWidth(tab.title, selected: selected) + (tab.detail.map { detailWidth(TabText.detailSeparator + $0) } ?? 0) + chrome
     }
 
     /// A dirty tab keeps room for its dot beside the shortened title.
@@ -217,9 +229,16 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
         HoneyText.width(title, weight: selected ? .bold : .semibold, size: 13)
     }
 
-    /// The title, shortened to `room` (`TabText`).
-    static func title<ID>(_ tab: HoneyTab<ID>, selected: Bool, room: CGFloat) -> String {
-        TabText.middleTruncated(tab.title, toFit: Double(room)) { Double(titleWidth($0, selected: selected)) }
+    /// The folder after a title is lighter than the title.
+    static func detailWidth(_ detail: String) -> CGFloat {
+        HoneyText.width(detail, weight: .regular, size: 13)
+    }
+
+    /// The title and its folder, shortened to `room` (`TabText`).
+    static func text<ID>(_ tab: HoneyTab<ID>, selected: Bool, room: CGFloat) -> (title: String, detail: String?) {
+        TabText.fit(title: tab.title, detail: tab.detail, width: Double(room),
+                    measureTitle: { Double(titleWidth($0, selected: selected)) },
+                    measureDetail: { Double(detailWidth($0)) })
     }
 
     /// How far a strip that can't scroll (an offscreen picture) is moved to
@@ -278,10 +297,11 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
     var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
         let room = HoneyTabMetrics.titleRoom(width: width, slotInUse: closes || tab.dirty)
+        let text = HoneyTabMetrics.text(tab, selected: selected, room: room)
         // A real button: Tab reaches it with Keyboard Navigation on, Space
         // or Return selects, and VoiceOver hears a button with its state.
         Button(action: select) {
-            Text(HoneyTabMetrics.title(tab, selected: selected, room: room))
+            Text("\(Text(text.title))\(folder(text.detail))")
                 .font(.honey(.subheadline, weight: selected ? .bold : .semibold))
                 .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
                 .lineLimit(1)
@@ -304,7 +324,7 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
         .focused(focused, equals: tab.id)
         .focusEffectDisabled()
         .onKeyPress(.return) { select(); return .handled }
-        .accessibilityLabel(tab.title)
+        .accessibilityLabel(tab.name(separator: ", "))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(tab.dirty ? "Edited" : "")
         .accessibilityAction(named: "Close") { close() }
@@ -319,6 +339,14 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
                 .padding(.trailing, HoneyTabMetrics.trailing + HoneyTabMetrics.slot / 2 - HoneyTabMetrics.closeTarget / 2)
         }
         .onHover { h in withAnimation(motion.quick) { hovering = h } }
+        .help(tab.tooltip ?? "")
+    }
+
+    /// " · api" after the title: lighter and muted, also on the selected tab.
+    private func folder(_ detail: String?) -> Text {
+        Text(detail.map { TabText.detailSeparator + $0 } ?? "")
+            .font(.honey(.subheadline, weight: .regular))
+            .foregroundStyle(Color.honeyMuted)
     }
 
     /// Dirty dot, or the close button on hover (shape tells state, §1).

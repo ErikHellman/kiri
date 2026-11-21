@@ -10,7 +10,21 @@ import SwiftUI
     struct Item: Equatable {
         let id: Int
         let title: String
+        /// The file, or nil for a document that hasn't been saved.
+        let path: String?
         let dirty: Bool
+    }
+
+    /// The items as tabs: each with its path as a tooltip (`~` for the home
+    /// folder), and those that share a title with the folder that tells
+    /// them apart.
+    var tabs: [HoneyTab<Int>] {
+        let details = TabNames.details(titles: items.map(\.title), paths: items.map(\.path))
+        let home = NSHomeDirectory()
+        return zip(items, details).map { item, detail in
+            HoneyTab(id: item.id, title: item.title, detail: detail,
+                     tooltip: item.path.map { TabNames.abbreviatingHome($0, home: home) }, dirty: item.dirty)
+        }
     }
 
     private(set) var items: [Item] = []
@@ -93,7 +107,8 @@ import SwiftUI
         let windows = window.tabbedWindows ?? [window]
         let next = windows.map { w in
             let doc = NSDocumentController.shared.document(for: w)
-            return Item(id: w.windowNumber, title: doc?.displayName ?? w.title, dirty: doc?.isDocumentEdited ?? false)
+            return Item(id: w.windowNumber, title: doc?.displayName ?? w.title, path: doc?.fileURL?.path,
+                        dirty: doc?.isDocumentEdited ?? false)
         }
         if next != items { items = next }
         let sel = (window.tabGroup?.selectedWindow ?? window).windowNumber

@@ -858,6 +858,15 @@ private struct TabStripSample: View {
             rows.append(TabStripSample(caption: "long names, tab \(selected + 1) selected", tabs: tabs(long), selected: selected,
                                        width: width))
         }
+        // Same names in different folders, as `WindowTabs.tabs` tells them apart.
+        let paths = ["/p/api/index.ts", "/p/web/index.ts", "/p/README.md", "/p/a/src/main.swift", "/p/b/src/main.swift"]
+        let titles = paths.map { ($0 as NSString).lastPathComponent }
+        let details = TabNames.details(titles: titles, paths: paths)
+        for selected in [0, 3] {
+            rows.append(TabStripSample(caption: "same names, tab \(selected + 1) selected", tabs: titles.indices.map {
+                HoneyTab(id: $0, title: titles[$0], detail: details[$0], dirty: $0 == 1)
+            }, selected: selected, width: width))
+        }
         rows.append(TabStripSample(caption: "folder window, 4 tabs", tabs: tabs(Array(names.prefix(4))), selected: 3,
                                    sidebar: true, width: width))
         rows.append(TabStripSample(caption: "folder window, 12 tabs", tabs: tabs(Array(names.prefix(12))), selected: 6,

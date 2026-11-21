@@ -61,6 +61,25 @@ import Testing
         #expect(TabText.middleTruncated("WWWW.md", toFit: 9, measure: wide) == "WW…")
         #expect(TabText.middleTruncated("WWWW.md", toFit: 6, measure: wide) == "W…")
     }
+
+    private func fit(_ title: String, _ detail: String?, _ width: Double) -> String {
+        let count: (String) -> Double = { Double($0.count) }
+        let (t, d) = TabText.fit(title: title, detail: detail, width: width, measureTitle: count, measureDetail: count)
+        return t + (d.map { TabText.detailSeparator + $0 } ?? "")
+    }
+
+    @Test func titleGivesWayBeforeItsFolder() {
+        #expect(fit("index.ts", "api", 14) == "index.ts · api")
+        #expect(fit("index.ts", "api", 13) == "ind….ts · api")
+        #expect(fit("index.ts", "api", 12) == "index… · api")
+        #expect(fit("index.ts", "api", 11) == "inde… · api")
+        #expect(fit("index.ts", "api", 9) == "in… · api")
+        // Not even two letters beside the folder: the folder goes.
+        #expect(fit("index.ts", "api", 8) == "index.ts")
+        #expect(fit("index.ts", "api", 5) == "inde…")
+        #expect(fit("index.ts", nil, 7) == "ind….ts")
+        #expect(fit("index.ts", "", 8) == "index.ts")
+    }
 }
 
 @Suite struct TabWidthsTests {
@@ -167,5 +186,45 @@ import Testing
         let r = allocate([], selected: nil, available: 100)
         #expect(r.widths.isEmpty && !r.overflows)
         #expect(allocate([], selected: nil, available: -5).viewport == 0)
+    }
+}
+
+@Suite struct TabNamesTests {
+    @Test func uniqueTitlesNeedNoFolder() {
+        #expect(TabNames.details(titles: ["a.txt", "b.txt"], paths: ["/p/x/a.txt", "/p/x/b.txt"]) == [nil, nil])
+        #expect(TabNames.details(titles: [], paths: []) == [])
+    }
+
+    @Test func sameTitleShowsTheParentFolder() {
+        #expect(TabNames.details(titles: ["index.ts", "README.md", "index.ts"],
+                                 paths: ["/p/api/index.ts", "/p/README.md", "/p/web/index.ts"]) == ["api", nil, "web"])
+    }
+
+    @Test func sameParentsAddFoldersUntilTheyDiffer() {
+        #expect(TabNames.details(titles: ["main.swift", "main.swift"],
+                                 paths: ["/p/a/src/main.swift", "/p/b/src/main.swift"]) == ["a/src", "b/src"])
+        // Each tab gets only as many folders as it needs.
+        #expect(TabNames.details(titles: ["index.ts", "index.ts", "index.ts"],
+                                 paths: ["/p/x/api/index.ts", "/p/y/api/index.ts", "/p/web/index.ts"])
+            == ["x/api", "y/api", "web"])
+    }
+
+    @Test func oneInsideTheOther() {
+        #expect(TabNames.details(titles: ["a.txt", "a.txt"], paths: ["/a.txt", "/x/a.txt"]) == [nil, "x"])
+        #expect(TabNames.details(titles: ["a.txt", "a.txt"], paths: ["/x/a.txt", "/x/x/a.txt"]) == ["x", "x/x"])
+    }
+
+    @Test func untitledTabsHaveNoFolder() {
+        #expect(TabNames.details(titles: ["Untitled", "Untitled"], paths: [nil, nil]) == [nil, nil])
+        #expect(TabNames.details(titles: ["notes", "notes"], paths: [nil, "/p/docs/notes"]) == [nil, "docs"])
+    }
+
+    @Test func homeIsATilde() {
+        #expect(TabNames.abbreviatingHome("/Users/kim/Sources/app/main.swift", home: "/Users/kim") == "~/Sources/app/main.swift")
+        #expect(TabNames.abbreviatingHome("/Users/kim", home: "/Users/kim/") == "~")
+        #expect(TabNames.abbreviatingHome("/Users/kimberly/x.txt", home: "/Users/kim") == "/Users/kimberly/x.txt")
+        #expect(TabNames.abbreviatingHome("/etc/hosts", home: "/Users/kim") == "/etc/hosts")
+        #expect(TabNames.abbreviatingHome("/etc/hosts", home: "/") == "/etc/hosts")
+        #expect(TabNames.abbreviatingHome("/etc/hosts", home: "") == "/etc/hosts")
     }
 }

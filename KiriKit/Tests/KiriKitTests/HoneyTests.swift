@@ -36,6 +36,13 @@ struct HoneyContrastTests {
         }
     }
 
+    @Test(arguments: Honey.Theme.all) func tabFolderOnTheSelectionPill(_ t: Honey.Theme) {
+        // "index.ts · api": the folder is muted text on the selected tab's pill.
+        for m in Self.modes {
+            #expect(ratio(Honey.fgMuted, on: Honey.accentSoft, m, t) >= 4.5, "\(t.id) fg-muted on accent-soft in \(m): \(ratio(Honey.fgMuted, on: Honey.accentSoft, m, t))")
+        }
+    }
+
     @Test func tokenNamesAreUnique() {
         let names = Honey.allTokens.map(\.name)
         #expect(Set(names).count == names.count)

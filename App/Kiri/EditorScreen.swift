@@ -119,7 +119,7 @@ struct EditorScreen: View {
             HoneyGlassGroup {
                 HStack(spacing: 8) {
                     if !tabs.items.isEmpty {
-                        HoneyTabStrip(tabs.items.map { HoneyTab(id: $0.id, title: $0.title, dirty: $0.dirty) },
+                        HoneyTabStrip(tabs.tabs,
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
                                       onClose: { tabs.close($0) })
                     }

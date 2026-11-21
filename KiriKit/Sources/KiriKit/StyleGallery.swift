@@ -7,9 +7,10 @@ import SwiftUI
 public struct StyleGallery: View {
     @State private var appearance = HoneyAppearance()
     @State private var tabs: [HoneyTab<Int>] = [
-        HoneyTab(id: 1, title: "README.md", dirty: true),
-        HoneyTab(id: 2, title: "config.yaml"),
-        HoneyTab(id: 3, title: "Package.swift"),
+        HoneyTab(id: 1, title: "README.md", tooltip: "~/Sources/tidepool/README.md", dirty: true),
+        HoneyTab(id: 2, title: "config.yaml", detail: "api", tooltip: "~/Sources/tidepool/api/config.yaml"),
+        HoneyTab(id: 3, title: "config.yaml", detail: "web", tooltip: "~/Sources/tidepool/web/config.yaml"),
+        HoneyTab(id: 4, title: "Package.swift", tooltip: "~/Sources/tidepool/Package.swift"),
     ]
     @State private var selectedTab = 1
     @State private var save = HoneyTaskState.idle

@@ -1,12 +1,15 @@
 import Foundation
 
 // The tab strip's arithmetic, free of SwiftUI so it tests on Linux: how a
-// file name shortens and how the tabs share the strip's width.
+// file name shortens, how the tabs share the strip's width, what tells two
+// tabs with the same name apart, and how a path reads in a tooltip.
 
 /// Shortening a tab's title.
 public enum TabText {
     /// What stands for the letters left out.
     public static let ellipsis = "…"
+    /// Between a title and the folder that tells it apart: "index.ts · api".
+    public static let detailSeparator = " · "
 
     /// A file name as its stem and its extension with the dot:
     /// "Greeter.swift" is ("Greeter", ".swift"). Dotfiles (".gitignore"),
@@ -43,6 +46,24 @@ public enum TabText {
     /// `name` in at most `maxCharacters` characters, the ellipsis included.
     public static func middleTruncated(_ name: String, maxCharacters: Int) -> String {
         middleTruncated(name, toFit: Double(maxCharacters)) { Double($0.count) }
+    }
+
+    /// A title and the folder that tells it apart, shortened to fit `width`.
+    /// The title gives way first, since the tabs that carry a folder all
+    /// have the same title; when even two letters of it don't fit beside
+    /// the folder, the folder goes.
+    public static func fit(title: String, detail: String?, width: Double,
+                           measureTitle: (String) -> Double,
+                           measureDetail: (String) -> Double) -> (title: String, detail: String?) {
+        guard let detail, !detail.isEmpty else {
+            return (middleTruncated(title, toFit: width, measure: measureTitle), nil)
+        }
+        let left = width - measureDetail(detailSeparator + detail)
+        let least = title.count <= 3 ? title : String(title.prefix(2)) + ellipsis
+        if measureTitle(least) <= left {
+            return (middleTruncated(title, toFit: left, measure: measureTitle), detail)
+        }
+        return (middleTruncated(title, toFit: width, measure: measureTitle), nil)
     }
 
     /// The largest count in `range` that `fits`, when every smaller one fits too.
@@ -139,5 +160,43 @@ public enum TabWidths {
             left -= width
         }
         return sorted.last ?? 0
+    }
+}
+
+/// Telling tabs apart, and saying where their files are.
+public enum TabNames {
+    /// For each tab, the folder to show after its title, or nil when the
+    /// title is enough. Tabs that share a title get their parent folder
+    /// ("api", "web"); where the parents are the same too, as many folders
+    /// as it takes ("a/src", "b/src"). Tabs without a path (untitled) get none.
+    public static func details(titles: [String], paths: [String?]) -> [String?] {
+        var details = [String?](repeating: nil, count: titles.count)
+        var groups: [String: [Int]] = [:]
+        for (i, title) in titles.enumerated() { groups[title, default: []].append(i) }
+        for members in groups.values where members.count > 1 {
+            // Each member's folders, nearest first.
+            var folders: [Int: [String]] = [:]
+            for i in members where i < paths.count {
+                guard let path = paths[i] else { continue }
+                folders[i] = Array(path.split(separator: "/").dropLast().reversed().map(String.init))
+            }
+            for (i, own) in folders where !own.isEmpty {
+                let depth = (1...own.count).first { d in
+                    !folders.contains { $0.key != i && Array($0.value.prefix(d)) == Array(own.prefix(d)) }
+                } ?? own.count
+                details[i] = own.prefix(depth).reversed().joined(separator: "/")
+            }
+        }
+        return details
+    }
+
+    /// `path` with the home folder written as `~`, as in a shell.
+    public static func abbreviatingHome(_ path: String, home: String) -> String {
+        var home = home
+        while home.count > 1, home.hasSuffix("/") { home.removeLast() }
+        guard !home.isEmpty, home != "/" else { return path }
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
+        return path
     }
 }
