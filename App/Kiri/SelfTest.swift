@@ -182,6 +182,15 @@ import os
                 report(w.firstResponder === w, "Settings opens with no control focused (first responder \(w.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
             }
         }
+        // -KiriShowShortcuts YES (opened by EditorScreen) with -KiriShortcutsSize
+        // 1000x700: the Keyboard Shortcuts window at that size.
+        if let size = UserDefaults.standard.string(forKey: "KiriShortcutsSize")?.split(separator: "x").compactMap({ Double($0) }),
+           size.count == 2 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                guard let w = NSApp.windows.first(where: { $0.identifier?.rawValue == ShortcutsView.windowID }) else { return }
+                w.setFrame(NSRect(x: w.frame.minX, y: w.frame.maxY - size[1], width: size[0], height: size[1]), display: true)
+            }
+        }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 (textView.delegate as? EditorController)?.model.showGoToLine = true

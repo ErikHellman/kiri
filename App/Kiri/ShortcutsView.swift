@@ -6,7 +6,18 @@ import SwiftUI
 struct ShortcutsView: View {
     static let windowID = "keyboard-shortcuts"
 
+    /// The window's side margins.
+    private static let margin: CGFloat = 20
+    /// Between cards: wide enough for a card's shadow to fade out before
+    /// the next card, where `Honey.gap` would show only its darkest part.
+    private static let cardGap: CGFloat = 20
+
+    #if DEBUG || KIRI_SELFTEST
+    /// Screenshot helper: -KiriShortcutsFilter <text> opens the window filtered.
+    @State private var filter = UserDefaults.standard.string(forKey: "KiriShortcutsFilter") ?? ""
+    #else
     @State private var filter = ""
+    #endif
     @Environment(\.dismiss) private var dismiss
 
     private var groups: [ShortcutGroup] {
@@ -20,7 +31,7 @@ struct ShortcutsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Keyboard Shortcuts").font(.honey(.largeTitle, weight: .heavy))
@@ -31,23 +42,25 @@ struct ShortcutsView: View {
                 HoneySearchField("Filter", text: $filter).frame(width: 220)
             }
             .padding(.top, 34) // clear of the traffic lights
+            .padding(.horizontal, Self.margin)
 
             if groups.isEmpty {
                 HoneyEmptyState(title: "No match", message: "No shortcut is called “\(filter)”.")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // The scroll view runs to the window's edges and the margins
+                // are inside it, so it doesn't cut the cards' shadows off.
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: Honey.gap, alignment: .top)],
-                              alignment: .leading, spacing: Honey.gap) {
+                    MasonryColumns(minimumWidth: 300, spacing: Self.cardGap) {
                         ForEach(groups) { GroupCard(group: $0) }
                     }
-                    .padding(.bottom, Honey.gap)
+                    .padding(.horizontal, Self.margin)
+                    .padding(.top, 14)
+                    .padding(.bottom, Self.margin + Honey.gap)
                 }
                 .scrollIndicators(.automatic)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 10)
         .frame(minWidth: 680, minHeight: 480)
         .honeyCanvas()
         .ignoresSafeArea(.container, edges: .top)
@@ -83,6 +96,47 @@ private struct GroupCard: View {
         .honeyPanel(radius: .card)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(group.title)
+    }
+}
+
+/// Columns of equal width that pack by height: each view goes under the
+/// shortest column so far, so cards of different heights leave no holes.
+/// As many columns as fit at `minimumWidth`, like an adaptive grid.
+private struct MasonryColumns: Layout {
+    var minimumWidth: CGFloat
+    var spacing: CGFloat
+
+    private func columns(in width: CGFloat) -> (count: Int, width: CGFloat) {
+        let count = max(1, Int((width + spacing) / (minimumWidth + spacing)))
+        return (count, (width - CGFloat(count - 1) * spacing) / CGFloat(count))
+    }
+
+    /// Each subview's column and frame, and the height of the tallest column.
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], height: CGFloat) {
+        let (count, columnWidth) = columns(in: width)
+        var bottoms = [CGFloat](repeating: 0, count: count)
+        var frames: [CGRect] = []
+        for subview in subviews {
+            let column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
+            let height = subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height
+            let y = bottoms[column] == 0 ? 0 : bottoms[column] + spacing
+            frames.append(CGRect(x: CGFloat(column) * (columnWidth + spacing), y: y, width: columnWidth, height: height))
+            bottoms[column] = y + height
+        }
+        return (frames, bottoms.max() ?? 0)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minimumWidth
+        return CGSize(width: width, height: arrange(subviews, width: width).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = arrange(subviews, width: bounds.width).frames
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
     }
 }
 

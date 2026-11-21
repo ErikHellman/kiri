@@ -60,6 +60,7 @@ struct EditorScreen: View {
             tabs.resume()
             #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
+            if UserDefaults.standard.bool(forKey: "KiriShowShortcuts") { openWindow(id: ShortcutsView.windowID) }
             #endif
         }
         .onChange(of: fileURL) { detectLanguage() }
