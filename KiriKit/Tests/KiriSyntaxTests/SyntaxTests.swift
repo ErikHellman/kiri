@@ -28,6 +28,30 @@ let samples: [(id: String, text: String, expect: [(String, SyntaxKind)])] = [
      [("div", .tag), ("class", .attribute), ("<!-- c -->", .comment)]),
     ("css", "/* c */\n.a { color: #fff; margin: 2px; }\n",
      [("/* c */", .comment), ("color", .property)]),
+    ("go",
+     "package main\n\nimport \"fmt\"\n\n// c\nfunc main() {\n\tx := 42\n\tfmt.Println(\"hi\\n\", x)\n}\n",
+     [("func", .keyword), ("// c", .comment), ("42", .number), ("\"fmt\"", .string), ("main", .function)]),
+    ("rust",
+     "use std::fmt;\n// c\nfn add(a: i32) -> i32 { let s = \"x\\n\"; println!(\"{}\", s); a + 1 }\nstruct P { x: u8 }\n",
+     [("fn", .keyword), ("// c", .comment), ("1", .number), ("i32", .type), ("add", .function), ("\\n", .escape), ("P", .type)]),
+    ("java",
+     "// c\npublic class A {\n  @Override\n  public String f(int x) { return \"s\" + 42; }\n}\n",
+     [("class", .keyword), ("// c", .comment), ("42", .number), ("\"s\"", .string), ("String", .type), ("f", .function)]),
+    ("kotlin",
+     "// c\npackage a\n\nclass A(val x: Int) {\n  fun f(): String = \"s\" + 42\n}\n",
+     [("class", .keyword), ("fun", .keyword), ("// c", .comment), ("42", .number), ("\"s\"", .string), ("String", .type), ("f", .function)]),
+    ("csharp",
+     "// c\nusing System;\nnamespace N {\n  class A {\n    public string F(int x) { return \"s\" + 42; }\n  }\n}\n",
+     [("class", .keyword), ("// c", .comment), ("42", .number), ("\"s\"", .string), ("F", .function)]),
+    ("c",
+     "#include <stdio.h>\n// c\nstruct p { int x; };\nint main(void) { printf(\"hi\\n\"); return 42; }\n",
+     [("#include", .keyword), ("// c", .comment), ("42", .number), ("return", .keyword), ("main", .function), ("int", .type)]),
+    ("cpp",
+     "#include <vector>\n// c\nnamespace n {\nclass A { public: int f() const { return 42; } };\n}\nauto s = \"x\";\n",
+     [("#include", .keyword), ("class", .keyword), ("namespace", .keyword), ("// c", .comment), ("42", .number), ("\"x\"", .string), ("f", .function)]),
+    ("zig",
+     "const std = @import(\"std\");\n// c\npub fn main() void {\n    const x: u32 = 42;\n    _ = x;\n}\n",
+     [("const", .keyword), ("fn", .keyword), ("// c", .comment), ("42", .number), ("\"std\"", .string), ("main", .function), ("u32", .type)]),
 ]
 
 func text(of span: SyntaxSpan, in s: String) -> String {
@@ -92,6 +116,34 @@ func text(of span: SyntaxSpan, in s: String) -> String {
 }
 
 @Suite struct PerformanceTests {
+    /// The biggest new grammars (C++, Kotlin, C#): one screen of highlights
+    /// in a ~1.5 MB file stays cheap, as does an incremental reparse.
+    @Test(arguments: [
+        ("cpp", "namespace n { class A { public: int f(int x) const { return x * 42; } }; } // row\n"),
+        ("kotlin", "class A(val x: Int) { fun f(): String = \"s$x\" + 42 } // row\n"),
+        ("csharp", "class A { public string F(int x) { return \"s\" + x + 42; } } // row\n"),
+    ])
+    func largeCodeFile(id: String, row: String) throws {
+        let grammar = try #require(SyntaxGrammar.forLanguage(id: id))
+        let text = String(repeating: row, count: 20_000) as NSString
+        let parser = try #require(SyntaxParser(grammar: grammar))
+        let clock = ContinuousClock()
+        var snap: SyntaxSnapshot?
+        let parse = clock.measure { snap = parser.parse(text) }
+        let s = try #require(snap)
+        let mid = text.length / 2
+        var spans: [SyntaxSpan] = []
+        let visible = clock.measure { spans = s.spans(in: mid..<(mid + 6000)) }
+        let before = LineIndex(text as String)
+        let edited = text.replacingCharacters(in: NSRange(location: mid, length: 0), with: "1") as NSString
+        let edit = SyntaxEdit(old: mid..<mid, newLength: 1, before: before, after: LineIndex(edited as String))
+        let reparse = clock.measure { _ = parser.parse(edited, edits: [edit]) }
+        print("PERF \(id) \(text.length / 1024) KB: parse \(parse), visible spans \(visible), incremental \(reparse)")
+        #expect(!spans.isEmpty)
+        #expect(visible < .milliseconds(50))
+        #expect(reparse < .milliseconds(200))
+    }
+
     /// A ~4 MB JSON file: full parse in the background is fine, but one
     /// screen of highlights must be cheap enough for every keystroke.
     @Test func largeFile() throws {

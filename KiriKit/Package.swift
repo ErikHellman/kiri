@@ -28,6 +28,15 @@ let grammars: [(url: String, version: Version, package: String, product: String)
     // Upstream keeps generated parsers on this tag only.
     ("https://github.com/alex-pinkus/tree-sitter-swift", "0.7.4-with-generated-files", "tree-sitter-swift",
      "TreeSitterSwift"),
+    ("https://github.com/tree-sitter/tree-sitter-go", "0.25.0", "tree-sitter-go", "TreeSitterGo"),
+    ("https://github.com/tree-sitter/tree-sitter-rust", "0.24.2", "tree-sitter-rust", "TreeSitterRust"),
+    ("https://github.com/tree-sitter/tree-sitter-java", "0.23.5", "tree-sitter-java", "TreeSitterJava"),
+    // fwcd's grammar ships the highlight query (the tree-sitter-grammars rewrite has none).
+    ("https://github.com/fwcd/tree-sitter-kotlin", "0.3.8", "tree-sitter-kotlin", "TreeSitterKotlin"),
+    ("https://github.com/tree-sitter/tree-sitter-c-sharp", "0.24.0", "tree-sitter-c-sharp", "TreeSitterCSharp"),
+    ("https://github.com/tree-sitter/tree-sitter-c", "0.24.2", "tree-sitter-c", "TreeSitterC"),
+    ("https://github.com/tree-sitter/tree-sitter-cpp", "0.23.4", "tree-sitter-cpp", "TreeSitterCPP"),
+    ("https://github.com/tree-sitter-grammars/tree-sitter-zig", "1.1.2", "tree-sitter-zig", "TreeSitterZig"),
 ]
 
 let package = Package(

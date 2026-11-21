@@ -162,8 +162,25 @@ import Testing
         #expect(Language.detect(fileName: "README.md") == .markdown)
         #expect(Language.detect(fileName: "app.tsx") == .tsx)
         #expect(Language.detect(fileName: "styles.css") == .css)
+        #expect(Language.detect(fileName: "main.go") == .go)
+        #expect(Language.detect(fileName: "lib.rs") == .rust)
+        #expect(Language.detect(fileName: "Main.java") == .java)
+        #expect(Language.detect(fileName: "App.kt") == .kotlin)
+        #expect(Language.detect(fileName: "build.gradle.kts") == .kotlin)
+        #expect(Language.detect(fileName: "Program.cs") == .csharp)
+        #expect(Language.detect(fileName: "main.c") == .c)
+        #expect(Language.detect(fileName: "stdio.h") == .c)
+        #expect(Language.detect(fileName: "widget.cpp") == .cpp)
+        #expect(Language.detect(fileName: "widget.HPP") == .cpp)
+        #expect(Language.detect(fileName: "build.zig") == .zig)
+        #expect(Language.detect(fileName: "View.m") == .objectiveC)
         #expect(Language.detect(fileName: "notes") == .plainText)
         #expect(Language.detect(fileName: nil) == .plainText)
+    }
+
+    @Test func idsAreUnique() {
+        #expect(Set(Language.all.map(\.id)).count == Language.all.count)
+        #expect(Set(Language.all.flatMap(\.extensions)).count == Language.all.map(\.extensions.count).reduce(0, +))
     }
 
     @Test func byFileName() {

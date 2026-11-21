@@ -70,7 +70,7 @@ Warm, distinct hues on the solid editor surface. Every syntax token is ≥ 4.5:1
 | `syn-heading` | `#995A05` | `#F5B656` | `#744404` | `#FFC978` | Markdown headings, TOML/INI sections |
 | `syn-escape` | `#A8327A` | `#F7A8D8` | `#8B2965` | `#FAC4E4` | Escapes, regexes, special punctuation |
 
-Highlighting (`KiriSyntax`): Tree-sitter grammars (Swift, JSON, YAML, Markdown with inline, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS) parse on a background queue, incrementally after each burst of edits; only the visible text plus a margin is colored, from a parse that matches the text exactly. Other formats (TOML, INI, XML, Rust, Go, …) use a small fallback lexer for strings, numbers, comments and keywords. Capture names map to tokens in `SyntaxKind(capture:)`.
+Highlighting (`KiriSyntax`): Tree-sitter grammars (Swift, JSON, YAML, Markdown with inline, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS, Go, Rust, Java, Kotlin, C#, C, C++ (C's query plus C++'s), Zig) parse on a background queue, incrementally after each burst of edits; only the visible text plus a margin is colored, from a parse that matches the text exactly. Other formats (TOML, INI, XML, Objective-C, …) use a small fallback lexer for strings, numbers, comments and keywords. Capture names map to tokens in `SyntaxKind(capture:)`.
 
 ### 3.2 Color themes
 
