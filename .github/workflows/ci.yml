@@ -44,3 +44,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO -quiet
           # Fail if nothing was built (an empty scheme also "succeeds").
           test -x build/Build/Products/Debug/Kiri.app/Contents/MacOS/Kiri
+          # The kiri command ships executable in the bundle.
+          test -x build/Build/Products/Debug/Kiri.app/Contents/Resources/kiri
+          build/Build/Products/Debug/Kiri.app/Contents/Resources/kiri --help >/dev/null
+          build/Build/Products/Debug/Kiri.app/Contents/Resources/kiri --version

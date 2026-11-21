@@ -12,6 +12,7 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 - **Syntax highlighting** with Tree-sitter for Swift, JSON, YAML, Markdown, JavaScript, TypeScript/TSX, Python, shell, HTML and CSS, and a lightweight lexer for TOML, INI, XML, Rust, Go and more. Only the visible text is colored, so large files stay fast.
 - **Tabs**: documents open as tabs in one window (native window tabbing under a Honey tab strip, with dirty dots).
 - **Typing animations** (Settings ▸ Typing animations, on by default): a honey caret that glides and breathes, a current-line highlight that eases between lines, a pulse on the matching bracket, syntax colors that crossfade instead of flickering, and rolling Ln/Col digits. Reduce Motion keeps the fades and drops movement; Motion: Off turns them all off. A letter fade-in exists in the code but is off: TextKit 2 doesn't yet redraw the fading letter every frame.
+- **`kiri` command**: open files and folders from the terminal (see below).
 - Line numbers, current-line highlight, find and replace, Go to Line, text size, line wrapping, File ▸ Open Recent and Revert.
 
 ## Keyboard shortcuts
@@ -19,6 +20,8 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | Keys | Action |
 |---|---|
 | ⌘N / ⌘O | New document / open (as a tab) |
+| ⇧⌘O | Open folder (a new window with a file sidebar) |
+| ⌃⌘S | Show / hide the folder sidebar |
 | ⌘S / ⇧⌘S | Save / Save As |
 | ⌘W | Close tab |
 | ⌘F / ⌥⌘F | Find / Find and Replace |
@@ -26,6 +29,25 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⌘L | Go to line (`12` or `12:5` for line and column) |
 | ⌘+ / ⌘- / ⌘0 | Bigger / smaller / actual text size |
 | ⌘, | Settings (theme, motion, text size, wrapping) |
+
+## Command line
+
+Choose **Kiri ▸ Install Command Line Tool…** once. It links `/usr/local/bin/kiri` to the script inside the app (`Kiri.app/Contents/Resources/kiri`, source in `App/CLI/kiri`), asking for an administrator password if needed. To do it by hand: `sudo ln -sf /Applications/Kiri.app/Contents/Resources/kiri /usr/local/bin/kiri`.
+
+```sh
+kiri                        # open Kiri
+kiri notes.md todo.txt      # open files as tabs in the front window
+kiri src/main.swift:42:5    # …at line 42, column 5 (or just :42)
+kiri ~/project              # a new window with a file sidebar for the folder
+kiri new.md                 # a file that doesn't exist yet opens empty; saving creates it
+git diff | kiri -           # standard input in a new untitled tab
+kiri -n file.txt            # in a new window
+kiri -w file.txt            # wait until the tab is closed
+```
+
+Use Kiri as your editor with `export EDITOR="kiri -w"` and `git config --global core.editor "kiri -w"`.
+
+A running Kiri is reused: the script writes a request to the per-user temporary folder and hands it over with a `kiri://` URL, and `-w` waits for Kiri to delete a marker file when the tabs close.
 
 ## Build
 

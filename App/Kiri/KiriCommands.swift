@@ -6,11 +6,29 @@ import SwiftUI
 /// itself in the Window menu).
 struct KiriCommands: Commands {
     @FocusedValue(\.editorModel) private var editor
+    @FocusedValue(\.folderSession) private var folder
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
 
     var body: some Commands {
         TextEditingCommands()
+
+        CommandGroup(after: .appSettings) {
+            Button("Install Command Line Tool…") { CLIInstaller.install() }
+        }
+
+        CommandGroup(after: .newItem) {
+            Button("Open Folder…") { FolderSessions.openFolderPanel() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+        }
+
+        CommandGroup(before: .sidebar) {
+            Button(folder?.sidebarVisible == false ? "Show Sidebar" : "Hide Sidebar") {
+                folder?.sidebarVisible.toggle()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .control])
+            .disabled(folder == nil)
+        }
 
         CommandGroup(after: .textEditing) {
             Divider()
