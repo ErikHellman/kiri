@@ -4,6 +4,12 @@ import SwiftUI
 /// Shortcuts window so the two can't drift apart.
 enum Keys {
     static let newTab = KeyboardShortcut("t", modifiers: .command)
+    static let find = KeyboardShortcut("f", modifiers: .command)
+    static let findAndReplace = KeyboardShortcut("f", modifiers: [.option, .command])
+    static let findNext = KeyboardShortcut("g", modifiers: .command)
+    static let findPrevious = KeyboardShortcut("g", modifiers: [.shift, .command])
+    static let useSelectionForFind = KeyboardShortcut("e", modifiers: .command)
+    static let jumpToSelection = KeyboardShortcut("j", modifiers: .command)
     static let goToLine = KeyboardShortcut("l", modifiers: .command)
     static let shiftRight = KeyboardShortcut("]", modifiers: .command)
     static let shiftLeft = KeyboardShortcut("[", modifiers: .command)
@@ -119,12 +125,12 @@ struct ShortcutGroup: Identifiable {
             Item("Back to the editor", "⎋"),
         ]),
         ShortcutGroup(title: "Find", systemImage: "magnifyingglass", items: [
-            Item("Find", "⌘F"),
-            Item("Find and replace", "⌥⌘F"),
-            Item("Find next", "⌘G"),
-            Item("Find previous", "⇧⌘G"),
-            Item("Use selection for find", "⌘E"),
-            Item("Jump to selection", "⌘J"),
+            Item("Find", Keys.find),
+            Item("Find and replace", Keys.findAndReplace),
+            Item("Find next", Keys.findNext),
+            Item("Find previous", Keys.findPrevious),
+            Item("Use selection for find", Keys.useSelectionForFind),
+            Item("Jump to selection", Keys.jumpToSelection),
             Item("Close find bar", "⎋"),
         ]),
         ShortcutGroup(title: "Moving around", systemImage: "arrow.up.and.down.text.horizontal", items: [

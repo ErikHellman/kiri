@@ -26,8 +26,14 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 func dump(_ m: NSMenu, _ d: Int) {
                     for i in m.items where !i.isSeparatorItem {
-                        let key = i.keyEquivalent.isEmpty ? "" : " [\(i.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "")⌘\(i.keyEquivalent)]"
-                        print(String(repeating: "  ", count: d) + i.title + key)
+                        let mask = i.keyEquivalentModifierMask
+                        let mods = (mask.contains(.control) ? "⌃" : "") + (mask.contains(.option) ? "⌥" : "")
+                            + (mask.contains(.shift) ? "⇧" : "") + (mask.contains(.command) ? "⌘" : "")
+                        let key = i.keyEquivalent.isEmpty ? "" : " [\(mods)\(i.keyEquivalent)]"
+                        // With -KiriDumpMenuActions YES: selectors, tags and state too.
+                        let action = UserDefaults.standard.bool(forKey: "KiriDumpMenuActions")
+                            ? "  <\(i.action.map { NSStringFromSelector($0) } ?? "-") tag=\(i.tag)\(i.isHidden ? " hidden" : "")\(i.isEnabled ? "" : " disabled")>" : ""
+                        print(String(repeating: "  ", count: d) + i.title + key + action)
                         if let sub = i.submenu, d < 2 { dump(sub, d + 1) }
                     }
                 }
@@ -354,6 +360,8 @@ import os
                 }
                 ktv.undoManager?.undo()
 
+                findMenu(ktv)
+
                 // Go to Line.
                 controller.goTo(line: 5, column: 3)
                 report(controller.model.line == 5 && controller.model.column == 3,
@@ -395,6 +403,65 @@ import os
                 }
             }
         }
+    }
+
+    /// Edit ▸ Find is Kiri's own (see `KiriCommands`): its keys, pressed
+    /// through the menu bar, must still drive the editor's find bar.
+    private static func findMenu(_ ktv: KiriTextView) {
+        guard let scroll = ktv.enclosingScrollView, let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu,
+              let find = edit.item(withTitle: "Find")?.submenu else { report(false, "Edit ▸ Find exists"); return }
+        report(Set(edit.items.compactMap { $0.submenu == nil ? nil : $0.title }).isDisjoint(with: ["Spelling and Grammar", "Substitutions", "Speech"])
+               && edit.item(withTitle: "Transformations") != nil,
+               "Edit has Find and Transformations, no Spelling, Substitutions or Speech")
+        /// Presses the item with this key equivalent, as the menu bar would.
+        func press(_ key: String, _ mods: NSEvent.ModifierFlags) -> Bool {
+            guard let i = find.items.firstIndex(where: {
+                $0.keyEquivalent == key && $0.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == mods
+            }), find.items[i].isEnabled else { return false }
+            find.performActionForItem(at: i)
+            return true
+        }
+        EditAction.selfTestTarget = ktv
+        defer { EditAction.selfTestTarget = nil }
+        // The find pasteboard is shared with every other app: put it back after.
+        let findBoard = NSPasteboard(name: .find)
+        let findBefore = findBoard.string(forType: .string)
+        defer {
+            findBoard.clearContents()
+            if let findBefore { findBoard.setString(findBefore, forType: .string) }
+        }
+        ktv.window?.makeFirstResponder(ktv)
+        let ns = ktv.string as NSString
+        let word = ns.range(of: "func")
+        ktv.setSelectedRange(word)
+        let e = press("e", .command)
+        let f = press("f", .command)
+        report(e && f && scroll.isFindBarVisible, "⌘E and ⌘F: the find bar opens (pressed \(e) \(f), visible \(scroll.isFindBarVisible))")
+        report(findBoard.string(forType: .string) == "func", "⌘E puts the selection on the find pasteboard")
+        if word.location != NSNotFound {
+            ktv.window?.makeFirstResponder(ktv)
+            ktv.setSelectedRange(NSRange(location: 0, length: 0))
+            let g = press("g", .command)
+            report(g && ktv.selectedRange() == word, "⌘G selects the next match (\(ktv.selectedRange()) vs \(word))")
+            ktv.setSelectedRange(NSRange(location: ns.length, length: 0))
+            let back = press("g", [.shift, .command])
+            report(back && ktv.selectedRange().length == word.length && ktv.selectedRange().location >= word.location,
+                   "⇧⌘G selects the previous match (\(ktv.selectedRange()))")
+        }
+        func hideFindBar() {
+            ktv.window?.makeFirstResponder(ktv)
+            let hide = NSMenuItem()
+            hide.tag = NSTextFinder.Action.hideFindInterface.rawValue
+            ktv.performTextFinderAction(hide)
+        }
+        hideFindBar()
+        let hidden = !scroll.isFindBarVisible
+        let replace = press("f", [.option, .command])
+        report(hidden && replace && scroll.isFindBarVisible, "⌥⌘F opens the find bar again (was hidden \(hidden), pressed \(replace))")
+        report(press("j", .command), "⌘J is in the menu")
+        // Put the window back as it was for the checks that follow.
+        hideFindBar()
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
     }
 
     private static func tabs(_ window: NSWindow) {

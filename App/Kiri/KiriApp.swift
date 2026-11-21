@@ -41,6 +41,9 @@ struct KiriApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // The component gallery is a development tool: Debug builds only,
+        // so Release has neither the window nor its Window-menu entry.
+        #if DEBUG
         Window("Style Gallery", id: "style-gallery") {
             StyleGallery()
                 .frame(minWidth: 900, minHeight: 600)
@@ -49,6 +52,7 @@ struct KiriApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
         .defaultLaunchBehavior(.suppressed)
+        #endif
     }
 }
 

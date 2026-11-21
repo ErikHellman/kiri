@@ -3,8 +3,7 @@ import KiriKit
 import SwiftUI
 
 /// Menu commands beyond what DocumentGroup gives (New, Open, Open Recent,
-/// Save, Duplicate, Rename, Revert, Close come with it; TextEditingCommands
-/// adds Find, Spelling, Substitutions and Transformations). Every feature is
+/// Save, Duplicate, Rename, Revert, Close come with it). Every feature is
 /// in a menu, so the keyboard reaches all of it (⌃F2 opens the menu bar),
 /// and the common ones have keys of their own. Help ▸ Keyboard Shortcuts
 /// lists them; its contents live next to the keys in `Shortcuts.swift`.
@@ -24,8 +23,6 @@ struct KiriCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        TextEditingCommands()
-
         CommandGroup(after: .appSettings) {
             Button("Install Command Line Tool…") { CLIInstaller.install() }
         }
@@ -61,8 +58,33 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.openFolder)
         }
 
-        // Edit
-        CommandGroup(after: .textEditing) {
+        // Edit: Find and Transformations, written out instead of taken from
+        // `TextEditingCommands`, which also brings Spelling and Grammar,
+        // Substitutions and Speech: prose tools that a code editor with
+        // spell checking and smart quotes off has no use for. The items do
+        // what AppKit's own do: send the standard action down the responder
+        // chain, so the editor and the find bar's fields both get them. They
+        // are never disabled: with nothing to act on, the action goes nowhere.
+        CommandGroup(replacing: .textEditing) {
+            Menu("Find") {
+                Button("Find…") { EditAction.find(.showFindInterface) }
+                    .keyboardShortcut(Keys.find)
+                Button("Find and Replace…") { EditAction.find(.showReplaceInterface) }
+                    .keyboardShortcut(Keys.findAndReplace)
+                Button("Find Next") { EditAction.find(.nextMatch) }
+                    .keyboardShortcut(Keys.findNext)
+                Button("Find Previous") { EditAction.find(.previousMatch) }
+                    .keyboardShortcut(Keys.findPrevious)
+                Button("Use Selection for Find") { EditAction.find(.setSearchString) }
+                    .keyboardShortcut(Keys.useSelectionForFind)
+                Button("Jump to Selection") { EditAction.send(#selector(NSText.centerSelectionInVisibleArea(_:))) }
+                    .keyboardShortcut(Keys.jumpToSelection)
+            }
+            Menu("Transformations") {
+                Button("Make Upper Case") { EditAction.send(#selector(NSResponder.uppercaseWord(_:))) }
+                Button("Make Lower Case") { EditAction.send(#selector(NSResponder.lowercaseWord(_:))) }
+                Button("Capitalize") { EditAction.send(#selector(NSResponder.capitalizeWord(_:))) }
+            }
             Divider()
             Button("Go to Line…") { editor?.showGoToLine = true }
                 .keyboardShortcut(Keys.goToLine)
@@ -152,5 +174,33 @@ struct KiriCommands: Commands {
     private func tabTitle(_ n: Int) -> String {
         guard let items = tabs?.items, items.indices.contains(n - 1) else { return "Tab \(n)" }
         return items[n - 1].title
+    }
+}
+
+/// Standard AppKit editing actions for the Edit menu, sent to whatever has
+/// keyboard focus (the editor, or a field of its find bar).
+@MainActor enum EditAction {
+    static func send(_ action: Selector, tag: Int = 0) {
+        // The find actions read which one they are from the sender's tag,
+        // as they do from AppKit's own menu items.
+        let sender = NSMenuItem()
+        sender.tag = tag
+        var target: AnyObject?
+        #if DEBUG || KIRI_SELFTEST
+        if NSApp.keyWindow == nil { target = selfTestTarget }
+        #endif
+        NSApp.sendAction(action, to: target, from: sender)
+    }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// Self-tests run in the background, where no window is key and an
+    /// action without a target has nowhere to go; they name the editor here.
+    static weak var selfTestTarget: NSResponder?
+    #endif
+
+    /// `performFindPanelAction(_:)` with a find-bar action: the text view
+    /// uses the find bar (`usesFindBar`), so the tags are `NSTextFinder`'s.
+    static func find(_ action: NSTextFinder.Action) {
+        send(#selector(NSTextView.performFindPanelAction(_:)), tag: action.rawValue)
     }
 }
