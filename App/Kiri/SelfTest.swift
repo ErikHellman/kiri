@@ -438,6 +438,11 @@ import os
                 MainActor.assumeIsolated { (textView.delegate as? EditorController)?.model.statusRest.activity() }
             }
         }
+        // -KiriScrollerInfo YES (with -wrapLines NO and a file with long
+        // lines): where the horizontal scroller is against the status capsule.
+        if UserDefaults.standard.bool(forKey: "KiriScrollerInfo") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { scrollerInfo(textView) }
+        }
         // -KiriShowGoToLine YES opens Go to Line; -KiriGoToLine <text> also
         // types that into it (the line shows as it is typed).
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") || UserDefaults.standard.string(forKey: "KiriGoToLine") != nil {
@@ -1373,24 +1378,29 @@ import os
         rest.focusChanged(inside: false)
         report(menuOpen == 1 && focused == 1, "an open menu and the keyboard on one of its items keep it solid (\(menuOpen), \(focused))")
 
-        // Wrapping off: the horizontal scroller and the capsule share the
-        // bottom edge. Measured, since nothing here can look.
-        controller.setWrap(false)
-        scroll.tile()
-        if let scroller = scroll.horizontalScroller {
-            let frame = scroller.convert(scroller.bounds, to: container)
-            let fromBottom = container.isFlipped ? container.bounds.maxY - frame.maxY : frame.minY
-            let capsule = NSRect(x: (size.width - rest.barWidth) / 2, y: EditorStatusBar.bottomPadding, width: rest.barWidth,
-                                 height: HoneyStatusMetrics.barHeight)
-            let band = NSRect(x: frame.minX, y: fromBottom, width: frame.width, height: frame.height)
-            print("SELFTEST info wrapping off: the horizontal scroller is \(Int(frame.height)) pt high, \(fromBottom) to \(fromBottom + frame.height) pt above the panel's bottom, x \(frame.minX)…\(frame.maxX); the capsule is at \(capsule.minY) to \(capsule.maxY) pt, x \(capsule.minX)…\(capsule.maxX); they \(band.intersects(capsule) ? "OVERLAP" : "don't overlap") (scroller style \(scroll.scrollerStyle == .overlay ? "overlay" : "legacy"), hidden \(scroller.isHidden))")
-        } else {
-            print("SELFTEST info wrapping off: no horizontal scroller")
-        }
-        controller.setWrap(true)
-
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         controller.scrollOrigin = .zero
+        fflush(stdout)
+    }
+
+    /// With wrapping off the horizontal scroller and the status capsule
+    /// share the bottom edge: where each is, measured from the frames (for
+    /// when nothing can look). Says so when the text is no wider than the
+    /// editor and there is no scroller to measure.
+    private static func scrollerInfo(_ textView: NSTextView) {
+        guard let scroll = textView.enclosingScrollView, let container = scroll.superview as? EditorContainerView,
+              let rest = (textView.delegate as? EditorController)?.model.statusRest else { return }
+        scroll.tile()
+        guard let scroller = scroll.horizontalScroller, scroll.hasHorizontalScroller, scroller.frame.height > 0 else {
+            print("SELFTEST info horizontal scroller: none laid out (wrapping \(scroll.hasHorizontalScroller ? "off, but no line is wider than the editor" : "on"))")
+            return
+        }
+        let frame = scroller.convert(scroller.bounds, to: container)
+        let fromBottom = container.isFlipped ? container.bounds.maxY - frame.maxY : frame.minY
+        let capsule = NSRect(x: (container.bounds.width - rest.barWidth) / 2, y: EditorStatusBar.bottomPadding, width: rest.barWidth,
+                             height: HoneyStatusMetrics.barHeight)
+        let band = NSRect(x: frame.minX, y: fromBottom, width: frame.width, height: frame.height)
+        print("SELFTEST info horizontal scroller: \(frame.height) pt high, from \(fromBottom) to \(band.maxY) pt above the panel's bottom, x \(frame.minX)…\(frame.maxX) of \(container.bounds.width); the status capsule is from \(capsule.minY) to \(capsule.maxY) pt, x \(capsule.minX)…\(capsule.maxX); they \(band.intersects(capsule) ? "OVERLAP" : "don't overlap") (\(scroll.scrollerStyle == .overlay ? "overlay" : "legacy") scrollers, bottom inset \(scroll.contentInsets.bottom), scroller insets \(scroll.scrollerInsets.bottom))")
         fflush(stdout)
     }
 
