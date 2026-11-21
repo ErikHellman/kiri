@@ -33,7 +33,7 @@ import os
                         let key = i.keyEquivalent.isEmpty ? "" : " [\(mods)\(i.keyEquivalent)]"
                         // With -KiriDumpMenuActions YES: selectors, tags and state too.
                         let action = UserDefaults.standard.bool(forKey: "KiriDumpMenuActions")
-                            ? "  <\(i.action.map { NSStringFromSelector($0) } ?? "-") tag=\(i.tag)\(i.isHidden ? " hidden" : "")\(i.isEnabled ? "" : " disabled")>" : ""
+                            ? "  <\(i.action.map { NSStringFromSelector($0) } ?? "-") tag=\(i.tag)\(i.isHidden ? " hidden" : "")\(i.isEnabled ? "" : " disabled")\(i.image == nil ? "" : " image")>" : ""
                         print(String(repeating: "  ", count: d) + i.title + key + action)
                         if let sub = i.submenu, d < 2 { dump(sub, d + 1) }
                     }
@@ -576,6 +576,19 @@ import os
         let replace = press("f", [.option, .command])
         report(hidden && replace && scroll.isFindBarVisible, "⌥⌘F opens the find bar again (was hidden \(hidden), pressed \(replace))")
         report(press("j", .command), "⌘J is in the menu")
+        // Edit ▸ Transformations, on a selected word.
+        hideFindBar()
+        if word.location != NSNotFound, let transformations = edit.item(withTitle: "Transformations")?.submenu,
+           let upper = transformations.items.firstIndex(where: { $0.title == "Make Upper Case" }) {
+            ktv.setSelectedRange(word)
+            transformations.performActionForItem(at: upper)
+            let now = (ktv.string as NSString).substring(with: word)
+            report(now == "FUNC", "Make Upper Case changes the selected word (\(now))")
+            ktv.undoManager?.undo()
+            report((ktv.string as NSString).substring(with: word) == "func", "and undo puts it back")
+        } else {
+            report(false, "Edit ▸ Transformations ▸ Make Upper Case exists")
+        }
         // Put the window back as it was for the checks that follow.
         hideFindBar()
         ktv.setSelectedRange(NSRange(location: 0, length: 0))

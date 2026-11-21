@@ -25,7 +25,8 @@ struct KiriCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
             Button("Install Command Line Tool…") { CLIInstaller.install() }
-            Button("Settings…") { openWindow(id: SettingsView.windowID) }
+            // With the gear macOS gives a Settings scene's own item.
+            Button("Settings…", systemImage: "gear") { openWindow(id: SettingsView.windowID) }
                 .keyboardShortcut(Keys.settings)
         }
 
@@ -83,9 +84,16 @@ struct KiriCommands: Commands {
                     .keyboardShortcut(Keys.jumpToSelection)
             }
             Menu("Transformations") {
-                Button("Make Upper Case") { EditAction.send(#selector(NSResponder.uppercaseWord(_:))) }
-                Button("Make Lower Case") { EditAction.send(#selector(NSResponder.lowercaseWord(_:))) }
-                Button("Capitalize") { EditAction.send(#selector(NSResponder.capitalizeWord(_:))) }
+                // With the symbols macOS gives its own Transformations items.
+                Button("Make Upper Case", systemImage: "characters.uppercase") {
+                    EditAction.send(#selector(NSResponder.uppercaseWord(_:)))
+                }
+                Button("Make Lower Case", systemImage: "characters.lowercase") {
+                    EditAction.send(#selector(NSResponder.lowercaseWord(_:)))
+                }
+                Button("Capitalize", systemImage: "textformat.characters") {
+                    EditAction.send(#selector(NSResponder.capitalizeWord(_:)))
+                }
             }
             Divider()
             Button("Go to Line…") { editor?.showGoToLine = true }
@@ -188,9 +196,10 @@ struct KiriCommands: Commands {
         // as they do from AppKit's own menu items.
         let sender = NSMenuItem()
         sender.tag = tag
-        var target: AnyObject?
         #if DEBUG || KIRI_SELFTEST
-        if NSApp.keyWindow == nil { target = selfTestTarget }
+        let target = NSApp.keyWindow == nil ? selfTestTarget : nil
+        #else
+        let target: NSResponder? = nil
         #endif
         NSApp.sendAction(action, to: target, from: sender)
     }
