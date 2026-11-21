@@ -598,7 +598,9 @@ import os
                 }
                 ktv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
                 // Variant: -KiriSaveDelay <s> waits like a person before pressing Save.
-                let delay = UserDefaults.standard.object(forKey: "KiriSaveDelay") as? Double ?? 0.3
+                // (A launch argument is a string: `double(forKey:)` reads it, a cast doesn't.)
+                let delay = UserDefaults.standard.string(forKey: "KiriSaveDelay") == nil ? 0.3
+                    : UserDefaults.standard.double(forKey: "KiriSaveDelay")
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 let saver = SaveObserver()
                 var finished = false
