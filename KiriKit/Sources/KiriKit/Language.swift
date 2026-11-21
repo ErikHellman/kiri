@@ -63,19 +63,30 @@ public struct Language: Hashable, Sendable, Identifiable {
     public static let ruby = Language(id: "ruby", name: "Ruby", extensions: ["rb", "rake", "gemspec"],
                                       fileNames: ["Gemfile", "Rakefile", "Podfile", "Fastfile"],
                                       interpreters: ["ruby"], lineComment: "#")
-    public static let rust = Language(id: "rust", name: "Rust", extensions: ["rs"], lineComment: "//")
+    // Tree-sitter grammars (KiriSyntax), added with the C family and JVM languages.
     public static let go = Language(id: "go", name: "Go", extensions: ["go"], lineComment: "//")
-    public static let cFamily = Language(id: "c", name: "C/C++",
-                                         extensions: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm"],
-                                         lineComment: "//")
-    public static let java = Language(id: "java", name: "Java/Kotlin", extensions: ["java", "kt", "kts", "gradle"],
+    public static let rust = Language(id: "rust", name: "Rust", extensions: ["rs"], interpreters: ["rust-script"],
                                       lineComment: "//")
+    public static let java = Language(id: "java", name: "Java", extensions: ["java", "jav"], lineComment: "//")
+    public static let kotlin = Language(id: "kotlin", name: "Kotlin", extensions: ["kt", "kts"],
+                                        interpreters: ["kotlin", "kscript"], lineComment: "//")
+    public static let csharp = Language(id: "csharp", name: "C#", extensions: ["cs", "csx"], lineComment: "//")
+    public static let c = Language(id: "c", name: "C", extensions: ["c", "h"], lineComment: "//")
+    public static let cpp = Language(id: "cpp", name: "C++",
+                                     extensions: ["cc", "cpp", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "tpp",
+                                                  "inl", "ixx", "cppm"],
+                                     lineComment: "//")
+    public static let zig = Language(id: "zig", name: "Zig", extensions: ["zig", "zon"], lineComment: "//")
+    // No grammar: the fallback highlighter.
+    public static let objectiveC = Language(id: "objc", name: "Objective-C", extensions: ["m", "mm"],
+                                            lineComment: "//")
+    public static let gradle = Language(id: "gradle", name: "Gradle", extensions: ["gradle"], lineComment: "//")
     public static let sql = Language(id: "sql", name: "SQL", extensions: ["sql"], lineComment: "--")
 
     /// Every known language, in menu order.
     public static let all: [Language] = [
         plainText, markdown, json, yaml, toml, xml, csv, ini, swift, javascript, typescript, tsx, python, shell,
-        html, css, ruby, rust, go, cFamily, java, sql, makefile, dockerfile,
+        html, css, ruby, go, rust, java, kotlin, csharp, c, cpp, objectiveC, zig, gradle, sql, makefile, dockerfile,
     ]
 
     public static func with(id: String) -> Language? { all.first { $0.id == id } }

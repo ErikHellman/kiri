@@ -55,13 +55,12 @@ import KiriSyntax
         let id = language.id
         queue.async { [weak self] in
             let parser = SyntaxGrammar.forLanguage(id: id).flatMap(SyntaxParser.init(grammar:))
-            nonisolated(unsafe) let p = parser
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.language.id == id, self.loadingGrammar else { return }
                     _ = generation
                     self.loadingGrammar = false
-                    self.parser = p
+                    self.parser = parser
                     self.pendingEdits = []
                     self.startParseIfNeeded(force: true)
                     self.setNeedsHighlight()

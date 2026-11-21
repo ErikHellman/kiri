@@ -3,17 +3,25 @@ import Foundation
 import KiriKit
 import SwiftTreeSitter
 import TreeSitterBash
+import TreeSitterC
+import TreeSitterCPP
+import TreeSitterCSharp
 import TreeSitterCSS
+import TreeSitterGo
 import TreeSitterHTML
+import TreeSitterJava
 import TreeSitterJavaScript
 import TreeSitterJSON
+import TreeSitterKotlin
 import TreeSitterMarkdown
 import TreeSitterMarkdownInline
 import TreeSitterPython
+import TreeSitterRust
 import TreeSitterSwift
 import TreeSitterTSX
 import TreeSitterTypeScript
 import TreeSitterYAML
+import TreeSitterZig
 
 // Tree-sitter highlighting, independent of AppKit: parse (incrementally, on
 // any one thread at a time) and turn the highlight query's captures in a
@@ -43,7 +51,8 @@ public final class SyntaxGrammar: @unchecked Sendable {
 
     /// Language ids (`KiriKit.Language.id`) with a bundled grammar.
     public static let supportedIDs = ["json", "yaml", "markdown", "javascript", "typescript", "tsx", "python",
-                                      "bash", "html", "css", "swift"]
+                                      "bash", "html", "css", "swift", "go", "rust", "java", "kotlin", "csharp", "c",
+                                      "cpp", "zig"]
 
     nonisolated(unsafe) private static var cache: [String: SyntaxGrammar] = [:]
     private static let lock = NSLock()
@@ -73,6 +82,14 @@ public final class SyntaxGrammar: @unchecked Sendable {
         case "html": try SyntaxGrammar(id: id, language: tree_sitter_html())
         case "css": try SyntaxGrammar(id: id, language: tree_sitter_css())
         case "swift": try SyntaxGrammar(id: id, language: tree_sitter_swift())
+        case "go": try SyntaxGrammar(id: id, language: tree_sitter_go())
+        case "rust": try SyntaxGrammar(id: id, language: tree_sitter_rust())
+        case "java": try SyntaxGrammar(id: id, language: tree_sitter_java())
+        case "kotlin": try SyntaxGrammar(id: id, language: tree_sitter_kotlin())
+        case "csharp": try SyntaxGrammar(id: id, language: tree_sitter_c_sharp())
+        case "c": try SyntaxGrammar(id: id, language: tree_sitter_c())
+        case "cpp": try SyntaxGrammar(id: id, language: tree_sitter_cpp())
+        case "zig": try SyntaxGrammar(id: id, language: tree_sitter_zig())
         default: nil
         }
     }
