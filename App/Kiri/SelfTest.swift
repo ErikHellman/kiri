@@ -12,6 +12,8 @@ import os
     private static var started = false
     private static var typedOnLaunch = false
     private static var openedFolder = false
+    private static var arrangedTabs = false
+    private static var renderedTabs = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -173,6 +175,23 @@ import os
                 print("SELFTEST rendered settings \(path)")
             }
         }
+        // -KiriRenderTabs <folder>: the tab strip in the top bar's row, drawn
+        // offscreen at 900 and 480 pt with 1 to 20 tabs, long names, a dirty
+        // tab and the selection first, in the middle and last. (Offscreen
+        // the strip can't scroll; it is placed where scrolling would put it.)
+        if let folder = UserDefaults.standard.string(forKey: "KiriRenderTabs"), !renderedTabs {
+            renderedTabs = true
+            for width in [900.0, 480.0] {
+                let renderer = ImageRenderer(content: TabStripSample.sheet(width: width))
+                renderer.scale = 2
+                let path = "\(folder)/tabs-\(Int(width)).png"
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    print("SELFTEST rendered tabs \(path)")
+                }
+            }
+            fflush(stdout)
+        }
         // -KiriShowSettings YES (opened by EditorScreen): nothing in Settings
         // may take keyboard focus, and so a focus ring, just by opening.
         if UserDefaults.standard.bool(forKey: "KiriShowSettings") {
@@ -193,17 +212,19 @@ import os
             }
         }
         // -KiriDumpAccessibility <window title>: what VoiceOver is given for
-        // that window ("Settings", "Keyboard Shortcuts", "Style Gallery"), as
-        // role, label, value and actions. With -KiriAXPress <label>, then presses the
+        // that window ("Settings", "Keyboard Shortcuts", "Style Gallery", or a
+        // document's file name), as role, label, value, size, selected state,
+        // custom actions and help. With -KiriAXPress <label>, then presses the
         // radio button of that name and prints its group again. (Only press
         // in the Style Gallery, whose controls change nothing that is saved.)
+        // -KiriDumpDelay <seconds> waits longer than 1.5 s before asking.
         if let title = UserDefaults.standard.string(forKey: "KiriDumpAccessibility") {
             let press = UserDefaults.standard.string(forKey: "KiriAXPress")
             // SwiftUI builds its accessibility elements only once an assistive
             // app has asked this process something, so ask it one question
             // through the accessibility API first (off the main thread, which
             // has to answer it), then read the window's own elements.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + (UserDefaults.standard.object(forKey: "KiriDumpDelay") as? Double ?? 1.5)) {
                 var value: AnyObject?
                 AXUIElementCopyAttributeValue(AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &value)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -229,7 +250,16 @@ import os
                                let frame = (o.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue {
                                 size = String(format: " %g×%g at %g,%g", frame.width, frame.height, frame.minX, frame.minY)
                             }
-                            print("AX " + String(repeating: "  ", count: depth) + "\(r) “\(name(e))”\(value)\(size)")
+                            var extra = ""
+                            if let o = e as? NSObject, o.responds(to: NSSelectorFromString("isAccessibilitySelected")),
+                               o.value(forKey: "accessibilitySelected") as? Bool == true { extra += " selected" }
+                            if let actions = ask(e, "accessibilityCustomActions") as? [NSAccessibilityCustomAction], !actions.isEmpty {
+                                extra += " actions=\(actions.map(\.name))"
+                            }
+                            if let o = e as? NSObject, o.responds(to: NSSelectorFromString("isAccessibilityFocused")),
+                               o.value(forKey: "accessibilityFocused") as? Bool == true { extra += " focused" }
+                            if let help = ask(e, "accessibilityHelp") as? String, !help.isEmpty { extra += " help=“\(help)”" }
+                            print("AX " + String(repeating: "  ", count: depth) + "\(r) “\(name(e))”\(value)\(size)\(extra)")
                         }
                         if depth < 16 { children(e).forEach { dump($0, depth + 1, onlyRadio: onlyRadio) } }
                     }
@@ -259,6 +289,56 @@ import os
             openedFolder = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))]))
+            }
+        }
+        // Screenshot helpers for the tab strip, run once the launch's files
+        // are all up and their tab groups have stopped changing:
+        // -KiriWindowSize 480x400 sizes the document windows, -KiriDirtyTab
+        // <title> types into that tab, -KiriSelectTab <title> selects it.
+        // Prints "SELFTEST arranged" when done.
+        if !arrangedTabs, ["KiriWindowSize", "KiriDirtyTab", "KiriSelectTab"].contains(where: { UserDefaults.standard.string(forKey: $0) != nil }) {
+            arrangedTabs = true
+            Task { @MainActor in
+                let clock = ContinuousClock()
+                var last: [Int] = [], since = clock.now
+                var windows: [NSWindow] = []
+                while true {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    windows = NSApp.windows.filter { $0.isVisible && NSDocumentController.shared.document(for: $0) != nil }
+                    let now = windows.map { $0.tabbedWindows?.count ?? 1 }
+                    if now != last { last = now; since = clock.now }
+                    if !windows.isEmpty, clock.now - since > .seconds(1) { break }
+                }
+                @MainActor func tab(_ key: String) -> NSWindow? {
+                    guard let title = UserDefaults.standard.string(forKey: key) else { return nil }
+                    for w in windows where w.title == title { return w }
+                    return nil
+                }
+                if let size = UserDefaults.standard.string(forKey: "KiriWindowSize")?.split(separator: "x").compactMap({ Double($0) }),
+                   size.count == 2 {
+                    for w in windows {
+                        w.setFrame(NSRect(x: w.frame.minX, y: w.frame.maxY - size[1], width: size[0], height: size[1]), display: true)
+                    }
+                }
+                if let w = tab("KiriDirtyTab"), let tv = findTextView(in: w.contentView) {
+                    // Typing counts as an edit in the tab that is showing.
+                    w.tabGroup?.selectedWindow = w
+                    try? await Task.sleep(for: .milliseconds(300))
+                    w.makeFirstResponder(tv)
+                    tv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
+                    // The edit counts once its undo group closes, which
+                    // AppKit does after an event; nothing else sends one
+                    // to a background launch.
+                    if let e = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
+                        NSApp.postEvent(e, atStart: false)
+                    }
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                if let w = tab("KiriSelectTab") { w.tabGroup?.selectedWindow = w }
+                try? await Task.sleep(for: .milliseconds(100))
+                print("SELFTEST arranged \(windows.count) windows, front tab “\(windows.first?.tabGroup?.selectedWindow?.title ?? "")”, edited \(windows.filter(\.isDocumentEdited).map(\.title))")
+                fflush(stdout)
             }
         }
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") {
@@ -718,6 +798,76 @@ import os
         if let tv = view as? NSTextView { return tv }
         for sub in view.subviews { if let tv = findTextView(in: sub) { return tv } }
         return nil
+    }
+}
+
+/// The top bar's row laid out as `EditorScreen.topBar` does, around a tab
+/// strip of made-up tabs, for `-KiriRenderTabs`.
+private struct TabStripSample: View {
+    let caption: String
+    let tabs: [HoneyTab<Int>]
+    let selected: Int
+    var sidebar = false
+    let width: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted).padding(.leading, Honey.gap)
+            HStack(spacing: 8) {
+                HoneyGlassGroup {
+                    HStack(spacing: 8) {
+                        if sidebar {
+                            Button {} label: { Label("Hide Sidebar", systemImage: "sidebar.left") }.buttonStyle(.honeyIcon)
+                        }
+                        HoneyTabStrip(tabs, selection: .constant(selected), onClose: { _ in })
+                        Button {} label: { Label("New Tab", systemImage: "plus") }.buttonStyle(.honeyIcon)
+                    }
+                }
+                Spacer(minLength: 0)
+                HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: .idle) {}
+            }
+            .padding(.leading, 84)
+            .frame(height: 32)
+            .padding(.horizontal, Honey.gap)
+            .padding(.vertical, 6)
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    static let names = ["Greeter.swift", "README.md", "config.yaml", "package.json", "app.ts", "index.html", "styles.css",
+                        "server.ts", "main.rs", "lib.rs", "Notes.txt", "x"] + (1...8).map { "extra-\($0).txt" }
+
+    static func tabs(_ titles: [String], dirty: Set<Int> = [1]) -> [HoneyTab<Int>] {
+        titles.enumerated().map { HoneyTab(id: $0.offset, title: $0.element, dirty: dirty.contains($0.offset)) }
+    }
+
+    @MainActor static func sheet(width: CGFloat) -> some View {
+        let long = ["AppDelegate+NotificationHandling.swift", "a-very-long-configuration-file-name.production.yaml", "x"]
+        var rows: [TabStripSample] = [
+            TabStripSample(caption: "1 tab", tabs: tabs(["sample.swift"], dirty: []), selected: 0, width: width),
+            TabStripSample(caption: "1 tab, unsaved", tabs: tabs(["sample.swift"], dirty: [0]), selected: 0, width: width),
+            TabStripSample(caption: "1 long name", tabs: tabs([long[0]], dirty: []), selected: 0, width: width),
+        ]
+        for count in [4, 8, 12, 20] {
+            for selected in Set([0, count / 2, count - 1]).sorted() {
+                rows.append(TabStripSample(caption: "\(count) tabs, tab \(selected + 1) selected, tab 2 unsaved",
+                                           tabs: tabs(Array(names.prefix(count))), selected: selected, width: width))
+            }
+        }
+        for selected in 0..<3 {
+            rows.append(TabStripSample(caption: "long names, tab \(selected + 1) selected", tabs: tabs(long), selected: selected,
+                                       width: width))
+        }
+        rows.append(TabStripSample(caption: "folder window, 4 tabs", tabs: tabs(Array(names.prefix(4))), selected: 3,
+                                   sidebar: true, width: width))
+        rows.append(TabStripSample(caption: "folder window, 12 tabs", tabs: tabs(Array(names.prefix(12))), selected: 6,
+                                   sidebar: true, width: width))
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows.indices, id: \.self) { rows[$0] }
+        }
+        .background(Color.honeyCanvas)
+        .environment(\.honeyOffscreen, true)
+        .honeyRoot(HoneyAppearance())
     }
 }
 #endif

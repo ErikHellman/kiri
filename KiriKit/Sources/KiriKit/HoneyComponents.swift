@@ -1,4 +1,5 @@
 #if canImport(SwiftUI)
+import AppKit
 import SwiftUI
 
 // Honey components for Kiri, built on the tokens, motion and glass layers.
@@ -21,15 +22,29 @@ public struct HoneyTab<ID: Hashable & Sendable>: Identifiable, Sendable {
     }
 }
 
+public extension EnvironmentValues {
+    /// Set for pictures drawn with `ImageRenderer`, which leaves scroll
+    /// views empty: the tab strip then lays its tabs out without one.
+    @Entry var honeyOffscreen = false
+}
+
 /// Open documents as a glass strip, with an amber pill that slides to the
 /// selected tab (§7.4).
+///
+/// The strip is as wide as its titles when there is room. With less, the
+/// selected tab keeps its whole title and the others share the rest, their
+/// names shortened in the middle; once they are down to their minimum the
+/// strip scrolls inside its capsule and a button at its end lists every tab
+/// (`TabWidths`, `TabText`).
 public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     let tabs: [HoneyTab<ID>]
     @Binding var selection: ID
     let onClose: ((ID) -> Void)?
     @Namespace private var pill
+    @FocusState private var focused: ID?
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
+    @Environment(\.honeyOffscreen) private var offscreen
 
     public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, onClose: ((ID) -> Void)? = nil) {
         self.tabs = tabs
@@ -38,78 +53,326 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     }
 
     public var body: some View {
+        let natural = tabs.map { HoneyTabMetrics.naturalWidth($0, selected: $0.id == selection) }
+        let whole = natural.reduce(0) { $0 + min($1, HoneyTabMetrics.cap) }
+            + HoneyTabMetrics.spacing * CGFloat(max(tabs.count - 1, 0)) + 2 * HoneyTabMetrics.inset
+        // As wide as the titles, or as wide as there is room for.
+        GeometryReader { geometry in
+            strip(natural: natural, width: geometry.size.width)
+        }
+        .frame(maxWidth: whole)
+        .frame(height: HoneyTabMetrics.height + 2 * HoneyTabMetrics.inset)
+    }
+
+    private func strip(natural: [CGFloat], width: CGFloat) -> some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
-        HStack(spacing: 2) {
-            ForEach(tabs) { tab in
-                HoneyTabItem(tab: tab, selected: tab.id == selection, pill: pill, closable: onClose != nil) {
-                    withAnimation(motion.shape) { selection = tab.id }
+        let layout = TabWidths.allocate(
+            natural: natural.map(Double.init), minimum: tabs.map { Double(HoneyTabMetrics.minimumWidth($0)) },
+            selected: tabs.firstIndex { $0.id == selection }, available: Double(width - 2 * HoneyTabMetrics.inset),
+            spacing: Double(HoneyTabMetrics.spacing), cap: Double(HoneyTabMetrics.cap),
+            overflowReserve: Double(HoneyTabMetrics.moreWidth + HoneyTabMetrics.spacing))
+        let content = CGFloat(layout.contentWidth(spacing: Double(HoneyTabMetrics.spacing)))
+        let viewport = layout.overflows ? CGFloat(layout.viewport) : content
+        let ids = tabs.map(\.id)
+        return HStack(spacing: HoneyTabMetrics.spacing) {
+            Group {
+                if offscreen {
+                    row(layout, motion)
+                        .offset(x: -HoneyTabMetrics.offsetShowing(tabs.firstIndex { $0.id == selection },
+                                                                  widths: layout.widths, viewport: viewport))
+                        .frame(width: viewport, alignment: .leading)
+                        .clipped()
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) { row(layout, motion) }
+                            .scrollIndicators(.hidden)
+                            .scrollDisabled(!layout.overflows)
+                            .frame(width: viewport)
+                            .accessibilityLabel("Tabs")
+                            // The selected tab stays in view, and so does
+                            // the one the keyboard is on.
+                            .onChange(of: selection, initial: true) { old, new in
+                                withAnimation(old == new ? nil : motion.shape) { proxy.scrollTo(new) }
+                            }
+                            .onChange(of: ids) { withAnimation(motion.shape) { proxy.scrollTo(selection) } }
+                            .onChange(of: viewport) { proxy.scrollTo(selection) }
+                            .onChange(of: focused) { _, id in
+                                if let id { withAnimation(motion.quick) { proxy.scrollTo(id) } }
+                            }
+                    }
+                }
+            }
+            // Tabs scrolled out of view end at the capsule's edge.
+            .clipShape(Capsule())
+            if layout.overflows {
+                more(hidden: layout.hidden, motion)
+            }
+        }
+        .padding(HoneyTabMetrics.inset)
+        .honeyGlass(.chrome)
+        // Tabs that open and close elsewhere (another window, a menu
+        // command) move the strip as a click in it does.
+        .animation(motion.shape, value: ids)
+        .animation(motion.shape, value: selection)
+    }
+
+    private func row(_ layout: TabWidths.Result, _ motion: HoneyMotion) -> some View {
+        HStack(spacing: HoneyTabMetrics.spacing) {
+            ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                HoneyTabItem(tab: tab, width: index < layout.widths.count ? CGFloat(layout.widths[index]) : 0,
+                             selected: tab.id == selection, pill: pill, closable: onClose != nil,
+                             focused: $focused) {
+                    select(tab.id, motion)
                 } close: {
                     onClose?(tab.id)
                 }
+                .id(tab.id)
+                // A new tab grows in from nothing and a closed one
+                // collapses; with reduced motion they fade.
+                .transition(motion.reduced ? .opacity : AnyTransition(HoneyTabGrow()))
             }
         }
-        .padding(3)
-        .honeyGlass(.chrome)
+    }
+
+    private func select(_ id: ID, _ motion: HoneyMotion) {
+        withAnimation(motion.shape) { selection = id }
+    }
+
+    /// "5 ⌄" at the end of a strip that scrolls: a menu of every tab, in
+    /// order, for the ones out of view.
+    private func more(hidden: Int, _ motion: HoneyMotion) -> some View {
+        Menu {
+            moreItems(motion)
+        } label: {
+            HStack(spacing: 3) {
+                Text("\(hidden)").font(.honey(.caption, weight: .bold)).monospacedDigit()
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .heavy))
+            }
+            .foregroundStyle(Color.honeyMuted)
+            .frame(width: HoneyTabMetrics.moreWidth, height: HoneyTabMetrics.height)
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .modifier(HoneyFocusRing())
+        .help("All \(tabs.count) tabs")
+        // A menu button with a name, in place of a bare number and arrow.
+        .accessibilityRepresentation {
+            Menu("All tabs, \(hidden) more") { moreItems(motion) }
+        }
+        .transition(.opacity)
+    }
+
+    /// Every tab, with a check on the selected one and a dot after the
+    /// unsaved ones.
+    private func moreItems(_ motion: HoneyMotion) -> some View {
+        ForEach(tabs) { tab in
+            Toggle(tab.dirty ? "\(tab.title) •" : tab.title,
+                   isOn: Binding(get: { tab.id == selection }, set: { if $0 { select(tab.id, motion) } }))
+        }
+    }
+}
+
+/// The tab strip's measures, and its titles as they will be drawn.
+@MainActor private enum HoneyTabMetrics {
+    static let height: CGFloat = 26
+    /// Between the capsule and the tabs.
+    static let inset: CGFloat = 3
+    static let spacing: CGFloat = 2
+    /// Before the title, and after the trailing slot.
+    static let leading: CGFloat = 12
+    static let trailing: CGFloat = 8
+    /// The dirty dot and the close button's glyph sit in a 14 pt slot after
+    /// the title; the close button's hit area is 24 pt around the same centre.
+    static let slot: CGFloat = 14
+    static let slotGap: CGFloat = 6
+    static let closeTarget: CGFloat = 24
+    /// No tab's title makes it wider than this.
+    static let cap: CGFloat = 220
+    /// The narrowest a tab that isn't selected gets before the strip scrolls.
+    static let minimum: CGFloat = 56
+    static let moreWidth: CGFloat = 40
+
+    /// Everything in a tab that isn't its title.
+    static var chrome: CGFloat { leading + slotGap + slot + trailing }
+
+    static func naturalWidth<ID>(_ tab: HoneyTab<ID>, selected: Bool) -> CGFloat {
+        titleWidth(tab.title, selected: selected) + chrome
+    }
+
+    /// A dirty tab keeps room for its dot beside the shortened title.
+    static func minimumWidth<ID>(_ tab: HoneyTab<ID>) -> CGFloat {
+        minimum + (tab.dirty ? slot + slotGap : 0)
+    }
+
+    /// The room for the title in a tab `width` wide. A tab with nothing in
+    /// its trailing slot lends that room to a title that needs it.
+    static func titleRoom(width: CGFloat, slotInUse: Bool) -> CGFloat {
+        max(width - leading - (slotInUse ? slotGap + slot + trailing : leading), 0)
+    }
+
+    static func titleWidth(_ title: String, selected: Bool) -> CGFloat {
+        HoneyText.width(title, weight: selected ? .bold : .semibold, size: 13)
+    }
+
+    /// The title, shortened to `room` (`TabText`).
+    static func title<ID>(_ tab: HoneyTab<ID>, selected: Bool, room: CGFloat) -> String {
+        TabText.middleTruncated(tab.title, toFit: Double(room)) { Double(titleWidth($0, selected: selected)) }
+    }
+
+    /// How far a strip that can't scroll (an offscreen picture) is moved to
+    /// show the selected tab: as little as a scroll view would.
+    static func offsetShowing(_ selected: Int?, widths: [Double], viewport: CGFloat) -> CGFloat {
+        guard let selected, selected < widths.count else { return 0 }
+        let end = widths[...selected].reduce(0, +) + Double(spacing) * Double(selected)
+        return max(CGFloat(end) - viewport, 0)
+    }
+}
+
+/// Widths of Honey UI text, for layouts that have to know them before
+/// SwiftUI lays the text out.
+@MainActor enum HoneyText {
+    private struct Key: Hashable {
+        let text: String
+        let weight: CGFloat
+        let size: CGFloat
+    }
+
+    private static var widths: [Key: CGFloat] = [:]
+
+    /// The width of `text` in Nunito at a Honey size (before `textScale`),
+    /// rounded up to half a point, as SwiftUI sizes text on a Retina display.
+    static func width(_ text: String, weight: NSFont.Weight, size: CGFloat) -> CGFloat {
+        let size = size * Honey.textScale
+        let key = Key(text: text, weight: weight.rawValue, size: size)
+        if let known = widths[key] { return known }
+        let family = NSFontDescriptor(fontAttributes: [.family: "Nunito"])
+            .addingAttributes([.traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue]])
+        let font = NSFont(descriptor: family, size: size) ?? .systemFont(ofSize: size, weight: weight)
+        let width = ceil((text as NSString).size(withAttributes: [.font: font]).width * 2) / 2
+        if widths.count > 4096 { widths.removeAll(keepingCapacity: true) }
+        widths[key] = width
+        return width
     }
 }
 
 private struct HoneyTabItem<ID: Hashable & Sendable>: View {
     let tab: HoneyTab<ID>
+    let width: CGFloat
     let selected: Bool
     let pill: Namespace.ID
     let closable: Bool
+    let focused: FocusState<ID?>.Binding
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
 
+    /// The close button shows: on hover, and on the selected tab unless its
+    /// place is taken by the dirty dot.
+    private var closes: Bool { closable && (hovering || (selected && !tab.dirty)) }
+
     var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
-        HStack(spacing: 6) {
-            Text(tab.title)
+        let room = HoneyTabMetrics.titleRoom(width: width, slotInUse: closes || tab.dirty)
+        // A real button: Tab reaches it with Keyboard Navigation on, Space
+        // or Return selects, and VoiceOver hears a button with its state.
+        Button(action: select) {
+            Text(HoneyTabMetrics.title(tab, selected: selected, room: room))
                 .font(.honey(.subheadline, weight: selected ? .bold : .semibold))
                 .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
                 .lineLimit(1)
-            trailing
-                .frame(width: 14, height: 14)
+                // Already shortened to fit, with the extension kept;
+                // SwiftUI must not shorten it again its own way.
+                .fixedSize()
+                .padding(.leading, HoneyTabMetrics.leading)
+                .frame(width: width, height: HoneyTabMetrics.height, alignment: .leading)
+                .background {
+                    if selected {
+                        Capsule().fill(Color.honeyAccentSoft)
+                            .matchedGeometryEffect(id: "selection", in: pill)
+                    } else if hovering {
+                        Capsule().fill(Color.honeySurface2.opacity(0.7))
+                    }
+                }
+                .contentShape(Capsule())
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 8)
-        .frame(height: 26)
-        .background {
-            if selected {
-                Capsule().fill(Color.honeyAccentSoft)
-                    .matchedGeometryEffect(id: "selection", in: pill)
-            } else if hovering {
-                Capsule().fill(Color.honeySurface2.opacity(0.7))
-            }
-        }
-        .contentShape(Capsule())
-        .onTapGesture(perform: select)
-        .onHover { h in withAnimation(motion.quick) { hovering = h } }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .buttonStyle(HoneyTabButtonStyle())
+        .focused(focused, equals: tab.id)
+        .focusEffectDisabled()
+        .onKeyPress(.return) { select(); return .handled }
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(tab.dirty ? "Edited" : "")
         .accessibilityAction(named: "Close") { close() }
+        .overlay {
+            Capsule().strokeBorder(Color.honeyFocus, lineWidth: focused.wrappedValue == tab.id ? 2 : 0)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .trailing) {
+            trailing
+                .frame(width: HoneyTabMetrics.closeTarget, height: HoneyTabMetrics.closeTarget)
+                // Centred where the 14 pt slot is.
+                .padding(.trailing, HoneyTabMetrics.trailing + HoneyTabMetrics.slot / 2 - HoneyTabMetrics.closeTarget / 2)
+        }
+        .onHover { h in withAnimation(motion.quick) { hovering = h } }
     }
 
     /// Dirty dot, or the close button on hover (shape tells state, §1).
+    /// The glyph is 9 pt; the button takes clicks in the whole 24 pt square.
     @ViewBuilder private var trailing: some View {
-        if closable && (hovering || (selected && !tab.dirty)) {
+        if closes {
             Button(action: close) {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(Color.honeyMuted)
-                    .frame(width: 14, height: 14)
-                    .contentShape(Circle())
+                    .frame(width: HoneyTabMetrics.closeTarget, height: HoneyTabMetrics.closeTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The tab itself carries the Close action, for VoiceOver and
+            // the keyboard (⌘W); this one is for the pointer.
+            .focusable(false)
+            .accessibilityHidden(true)
             .transition(.scale.combined(with: .opacity))
             .help("Close")
         } else if tab.dirty {
             Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
+                .allowsHitTesting(false)
                 .transition(.scale.combined(with: .opacity))
         }
+    }
+}
+
+/// A tab draws its own states (selected, hover, focus); pressing adds none.
+private struct HoneyTabButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { configuration.label }
+}
+
+/// A tab opening or closing: revealed from its leading edge while its
+/// neighbours make room, so it reads as growing in from zero width.
+private struct HoneyTabGrow: Transition {
+    func body(content: Content, phase: TransitionPhase) -> some View {
+        content
+            .mask { Rectangle().scaleEffect(x: phase.isIdentity ? 1 : 0, anchor: .leading) }
+            .opacity(phase.isIdentity ? 1 : 0)
+    }
+}
+
+/// The Honey focus ring (§12) around a capsule control, in place of the
+/// system's, while the keyboard is on it.
+private struct HoneyFocusRing: ViewModifier {
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($focused)
+            .focusEffectDisabled()
+            .overlay {
+                Capsule().strokeBorder(Color.honeyFocus, lineWidth: focused ? 2 : 0).allowsHitTesting(false)
+            }
     }
 }
 

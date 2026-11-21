@@ -122,7 +122,6 @@ struct EditorScreen: View {
                         HoneyTabStrip(tabs.items.map { HoneyTab(id: $0.id, title: $0.title, dirty: $0.dirty) },
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
                                       onClose: { tabs.close($0) })
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Button {
                         NSDocumentController.shared.newDocument(nil)
