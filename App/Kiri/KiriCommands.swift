@@ -24,10 +24,12 @@ struct KiriCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
-            Button("Install Command Line Tool…") { CLIInstaller.install() }
             // With the gear macOS gives a Settings scene's own item.
             Button("Settings…", systemImage: "gear") { openWindow(id: SettingsView.windowID) }
                 .keyboardShortcut(Keys.settings)
+            // Below Settings…, where apps keep such one-time setup. Settings
+            // and the first-run hint offer it too, and say whether it is done.
+            Button("Install Command Line Tool…") { CLIInstaller.install() }
         }
 
         CommandGroup(before: .sidebar) {

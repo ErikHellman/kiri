@@ -35,6 +35,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.letterFadeKey) private var letterFade = false
+    @State private var commandLineTool = CommandLineTool.shared
 
     var body: some View {
         panel
@@ -92,10 +93,35 @@ struct SettingsView: View {
             row("Wrap lines", detail: "Wrap long lines at the window edge.") {
                 Toggle("Wrap lines", isOn: $wrapLines).toggleStyle(.switch).labelsHidden()
             }
+            commandLineToolRow
         }
         .padding(24)
         .frame(width: 600)
         .honeyPanel()
+    }
+
+    /// The `kiri` command: whether a terminal has it, and where; a button
+    /// to install it until it is this copy's.
+    @ViewBuilder private var commandLineToolRow: some View {
+        switch commandLineTool.status {
+        case .installed:
+            row("Command line tool", detail: "kiri opens files and folders from a terminal. It is at \(CLIInstaller.linkPath).") {
+                Label("Installed", systemImage: "checkmark")
+                    .font(.honey(.subheadline, weight: .semibold)).foregroundStyle(Color.honeyMuted)
+            }
+        case .missing:
+            row("Command line tool", detail: "Not installed. kiri opens files and folders from a terminal; installing links \(CLIInstaller.linkPath) to this app.") {
+                Button("Install") { CLIInstaller.install() }.buttonStyle(.honeyGlass)
+                    .accessibilityLabel("Install Command Line Tool")
+            }
+        case .other(let path):
+            // The app the script is in, not the script.
+            let app = path.hasSuffix("/Contents/Resources/kiri") ? String(path.dropLast("/Contents/Resources/kiri".count)) : path
+            row("Command line tool", detail: "\(CLIInstaller.linkPath) opens another copy of Kiri (\(TabNames.abbreviatingHome(app, home: NSHomeDirectory()))). Install links it to this one.") {
+                Button("Install") { CLIInstaller.install() }.buttonStyle(.honeyGlass)
+                    .accessibilityLabel("Install Command Line Tool")
+            }
+        }
     }
 
     private func row<C: View>(_ title: String, detail: String, @ViewBuilder control: () -> C) -> some View {
