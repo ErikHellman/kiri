@@ -17,6 +17,7 @@ struct KiriCommands: Commands {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
+    @AppStorage(Prefs.colorThemeKey) private var colorTheme = Honey.Theme.honey.id
     @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @Environment(\.openWindow) private var openWindow
@@ -49,7 +50,10 @@ struct KiriCommands: Commands {
             Toggle("Wrap Lines", isOn: $wrapLines)
                 .keyboardShortcut(Keys.wrapLines)
             Divider()
-            Picker("Theme", selection: $theme) {
+            Picker("Theme", selection: $colorTheme) {
+                ForEach(Honey.Theme.all) { Text($0.name).tag($0.id) }
+            }
+            Picker("Appearance", selection: $theme) {
                 ForEach(HoneyTheme.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             Picker("Motion", selection: $motion) {

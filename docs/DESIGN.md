@@ -72,6 +72,15 @@ Warm, distinct hues on the solid editor surface. Every syntax token is ≥ 4.5:1
 
 Highlighting (`KiriSyntax`): Tree-sitter grammars (Swift, JSON, YAML, Markdown with inline, JavaScript, TypeScript/TSX, Python, shell, HTML, CSS) parse on a background queue, incrementally after each burst of edits; only the visible text plus a margin is colored, from a parse that matches the text exactly. Other formats (TOML, INI, XML, Rust, Go, …) use a small fallback lexer for strings, numbers, comments and keywords. Capture names map to tokens in `SyntaxKind(capture:)`.
 
+### 3.2 Color themes
+
+Honey is the default; Settings ▸ Theme (and View ▸ Theme) also offers **Matcha**, **Sakura**, **Tide**, **Lavender** and **Graphite**. Each theme is every token above, recolored, so code keeps using `Honey.fg`, `Color.honeyAccent` and friends and never names a theme.
+
+- `scripts/themes/make-themes.py` generates them from Honey in OKLCH: the neutrals (paper and ink) move to the theme's hue and chroma, the accent family to its accent hue, syntax colors turn a little; lightness is kept, then nudged until every contrast promise in this section holds. It writes `KiriKit/Sources/KiriKit/HoneyThemes.swift` and `scripts/themes/themes.json`. `HoneyTests` checks every theme.
+- `Honey.theme` is the theme in use. SwiftUI colors read it through an `@Observable`, so views redraw on a change; AppKit colors (`NSColor.honey`) look it up when drawn, and the editor redraws on `.honeyThemeDidChange`.
+- `danger`, `danger-fill` and `ok` stay the same in every theme.
+- The Dock icon follows the theme: `scripts/icon/kiri-icon.mjs` draws the icon once per theme from `themes.json` into `App/Kiri/ThemeIcons`, and `ThemeController` sets `NSApp.applicationIconImage`. Finder keeps the Honey icon (macOS has no alternate icons for Mac apps).
+
 ## 4. Type
 
 - **Nunito** (OFL, weights 400/600/700/800, bundled in `KiriKit/Sources/KiriKit/Fonts`) for all UI: `Font.honey(.body, weight:)`.

@@ -3,7 +3,10 @@ import SwiftUI
 
 /// Persisted preferences (UserDefaults keys and helpers).
 enum Prefs {
+    /// Light, dark or system (`HoneyTheme`); shown as "Appearance".
     static let themeKey = "theme"
+    /// The color theme's id (`Honey.Theme`), e.g. "honey" or "tide".
+    static let colorThemeKey = "colorTheme"
     static let motionKey = "motion"
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
@@ -24,6 +27,7 @@ enum Prefs {
 /// Kiri ▸ Settings…: appearance, motion and text size.
 struct SettingsView: View {
     @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
+    @AppStorage(Prefs.colorThemeKey) private var colorTheme = Honey.Theme.honey.id
     @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
@@ -32,7 +36,15 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            row("Theme", detail: "Follow macOS, or always light or dark.") {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Theme").font(.honey(.body, weight: .bold))
+                    Text("Colors for the window, the text and the Dock icon.")
+                        .font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
+                }
+                ThemePicker(selection: $colorTheme)
+            }
+            row("Appearance", detail: "Follow macOS, or always light or dark.") {
                 HoneySegmentedPicker(selection: $theme)
             }
             row("Motion", detail: "System follows Reduce Motion. Reduced keeps fades only.") {
@@ -75,5 +87,79 @@ struct SettingsView: View {
             // Controls keep their natural size; the text column wraps instead.
             control().fixedSize().layoutPriority(1)
         }
+    }
+}
+
+/// The color themes as small previews of the editor, in their own colors.
+struct ThemePicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(Honey.Theme.all) { theme in
+                ThemeSwatch(theme: theme, selected: theme.id == selection) { selection = theme.id }
+            }
+        }
+    }
+}
+
+private struct ThemeSwatch: View {
+    let theme: Honey.Theme
+    let selected: Bool
+    let action: () -> Void
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduce
+
+    private func c(_ t: Honey.Token) -> Color { Color(nsColor: .honeyFixed(theme[t])) }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                preview
+                    .frame(width: 80, height: 58)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Honey.Radius.control.value + 3, style: .continuous)
+                            .strokeBorder(selected ? Color.honeyFocus : Color.clear, lineWidth: 2.5)
+                            .padding(-4)
+                    }
+                Text(theme.name)
+                    .font(.honey(.caption, weight: selected ? .heavy : .semibold))
+                    .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: selected)
+        .accessibilityLabel(theme.name)
+        .accessibilityHint(theme.blurb)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .help(theme.blurb)
+    }
+
+    /// A tiny window: canvas, the accent Save pill and a page of code.
+    private var preview: some View {
+        let shape = RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 3) {
+                Capsule().fill(c(Honey.accentSoft)).frame(width: 22, height: 7)
+                Spacer(minLength: 0)
+                Capsule().fill(c(Honey.accent)).frame(width: 14, height: 7)
+            }
+            VStack(alignment: .leading, spacing: 3.5) {
+                HStack(spacing: 3) { bar(Honey.synKeyword, 12); bar(Honey.synType, 18) }
+                HStack(spacing: 3) { bar(Honey.synFunction, 16); bar(Honey.synString, 20) }
+                HStack(spacing: 3) { bar(Honey.synComment, 26) }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(c(Honey.surface), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .padding(5)
+        .background(c(Honey.canvas), in: shape)
+        .overlay(shape.strokeBorder(c(Honey.line), lineWidth: 1))
+    }
+
+    private func bar(_ t: Honey.Token, _ w: CGFloat) -> some View {
+        Capsule().fill(c(t)).frame(width: w, height: 4)
     }
 }

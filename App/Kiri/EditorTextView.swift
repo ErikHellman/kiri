@@ -152,6 +152,14 @@ final class KiriTextView: NSTextView {
         effects?.updateColors()
         needsDisplay = true
     }
+
+    /// Settings ▸ Theme changed: the colors are dynamic, but layers and the
+    /// rendered text fragments hold the old ones until redrawn.
+    func themeDidChange() {
+        effects?.updateColors()
+        if let tlm = textLayoutManager { tlm.invalidateLayout(for: tlm.documentRange) }
+        needsDisplay = true
+    }
 }
 
 /// Line numbers for the visible part of a TextKit 2 text view.
@@ -239,6 +247,9 @@ final class EditorContainerView: NSView {
     let textView: KiriTextView
     let gutter = LineNumberGutter()
     private var gutterWidth: NSLayoutConstraint!
+    nonisolated(unsafe) private var themeObserver: NSObjectProtocol?
+
+    deinit { themeObserver.map(NotificationCenter.default.removeObserver) }
 
     override init(frame: NSRect) {
         textView = KiriTextView(usingTextLayoutManager: true)
@@ -302,6 +313,13 @@ final class EditorContainerView: NSView {
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
+        themeObserver = NotificationCenter.default.addObserver(forName: .honeyThemeDidChange, object: nil, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.textView.themeDidChange()
+                self?.gutter.needsDisplay = true
+            }
+        }
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification,
                                                object: scrollView.contentView)

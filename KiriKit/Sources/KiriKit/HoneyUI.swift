@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import AppKit
 import CoreText
+import Observation
 import SwiftUI
 
 // The SwiftUI side of Honey (docs/DESIGN.md): colors, type, motion and the
@@ -22,48 +23,84 @@ public extension Honey {
 
 @MainActor private var fontsRegistered = false
 
+extension Honey.Token {
+    /// The value for an appearance (dark and high-contrast variants).
+    func value(appearance a: NSAppearance) -> UInt32 {
+        let match = a.bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark,
+                                       .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                                       .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark])
+        let dark: Set<NSAppearance.Name> = [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
+                                            .accessibilityHighContrastVibrantDark]
+        let high: Set<NSAppearance.Name> = [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                                            .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark]
+        return value(dark: match.map(dark.contains) ?? false, highContrast: match.map(high.contains) ?? false)
+    }
+}
+
 // MARK: Colors
 
-public extension Color {
-    /// A Honey color token that follows light, dark and increased contrast.
-    static func honey(_ t: Honey.Token) -> Color { Color(nsColor: .honey(t)) }
+/// The color theme in use. Views read it through the `honey…` colors, so
+/// SwiftUI redraws them when it changes (Observation tracks the read).
+@Observable public final class HoneyThemeState: @unchecked Sendable {
+    public static let shared = HoneyThemeState()
+    public var theme: Honey.Theme = .honey
+}
 
-    static let honeyCanvas = honey(Honey.canvas)
-    static let honeySurface = honey(Honey.surface)
-    static let honeySurface2 = honey(Honey.surface2)
-    static let honeySurface3 = honey(Honey.surface3)
-    static let honeyLine = honey(Honey.line)
-    static let honeyFg = honey(Honey.fg)
-    static let honeyMuted = honey(Honey.fgMuted)
-    static let honeyAccent = honey(Honey.accent)
-    static let honeyAccentFg = honey(Honey.accentFg)
-    static let honeyAccentInk = honey(Honey.accentInk)
-    static let honeyAccentSoft = honey(Honey.accentSoft)
-    static let honeyFocus = honey(Honey.focus)
-    static let honeyDanger = honey(Honey.danger)
-    static let honeyDangerFill = honey(Honey.dangerFill)
-    static let honeyOK = honey(Honey.ok)
-    static let honeySelection = honey(Honey.selection)
-    static let honeyCurrentLine = honey(Honey.currentLine)
-    static let honeyGutter = honey(Honey.gutter)
-    static let honeyCaret = honey(Honey.caret)
+public extension Honey {
+    /// The color theme in use; setting it recolors every window.
+    static var theme: Theme {
+        get { HoneyThemeState.shared.theme }
+        set {
+            guard newValue != HoneyThemeState.shared.theme else { return }
+            HoneyThemeState.shared.theme = newValue
+            NotificationCenter.default.post(name: .honeyThemeDidChange, object: nil)
+        }
+    }
+}
+
+public extension Notification.Name {
+    /// Posted after `Honey.theme` changes. AppKit views that cache colors
+    /// (layers, rendered text) redraw on it.
+    static let honeyThemeDidChange = Notification.Name("HoneyThemeDidChange")
+}
+
+public extension Color {
+    /// A Honey color token in the current theme, following light, dark and
+    /// increased contrast.
+    static func honey(_ t: Honey.Token) -> Color { Color(nsColor: .honeyFixed(Honey.theme[t])) }
+
+    static var honeyCanvas: Color { honey(Honey.canvas) }
+    static var honeySurface: Color { honey(Honey.surface) }
+    static var honeySurface2: Color { honey(Honey.surface2) }
+    static var honeySurface3: Color { honey(Honey.surface3) }
+    static var honeyLine: Color { honey(Honey.line) }
+    static var honeyFg: Color { honey(Honey.fg) }
+    static var honeyMuted: Color { honey(Honey.fgMuted) }
+    static var honeyAccent: Color { honey(Honey.accent) }
+    static var honeyAccentFg: Color { honey(Honey.accentFg) }
+    static var honeyAccentInk: Color { honey(Honey.accentInk) }
+    static var honeyAccentSoft: Color { honey(Honey.accentSoft) }
+    static var honeyFocus: Color { honey(Honey.focus) }
+    static var honeyDanger: Color { honey(Honey.danger) }
+    static var honeyDangerFill: Color { honey(Honey.dangerFill) }
+    static var honeyOK: Color { honey(Honey.ok) }
+    static var honeySelection: Color { honey(Honey.selection) }
+    static var honeyCurrentLine: Color { honey(Honey.currentLine) }
+    static var honeyGutter: Color { honey(Honey.gutter) }
+    static var honeyCaret: Color { honey(Honey.caret) }
 }
 
 public extension NSColor {
-    /// A Honey color token that follows light, dark and increased contrast,
-    /// for AppKit views such as the editor's text view.
+    /// A Honey color token that follows the current theme, light, dark and
+    /// increased contrast, for AppKit views such as the editor's text view.
+    /// The theme is looked up when the color is drawn.
     static func honey(_ t: Honey.Token) -> NSColor {
-        NSColor(name: nil) { a in
-            let match = a.bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark,
-                                           .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-                                           .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark])
-            let dark: Set<NSAppearance.Name> = [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
-                                                .accessibilityHighContrastVibrantDark]
-            let high: Set<NSAppearance.Name> = [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-                                                .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark]
-            return NSColor(honeyRGB: t.value(dark: match.map(dark.contains) ?? false,
-                                             highContrast: match.map(high.contains) ?? false))
-        }
+        NSColor(name: nil) { a in NSColor(honeyRGB: Honey.theme[t].value(appearance: a)) }
+    }
+
+    /// A token as given (no theme lookup), following light, dark and contrast.
+    static func honeyFixed(_ t: Honey.Token) -> NSColor {
+        NSColor(name: nil) { a in NSColor(honeyRGB: t.value(appearance: a)) }
     }
 
     /// An sRGB color from 0xRRGGBB.

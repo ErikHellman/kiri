@@ -1,0 +1,1292 @@
+[
+ {
+  "id": "honey",
+  "name": "Honey",
+  "blurb": "Warm cream and amber. Kiri's own.",
+  "icon": {
+   "canvas": "#F5EEE1",
+   "surface": "#FFFCF6",
+   "glassTop": "#FFFDF8",
+   "surface2": "#F2E8D6",
+   "surface3": "#EADCC4",
+   "backLow": "#D9C3A0",
+   "fg": "#3B2A2F",
+   "accent": "#E09A2D",
+   "accentHi": "#F5B656",
+   "accentInk": "#995A05",
+   "focus": "#B8700E",
+   "accentSoft": "#FBE7C2",
+   "tileHi": "#FFCB73",
+   "tileLo": "#C47A12",
+   "glow": "#FFF3D6",
+   "comb": "#FFF6E0",
+   "rimLo": "#FFE2A8",
+   "sealRim": "#FFE3A8",
+   "sealText": "#FFF6E2",
+   "sealLo": "#7A4404",
+   "inkWarm": "#5A3A1A",
+   "inkDeep": "#6B3E00",
+   "inkSeal": "#4A2A00",
+   "keyword": "#9B2C6E",
+   "string": "#4E7A1F",
+   "type": "#1F6F8B"
+  },
+  "tokens": {
+   "canvas": [
+    "#F5EEE1",
+    "#16120E",
+    "#FAF6EE",
+    "#000000"
+   ],
+   "surface": [
+    "#FFFCF6",
+    "#251F18",
+    "#FFFFFF",
+    "#0B0907"
+   ],
+   "surface-2": [
+    "#F2E8D6",
+    "#30281F",
+    "#F2EBDF",
+    "#1A1510"
+   ],
+   "surface-3": [
+    "#EADCC4",
+    "#3B3127",
+    "#E6DCCB",
+    "#262019"
+   ],
+   "line": [
+    "#E8DAC3",
+    "#3A3027",
+    "#6B5A4E",
+    "#A89684"
+   ],
+   "fg": [
+    "#3B2A2F",
+    "#F6ECE0",
+    "#1A0F12",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#76615A",
+    "#B5A492",
+    "#3F302B",
+    "#E5D8C8"
+   ],
+   "accent": [
+    "#E09A2D",
+    "#F2A93B",
+    "#E09A2D",
+    "#F2A93B"
+   ],
+   "accent-fg": [
+    "#2A1A08",
+    "#2A1A08",
+    "#1A0F04",
+    "#1A0F04"
+   ],
+   "accent-ink": [
+    "#995A05",
+    "#F5B656",
+    "#6B3E00",
+    "#FFC978"
+   ],
+   "accent-soft": [
+    "#FBE7C2",
+    "#47331A",
+    "#FBE7C2",
+    "#47331A"
+   ],
+   "focus": [
+    "#B8700E",
+    "#F2A93B",
+    "#6B3E00",
+    "#FFC978"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#F6D9A0",
+    "#5C4220",
+    "#F2C97A",
+    "#6B4A1C"
+   ],
+   "current-line": [
+    "#FAF3E6",
+    "#2C251D",
+    "#F7F0E2",
+    "#16120E"
+   ],
+   "gutter": [
+    "#9A8478",
+    "#7E6E60",
+    "#3F302B",
+    "#E5D8C8"
+   ],
+   "syn-keyword": [
+    "#9B2C6E",
+    "#F08BC0",
+    "#8D2864",
+    "#F6A8D0"
+   ],
+   "syn-string": [
+    "#4E7A1F",
+    "#A8D58A",
+    "#395917",
+    "#BFE6A8"
+   ],
+   "syn-number": [
+    "#A34F00",
+    "#F5B656",
+    "#7F3E00",
+    "#FFC978"
+   ],
+   "syn-comment": [
+    "#7C6A5F",
+    "#A08E7E",
+    "#5B4E46",
+    "#C9BAAC"
+   ],
+   "syn-function": [
+    "#1F6F8B",
+    "#7FC6E0",
+    "#18566C",
+    "#A6DCEE"
+   ],
+   "syn-type": [
+    "#6A3FA0",
+    "#C3A6F5",
+    "#562F87",
+    "#D8C4FA"
+   ],
+   "syn-property": [
+    "#8A4B2A",
+    "#F0A07A",
+    "#6E3A1F",
+    "#F7BFA0"
+   ],
+   "syn-tag": [
+    "#B23A2A",
+    "#FF8A70",
+    "#8F2F22",
+    "#FFB3A0"
+   ],
+   "syn-attribute": [
+    "#8A5A00",
+    "#F2C46B",
+    "#6E4800",
+    "#F7D592"
+   ],
+   "syn-punctuation": [
+    "#76615A",
+    "#B5A492",
+    "#5D4D47",
+    "#D5C7B8"
+   ],
+   "syn-heading": [
+    "#995A05",
+    "#F5B656",
+    "#744404",
+    "#FFC978"
+   ],
+   "syn-escape": [
+    "#A8327A",
+    "#F7A8D8",
+    "#8B2965",
+    "#FAC4E4"
+   ]
+  }
+ },
+ {
+  "id": "matcha",
+  "name": "Matcha",
+  "blurb": "Green tea and rice paper.",
+  "icon": {
+   "canvas": "#EEF0E4",
+   "surface": "#FCFDF7",
+   "glassTop": "#FDFEF9",
+   "surface2": "#E8EBDB",
+   "surface3": "#DDE1CA",
+   "backLow": "#C5CAA9",
+   "fg": "#342F23",
+   "accent": "#87BC60",
+   "accentHi": "#A0D580",
+   "accentInk": "#57772A",
+   "focus": "#6A9239",
+   "accentSoft": "#D9F2D2",
+   "tileHi": "#B1E69A",
+   "tileLo": "#729D41",
+   "glow": "#E6FBE3",
+   "comb": "#ECFCEA",
+   "rimLo": "#CCF3C2",
+   "sealRim": "#CCF4C3",
+   "sealText": "#EEFCEB",
+   "sealLo": "#445D1C",
+   "inkWarm": "#444520",
+   "inkDeep": "#3A531B",
+   "inkSeal": "#273911",
+   "keyword": "#933180",
+   "string": "#627500",
+   "type": "#0E7283"
+  },
+  "tokens": {
+   "canvas": [
+    "#EEF0E4",
+    "#13130F",
+    "#F6F7F0",
+    "#000000"
+   ],
+   "surface": [
+    "#FCFDF7",
+    "#20211A",
+    "#FFFFFF",
+    "#090A07"
+   ],
+   "surface-2": [
+    "#E8EBDB",
+    "#2A2B21",
+    "#EBEDE2",
+    "#161711"
+   ],
+   "surface-3": [
+    "#DDE1CA",
+    "#333429",
+    "#DCDFCF",
+    "#21221B"
+   ],
+   "line": [
+    "#DBDFC9",
+    "#323329",
+    "#5F5F4F",
+    "#9A9B88"
+   ],
+   "fg": [
+    "#342F23",
+    "#EDEFE3",
+    "#15120A",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#696757",
+    "#A7A996",
+    "#363529",
+    "#DADCCC"
+   ],
+   "accent": [
+    "#87BC60",
+    "#95CD6D",
+    "#87BC60",
+    "#95CD6D"
+   ],
+   "accent-fg": [
+    "#18210E",
+    "#18210E",
+    "#0D1407",
+    "#0D1407"
+   ],
+   "accent-ink": [
+    "#57772A",
+    "#A0D580",
+    "#3A531B",
+    "#B4E49A"
+   ],
+   "accent-soft": [
+    "#D9F2D2",
+    "#2E3C24",
+    "#D9F2D2",
+    "#2E3C24"
+   ],
+   "focus": [
+    "#689037",
+    "#95CD6D",
+    "#3A531B",
+    "#B4E49A"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#C4EAB9",
+    "#3B4E2D",
+    "#AEE09E",
+    "#415A2F"
+   ],
+   "current-line": [
+    "#F3F5E9",
+    "#26271F",
+    "#F0F2E6",
+    "#13130F"
+   ],
+   "gutter": [
+    "#8B8B78",
+    "#727362",
+    "#363529",
+    "#DADCCC"
+   ],
+   "syn-keyword": [
+    "#933180",
+    "#E78ED2",
+    "#862C74",
+    "#EEAADE"
+   ],
+   "syn-string": [
+    "#627500",
+    "#B9D17D",
+    "#485500",
+    "#CDE29E"
+   ],
+   "syn-number": [
+    "#A74A25",
+    "#FFAF62",
+    "#833A1A",
+    "#FFC792"
+   ],
+   "syn-comment": [
+    "#6F6F5F",
+    "#929381",
+    "#515145",
+    "#BDBEAF"
+   ],
+   "syn-function": [
+    "#0E7283",
+    "#7AC8D8",
+    "#0C5866",
+    "#A3DEE7"
+   ],
+   "syn-type": [
+    "#5B45A8",
+    "#B4ABFC",
+    "#48358E",
+    "#CEC7FF"
+   ],
+   "syn-property": [
+    "#8C4837",
+    "#F39C88",
+    "#70372A",
+    "#FABCA9"
+   ],
+   "syn-tag": [
+    "#B23744",
+    "#FF8786",
+    "#8F2C36",
+    "#FFB1AD"
+   ],
+   "syn-attribute": [
+    "#915515",
+    "#FDBE70",
+    "#74440E",
+    "#FFD198"
+   ],
+   "syn-punctuation": [
+    "#696757",
+    "#A7A996",
+    "#525144",
+    "#CACBBB"
+   ],
+   "syn-heading": [
+    "#57772A",
+    "#A0D580",
+    "#3F581E",
+    "#B4E49A"
+   ],
+   "syn-escape": [
+    "#9F378D",
+    "#EEAAE6",
+    "#832D75",
+    "#F4C6EE"
+   ]
+  }
+ },
+ {
+  "id": "sakura",
+  "name": "Sakura",
+  "blurb": "Cherry blossom on soft blush.",
+  "icon": {
+   "canvas": "#F9EBEA",
+   "surface": "#FFFBFB",
+   "glassTop": "#FFFCFC",
+   "surface2": "#F7E4E3",
+   "surface3": "#F0D7D6",
+   "backLow": "#E1BCBB",
+   "fg": "#392B30",
+   "accent": "#F381A1",
+   "accentHi": "#FFA5BA",
+   "accentInk": "#A04B69",
+   "focus": "#C15E80",
+   "accentSoft": "#FFE1E5",
+   "tileHi": "#FFC1CC",
+   "tileLo": "#CF6689",
+   "glow": "#FFEFF1",
+   "comb": "#FFF3F4",
+   "rimLo": "#FFDBE0",
+   "sealRim": "#FFDCE0",
+   "sealText": "#FFF3F5",
+   "sealLo": "#7E3953",
+   "inkWarm": "#5A3739",
+   "inkDeep": "#713248",
+   "inkSeal": "#4F2131",
+   "keyword": "#9F2A61",
+   "string": "#3E7D2F",
+   "type": "#2A6D8F"
+  },
+  "tokens": {
+   "canvas": [
+    "#F9EBEA",
+    "#161111",
+    "#FDF4F4",
+    "#000000"
+   ],
+   "surface": [
+    "#FFFBFB",
+    "#261E1E",
+    "#FFFFFF",
+    "#0B0909"
+   ],
+   "surface-2": [
+    "#F7E4E3",
+    "#312727",
+    "#F5E8E8",
+    "#1A1414"
+   ],
+   "surface-3": [
+    "#F0D7D6",
+    "#3C3030",
+    "#EBD8D7",
+    "#271F1F"
+   ],
+   "line": [
+    "#EED5D4",
+    "#3A2F2F",
+    "#6A595A",
+    "#AA9393"
+   ],
+   "fg": [
+    "#392B30",
+    "#F8EAEA",
+    "#181013",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#736163",
+    "#B7A1A1",
+    "#3D3032",
+    "#E8D5D5"
+   ],
+   "accent": [
+    "#F381A1",
+    "#FF94B1",
+    "#F381A1",
+    "#FF94B1"
+   ],
+   "accent-fg": [
+    "#291219",
+    "#2D161D",
+    "#1C0C11",
+    "#1C0C11"
+   ],
+   "accent-ink": [
+    "#A04B69",
+    "#FFA5BA",
+    "#713248",
+    "#FFBFCC"
+   ],
+   "accent-soft": [
+    "#FFE1E5",
+    "#4C2D35",
+    "#FFE1E5",
+    "#4C2D35"
+   ],
+   "focus": [
+    "#C15E80",
+    "#FF94B1",
+    "#713248",
+    "#FFBFCC"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#FFCED5",
+    "#633944",
+    "#FFBAC5",
+    "#743F4D"
+   ],
+   "current-line": [
+    "#FEF0EF",
+    "#2D2424",
+    "#FBEDEC",
+    "#161111"
+   ],
+   "gutter": [
+    "#988385",
+    "#7F6C6D",
+    "#3D3032",
+    "#E8D5D5"
+   ],
+   "syn-keyword": [
+    "#9F2A61",
+    "#F58AB3",
+    "#902557",
+    "#FAA7C6"
+   ],
+   "syn-string": [
+    "#3D7C2E",
+    "#9CD794",
+    "#2C5A21",
+    "#B5E8B0"
+   ],
+   "syn-number": [
+    "#9B5600",
+    "#EDBB52",
+    "#774200",
+    "#F7CD76"
+   ],
+   "syn-comment": [
+    "#7B696A",
+    "#A18C8C",
+    "#5A4D4E",
+    "#CAB8B8"
+   ],
+   "syn-function": [
+    "#2A6D8F",
+    "#84C4E5",
+    "#20546F",
+    "#A9DBF2"
+   ],
+   "syn-type": [
+    "#733B99",
+    "#CCA3EF",
+    "#5E2B81",
+    "#DFC2F6"
+   ],
+   "syn-property": [
+    "#874E21",
+    "#EDA372",
+    "#6C3C18",
+    "#F4C19B"
+   ],
+   "syn-tag": [
+    "#B13E11",
+    "#FD8D62",
+    "#8E320F",
+    "#FDB598"
+   ],
+   "syn-attribute": [
+    "#845E00",
+    "#E9C86A",
+    "#694B00",
+    "#F0D892"
+   ],
+   "syn-punctuation": [
+    "#736163",
+    "#B7A1A1",
+    "#5A4C4E",
+    "#D7C5C4"
+   ],
+   "syn-heading": [
+    "#A04B69",
+    "#FFA5BA",
+    "#7A384F",
+    "#FFBFCC"
+   ],
+   "syn-escape": [
+    "#AD2F6C",
+    "#FCA7CE",
+    "#8F275A",
+    "#FDC3DD"
+   ]
+  }
+ },
+ {
+  "id": "tide",
+  "name": "Tide",
+  "blurb": "Sea glass and deep water.",
+  "icon": {
+   "canvas": "#E6F1F5",
+   "surface": "#F8FDFF",
+   "glassTop": "#FAFEFF",
+   "surface2": "#DCECF2",
+   "surface3": "#CDE2E9",
+   "backLow": "#ACCDD6",
+   "fg": "#253332",
+   "accent": "#00C0D2",
+   "accentHi": "#2BDBF0",
+   "accentInk": "#007A81",
+   "focus": "#00959E",
+   "accentSoft": "#C1F4FE",
+   "tileHi": "#65EAFF",
+   "tileLo": "#00A0AB",
+   "glow": "#E1F9FF",
+   "comb": "#E8FAFF",
+   "rimLo": "#B4F2FF",
+   "sealRim": "#B7F2FF",
+   "sealText": "#E8FBFF",
+   "sealLo": "#005F64",
+   "inkWarm": "#224850",
+   "inkDeep": "#00555B",
+   "inkSeal": "#003A3F",
+   "keyword": "#972E77",
+   "string": "#59780E",
+   "type": "#177087"
+  },
+  "tokens": {
+   "canvas": [
+    "#E6F1F5",
+    "#0F1415",
+    "#F1F8FA",
+    "#000000"
+   ],
+   "surface": [
+    "#F8FDFF",
+    "#1A2223",
+    "#FFFFFF",
+    "#080A0A"
+   ],
+   "surface-2": [
+    "#DCECF2",
+    "#222B2E",
+    "#E3EEF1",
+    "#121718"
+   ],
+   "surface-3": [
+    "#CDE2E9",
+    "#2A3538",
+    "#D1E0E5",
+    "#1B2324"
+   ],
+   "line": [
+    "#CBE0E7",
+    "#2A3437",
+    "#516164",
+    "#8A9EA2"
+   ],
+   "fg": [
+    "#253332",
+    "#E4F0F3",
+    "#0B1514",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#596A6C",
+    "#98ABB0",
+    "#2A3738",
+    "#CEDDE2"
+   ],
+   "accent": [
+    "#00C0D2",
+    "#00D1E4",
+    "#00C0D2",
+    "#00D1E4"
+   ],
+   "accent-fg": [
+    "#012326",
+    "#012326",
+    "#011517",
+    "#011517"
+   ],
+   "accent-ink": [
+    "#007A81",
+    "#2BDBF0",
+    "#00555B",
+    "#67E9FB"
+   ],
+   "accent-soft": [
+    "#C1F4FE",
+    "#123E43",
+    "#C1F4FE",
+    "#123E43"
+   ],
+   "focus": [
+    "#00939C",
+    "#00D1E4",
+    "#00555B",
+    "#67E9FB"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#9DEBFC",
+    "#135158",
+    "#6FE2F8",
+    "#005D66"
+   ],
+   "current-line": [
+    "#EBF6FA",
+    "#20282A",
+    "#E7F3F7",
+    "#0F1415"
+   ],
+   "gutter": [
+    "#7A8D91",
+    "#647578",
+    "#2A3738",
+    "#CEDDE2"
+   ],
+   "syn-keyword": [
+    "#972E77",
+    "#EC8CC9",
+    "#892A6C",
+    "#F2A9D7"
+   ],
+   "syn-string": [
+    "#59780E",
+    "#B1D383",
+    "#41570D",
+    "#C6E4A3"
+   ],
+   "syn-number": [
+    "#A54C17",
+    "#FBB25B",
+    "#813C0F",
+    "#FFC887"
+   ],
+   "syn-comment": [
+    "#617275",
+    "#83969A",
+    "#475255",
+    "#B1C0C4"
+   ],
+   "syn-function": [
+    "#177087",
+    "#7CC7DC",
+    "#125769",
+    "#A4DDEB"
+   ],
+   "syn-type": [
+    "#6342A4",
+    "#BCA8F9",
+    "#4F328B",
+    "#D3C6FD"
+   ],
+   "syn-property": [
+    "#8B4930",
+    "#F29E81",
+    "#6F3924",
+    "#F9BEA4"
+   ],
+   "syn-tag": [
+    "#B23838",
+    "#FF897B",
+    "#8F2D2D",
+    "#FFB2A7"
+   ],
+   "syn-attribute": [
+    "#8E570B",
+    "#F8C16D",
+    "#714606",
+    "#FCD393"
+   ],
+   "syn-punctuation": [
+    "#596A6C",
+    "#98ABB0",
+    "#465355",
+    "#BDCDD1"
+   ],
+   "syn-heading": [
+    "#007A81",
+    "#2BDBF0",
+    "#005A60",
+    "#67E9FB"
+   ],
+   "syn-escape": [
+    "#A43484",
+    "#F3A9DF",
+    "#872B6D",
+    "#F7C5E9"
+   ]
+  }
+ },
+ {
+  "id": "lavender",
+  "name": "Lavender",
+  "blurb": "Dusky violet and lilac.",
+  "icon": {
+   "canvas": "#F1EDF7",
+   "surface": "#FDFCFF",
+   "glassTop": "#FDFDFF",
+   "surface2": "#ECE6F4",
+   "surface3": "#E1DAED",
+   "backLow": "#CBC1DC",
+   "fg": "#2D2F3A",
+   "accent": "#B894F7",
+   "accentHi": "#CFB3FF",
+   "accentInk": "#715BA7",
+   "focus": "#8B71C9",
+   "accentSoft": "#EFE4FF",
+   "tileHi": "#DEC9FF",
+   "tileLo": "#9679D7",
+   "glow": "#F7F0FF",
+   "comb": "#F9F4FF",
+   "rimLo": "#EDDEFF",
+   "sealRim": "#EDDFFF",
+   "sealText": "#F9F4FF",
+   "sealLo": "#574785",
+   "inkWarm": "#453D59",
+   "inkDeep": "#4F3E76",
+   "inkSeal": "#362A52",
+   "keyword": "#A0295E",
+   "string": "#397D33",
+   "type": "#2C6C90"
+  },
+  "tokens": {
+   "canvas": [
+    "#F1EDF7",
+    "#131216",
+    "#F8F5FB",
+    "#000000"
+   ],
+   "surface": [
+    "#FDFCFF",
+    "#211F25",
+    "#FFFFFF",
+    "#0A090B"
+   ],
+   "surface-2": [
+    "#ECE6F4",
+    "#2B2830",
+    "#EEEAF3",
+    "#17151A"
+   ],
+   "surface-3": [
+    "#E1DAED",
+    "#34313B",
+    "#E0DAE8",
+    "#222026"
+   ],
+   "line": [
+    "#DFD8EA",
+    "#333039",
+    "#5F5C69",
+    "#9B96A7"
+   ],
+   "fg": [
+    "#2D2F3A",
+    "#EFECF6",
+    "#111219",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#666473",
+    "#A9A4B5",
+    "#34333D",
+    "#DCD7E5"
+   ],
+   "accent": [
+    "#B894F7",
+    "#C5A7FF",
+    "#B894F7",
+    "#C5A7FF"
+   ],
+   "accent-fg": [
+    "#1E182C",
+    "#201A2E",
+    "#130F1D",
+    "#130F1D"
+   ],
+   "accent-ink": [
+    "#715BA7",
+    "#CFB3FF",
+    "#4F3E76",
+    "#DCC8FF"
+   ],
+   "accent-soft": [
+    "#EFE4FF",
+    "#3B324D",
+    "#EFE4FF",
+    "#3B324D"
+   ],
+   "focus": [
+    "#8B71C9",
+    "#C5A7FF",
+    "#4F3E76",
+    "#DCC8FF"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#E6D3FF",
+    "#4C4064",
+    "#DCC1FF",
+    "#574875"
+   ],
+   "current-line": [
+    "#F6F2FC",
+    "#27252C",
+    "#F3EEF9",
+    "#131216"
+   ],
+   "gutter": [
+    "#8A8797",
+    "#736F7D",
+    "#34333D",
+    "#DCD7E5"
+   ],
+   "syn-keyword": [
+    "#A0295E",
+    "#F68AB0",
+    "#912554",
+    "#FBA7C4"
+   ],
+   "syn-string": [
+    "#397D33",
+    "#99D896",
+    "#295A24",
+    "#B3E9B2"
+   ],
+   "syn-number": [
+    "#995700",
+    "#EABC52",
+    "#774400",
+    "#F5CE75"
+   ],
+   "syn-comment": [
+    "#6F6C7A",
+    "#938F9F",
+    "#504E58",
+    "#BEBAC8"
+   ],
+   "syn-function": [
+    "#2C6C90",
+    "#85C4E6",
+    "#225470",
+    "#AADAF3"
+   ],
+   "syn-type": [
+    "#753A97",
+    "#CEA2ED",
+    "#602B7F",
+    "#E0C1F4"
+   ],
+   "syn-property": [
+    "#874E1F",
+    "#ECA470",
+    "#6B3D16",
+    "#F3C29A"
+   ],
+   "syn-tag": [
+    "#B03F05",
+    "#FC8E5E",
+    "#8D3206",
+    "#FDB696"
+   ],
+   "syn-attribute": [
+    "#825F00",
+    "#E7C96A",
+    "#674C00",
+    "#EED992"
+   ],
+   "syn-punctuation": [
+    "#666473",
+    "#A9A4B5",
+    "#504E59",
+    "#CBC7D5"
+   ],
+   "syn-heading": [
+    "#715BA7",
+    "#CFB3FF",
+    "#56457F",
+    "#DCC8FF"
+   ],
+   "syn-escape": [
+    "#AE2F69",
+    "#FDA7CB",
+    "#8F2656",
+    "#FEC3DB"
+   ]
+  }
+ },
+ {
+  "id": "graphite",
+  "name": "Graphite",
+  "blurb": "Quiet greys, one blue accent.",
+  "icon": {
+   "canvas": "#EDEFF2",
+   "surface": "#FBFCFE",
+   "glassTop": "#FCFDFE",
+   "surface2": "#E7E9ED",
+   "surface3": "#DBDEE3",
+   "backLow": "#C2C7CE",
+   "fg": "#2D3032",
+   "accent": "#68ADFF",
+   "accentHi": "#9AC6FF",
+   "accentInk": "#186EB5",
+   "focus": "#2887DA",
+   "accentSoft": "#DDEBFF",
+   "tileHi": "#BAD7FF",
+   "tileLo": "#3191E9",
+   "glow": "#EEF4FF",
+   "comb": "#F2F7FF",
+   "rimLo": "#D7E7FF",
+   "sealRim": "#D8E7FF",
+   "sealText": "#F2F7FF",
+   "sealLo": "#05568F",
+   "inkWarm": "#3D434A",
+   "inkDeep": "#0F4C80",
+   "inkSeal": "#09345A",
+   "keyword": "#9B2C6E",
+   "string": "#4E7A1F",
+   "type": "#1F6F8B"
+  },
+  "tokens": {
+   "canvas": [
+    "#EDEFF2",
+    "#121314",
+    "#F5F6F8",
+    "#000000"
+   ],
+   "surface": [
+    "#FBFCFE",
+    "#1F2022",
+    "#FFFFFF",
+    "#09090A"
+   ],
+   "surface-2": [
+    "#E7E9ED",
+    "#282A2C",
+    "#EAECEE",
+    "#151617"
+   ],
+   "surface-3": [
+    "#DBDEE3",
+    "#313336",
+    "#DBDDE1",
+    "#202123"
+   ],
+   "line": [
+    "#D9DCE1",
+    "#303234",
+    "#5B5E61",
+    "#969A9E"
+   ],
+   "fg": [
+    "#2D3032",
+    "#ECEEF0",
+    "#111314",
+    "#FFFFFF"
+   ],
+   "fg-muted": [
+    "#63676A",
+    "#A4A7AC",
+    "#323436",
+    "#D8DADE"
+   ],
+   "accent": [
+    "#68ADFF",
+    "#87BDFF",
+    "#68ADFF",
+    "#87BDFF"
+   ],
+   "accent-fg": [
+    "#0C1F32",
+    "#0C1F32",
+    "#061220",
+    "#061220"
+   ],
+   "accent-ink": [
+    "#186EB5",
+    "#9AC6FF",
+    "#0F4C80",
+    "#B7D6FF"
+   ],
+   "accent-soft": [
+    "#DDEBFF",
+    "#223953",
+    "#DDEBFF",
+    "#223953"
+   ],
+   "focus": [
+    "#2887DA",
+    "#87BDFF",
+    "#0F4C80",
+    "#B7D6FF"
+   ],
+   "danger": [
+    "#C2412D",
+    "#FF8A70",
+    "#8A2412",
+    "#FFB3A0"
+   ],
+   "danger-fill": [
+    "#C2381C",
+    "#C8432A",
+    "#8E2410",
+    "#8E2410"
+   ],
+   "ok": [
+    "#357A4E",
+    "#7FD09A",
+    "#1F5634",
+    "#A6E8BC"
+   ],
+   "selection": [
+    "#C9DEFF",
+    "#2B496C",
+    "#B3D1FF",
+    "#2C5380"
+   ],
+   "current-line": [
+    "#F2F4F7",
+    "#252628",
+    "#EFF1F4",
+    "#121314"
+   ],
+   "gutter": [
+    "#868A8D",
+    "#6F7275",
+    "#323436",
+    "#D8DADE"
+   ],
+   "syn-keyword": [
+    "#9B2C6E",
+    "#F08BC0",
+    "#8D2864",
+    "#F6A8D0"
+   ],
+   "syn-string": [
+    "#4E7A1F",
+    "#A8D58A",
+    "#395917",
+    "#BFE6A8"
+   ],
+   "syn-number": [
+    "#A34F00",
+    "#F5B656",
+    "#7F3E00",
+    "#FFC978"
+   ],
+   "syn-comment": [
+    "#6B6E72",
+    "#8F9296",
+    "#4E5053",
+    "#BABDC1"
+   ],
+   "syn-function": [
+    "#1F6F8B",
+    "#7FC6E0",
+    "#18566C",
+    "#A6DCEE"
+   ],
+   "syn-type": [
+    "#6A3FA0",
+    "#C3A6F5",
+    "#562F87",
+    "#D8C4FA"
+   ],
+   "syn-property": [
+    "#8A4B2A",
+    "#F0A07A",
+    "#6E3A1F",
+    "#F7BFA0"
+   ],
+   "syn-tag": [
+    "#B23A2A",
+    "#FF8A70",
+    "#8F2F22",
+    "#FFB3A0"
+   ],
+   "syn-attribute": [
+    "#8A5A00",
+    "#F2C46B",
+    "#6E4800",
+    "#F7D592"
+   ],
+   "syn-punctuation": [
+    "#63676A",
+    "#A4A7AC",
+    "#4E5053",
+    "#C7CACD"
+   ],
+   "syn-heading": [
+    "#186EB5",
+    "#9AC6FF",
+    "#13538A",
+    "#B7D6FF"
+   ],
+   "syn-escape": [
+    "#A8327A",
+    "#F7A8D8",
+    "#8B2965",
+    "#FAC4E4"
+   ]
+  }
+ }
+]
