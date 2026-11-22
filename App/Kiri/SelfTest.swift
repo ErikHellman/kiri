@@ -572,7 +572,9 @@ import os
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 activations += 1
-                print("SELFTEST info this test launch became the front app")
+                // What brought it: a click on one of its windows is a mouse event.
+                let event = NSApp.currentEvent.map { "\($0.type.rawValue == 13 ? "an AppKit event, subtype \($0.subtype.rawValue)" : "event type \($0.type.rawValue)")" } ?? "no event"
+                print("SELFTEST info this test launch became the front app (\(event); modal: \(NSApp.modalWindow != nil); key window: \(NSApp.keyWindow?.title ?? "none"))")
                 fflush(stdout)
             }
         }
