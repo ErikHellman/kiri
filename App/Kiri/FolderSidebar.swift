@@ -15,6 +15,10 @@ import SwiftUI
     private(set) var generation = 0
     /// The name being typed in place: Rename… or New File… (`SidebarMenu`).
     private(set) var editing: SidebarEdit?
+    /// The tab whose sidebar the name is typed in. Every tab of the window
+    /// has a sidebar of its own on this one session, and only that one
+    /// shows the field.
+    @ObservationIgnored private weak var editingWindow: NSWindow?
     /// Why the name typed can't be used, shown under the field until it changes.
     var editProblem: String?
 
@@ -40,18 +44,25 @@ import SwiftUI
 
     // MARK: Names typed in place
 
+    /// What is being typed in the sidebar of `window`, if it is there.
+    func editing(in window: NSWindow?) -> SidebarEdit? {
+        editingWindow == nil || editingWindow === window ? editing : nil
+    }
+
     /// Rename…: the file's row shows a field with its name.
-    func beginRename(_ url: URL) {
+    func beginRename(_ url: URL, in window: NSWindow?) {
         editProblem = nil
         cursor = url
+        editingWindow = window
         editing = .rename(url)
     }
 
     /// New File…: an empty field at the top of `folder`, which opens.
-    func beginNewFile(in folder: URL) {
+    func beginNewFile(in folder: URL, in window: NSWindow?) {
         editProblem = nil
         if folder != root.url, !expanded.contains(folder) { expanded.insert(folder) }
         refresh()
+        editingWindow = window
         editing = .newFile(in: folder)
     }
 
@@ -59,14 +70,16 @@ import SwiftUI
     func cancelEdit() {
         editProblem = nil
         editing = nil
+        editingWindow = nil
     }
 
     /// Return in the field. A new file is made empty and opens in a tab
     /// of `window`, to stay, with the keyboard in its editor; a renamed
     /// file's tab, if it has one, follows it. A name that can't be used
     /// leaves the field up and says why.
-    func commitEdit(_ typed: String, from window: NSWindow?) {
+    func commitEdit(_ typed: String) {
         guard let editing else { return }
+        let window = editingWindow
         let name = typed.trimmingCharacters(in: .whitespaces)
         switch editing {
         case .newFile(let folder):
@@ -397,8 +410,8 @@ struct FolderSidebar: View {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         let _ = session.generation
                         let marks = tabs.openFiles
-                        if session.editing == .newFile(in: session.root.url) {
-                            NameRow(session: session, depth: 0, tabs: tabs)
+                        if session.editing(in: tabs.window) == .newFile(in: session.root.url) {
+                            NameRow(session: session, depth: 0)
                         }
                         ForEach(session.root.children) { node in
                             FileRow(node: node, depth: 0, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
@@ -419,7 +432,7 @@ struct FolderSidebar: View {
         .frame(maxHeight: .infinity, alignment: .top)
         // The header and the empty area below the rows: the folder itself.
         .contentShape(Rectangle())
-        .contextMenu { SidebarMenuItems(groups: SidebarMenu.groups(for: .root, session: session)) }
+        .contextMenu { SidebarMenuItems(groups: SidebarMenu.groups(for: .root, session: session, window: tabs.window)) }
         .honeyGlass(.chrome, radius: .panel)
         // Keyboard: ⇧⌘E (View ▸ Focus Sidebar) moves here and back. The
         // panel itself shows nothing for it: the keyboard's row does
@@ -446,7 +459,7 @@ struct FolderSidebar: View {
         .onKeyPress(phases: .down) { press in typing ? .ignored : typeSelect(press) }
         // The name was given or given up: the keyboard is the sidebar's
         // again (a new file then takes it to its editor).
-        .onChange(of: session.editing) { old, new in
+        .onChange(of: session.editing(in: tabs.window)) { old, new in
             if old != nil, new == nil { focused = true }
         }
         .onChange(of: showsKeyboard, initial: true) { _, now in
@@ -482,7 +495,7 @@ struct FolderSidebar: View {
     }
 
     /// A name is being typed in place (Rename…, New File…).
-    private var typing: Bool { session.editing != nil }
+    private var typing: Bool { session.editing(in: tabs.window) != nil }
 
     private var cursorIndex: Int? { rows.firstIndex { $0.node.url == session.cursor } }
 
@@ -594,10 +607,10 @@ private struct FileRow: View {
         let mark = node.isDirectory ? nil : marks[node.url]
         let isOpen = current || mark != nil
         VStack(alignment: .leading, spacing: 1) {
-            if session.editing == .rename(node.url) {
+            if session.editing(in: tabs.window) == .rename(node.url) {
                 // Rename…: a field in the row's place (not in the button:
                 // a click in the field is the field's).
-                NameRow(session: session, depth: depth, tabs: tabs, icon: FileIcon.forFile(named: node.name),
+                NameRow(session: session, depth: depth, icon: FileIcon.forFile(named: node.name),
                         name: node.name, label: "Name of \(node.name)")
                     .id(node.url)
             } else {
@@ -663,7 +676,8 @@ private struct FileRow: View {
                 .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true) } })
                 .modifier(KeepOpenAction(isFile: !node.isDirectory) { open(node.url, true) })
                 .contextMenu {
-                    SidebarMenuItems(groups: SidebarMenu.groups(for: node.isDirectory ? .folder(node.url) : .file(node.url), session: session))
+                    SidebarMenuItems(groups: SidebarMenu.groups(for: node.isDirectory ? .folder(node.url) : .file(node.url),
+                                                                session: session, window: tabs.window))
                 }
                 .focusable(false) // the sidebar takes the keys, not each row
                 .id(node.url)
@@ -679,8 +693,8 @@ private struct FileRow: View {
 
             if node.isDirectory, expanded {
                 let _ = session.generation
-                if session.editing == .newFile(in: node.url) {
-                    NameRow(session: session, depth: depth + 1, tabs: tabs)
+                if session.editing(in: tabs.window) == .newFile(in: node.url) {
+                    NameRow(session: session, depth: depth + 1)
                 }
                 ForEach(node.children) { child in
                     FileRow(node: child, depth: depth + 1, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
@@ -727,7 +741,6 @@ private struct NameField: View {
     /// What the field starts with: the file's name, or nothing.
     let name: String
     let label: String
-    let tabs: WindowTabs
     @State private var text = ""
     @FocusState private var focused: Bool
 
@@ -738,7 +751,7 @@ private struct NameField: View {
             .font(.honey(.subheadline, weight: .semibold))
             .foregroundStyle(Color.honeyFg)
             .focused($focused)
-            .onSubmit { session.commitEdit(text, from: tabs.window) }
+            .onSubmit { session.commitEdit(text) }
             .onExitCommand { session.cancelEdit() }
             .onChange(of: text) { if session.editProblem != nil { session.editProblem = nil } }
             .onChange(of: focused) { was, now in if was, !now { session.cancelEdit() } }
@@ -759,7 +772,6 @@ private struct NameField: View {
 private struct NameRow: View {
     let session: FolderSession
     let depth: Int
-    let tabs: WindowTabs
     var icon = FileIcon.document
     var name = ""
     var label = "Name of the new file"
@@ -772,7 +784,7 @@ private struct NameRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(icon.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
                     .frame(width: 16)
-                NameField(session: session, name: name, label: label, tabs: tabs)
+                NameField(session: session, name: name, label: label)
             }
             .padding(.leading, 6 + CGFloat(depth) * 14)
             .padding(.trailing, 6)

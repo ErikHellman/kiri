@@ -465,13 +465,13 @@ import os
                 guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }),
                       let session = FolderSessions.session(for: window) else { return }
                 if let path = UserDefaults.standard.string(forKey: "KiriSidebarRename") {
-                    session.beginRename(URL(fileURLWithPath: path).standardizedFileURL)
+                    session.beginRename(URL(fileURLWithPath: path).standardizedFileURL, in: window)
                 } else if let path = UserDefaults.standard.string(forKey: "KiriSidebarNewFile") {
-                    session.beginNewFile(in: URL(fileURLWithPath: path).standardizedFileURL)
+                    session.beginNewFile(in: URL(fileURLWithPath: path).standardizedFileURL, in: window)
                 } else {
                     return
                 }
-                if let name = UserDefaults.standard.string(forKey: "KiriSidebarName") { session.commitEdit(name, from: nil) }
+                if let name = UserDefaults.standard.string(forKey: "KiriSidebarName") { session.commitEdit(name) }
             }
             func click() {
                 guard !clicks.isEmpty else { name(); return }

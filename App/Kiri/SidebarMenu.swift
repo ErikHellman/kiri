@@ -37,7 +37,9 @@ enum SidebarEdit: Equatable {
     static let rename = "Rename…"
 
     /// The items for `target`, in groups (a divider between two).
-    static func groups(for target: Target, session: FolderSession) -> [[SidebarMenuItem]] {
+    /// - Parameter window: the tab whose sidebar the menu is in: where a
+    ///   name is then typed.
+    static func groups(for target: Target, session: FolderSession, window: NSWindow?) -> [[SidebarMenuItem]] {
         let root = session.root.url
         func writable(_ folder: URL) -> Bool { FileManager.default.isWritableFile(atPath: folder.path) }
         func finder(_ url: URL, relative: Bool = true) -> [SidebarMenuItem] {
@@ -53,13 +55,13 @@ enum SidebarEdit: Equatable {
             return [[SidebarMenuItem(title: openInNewWindow) { SidebarFiles.openInNewWindow(url, isDirectory: false) }],
                     finder(url),
                     // A name is the folder's to change.
-                    [SidebarMenuItem(title: rename, enabled: writable(url.deletingLastPathComponent())) { session.beginRename(url) }]]
+                    [SidebarMenuItem(title: rename, enabled: writable(url.deletingLastPathComponent())) { session.beginRename(url, in: window) }]]
         case .folder(let url):
-            return [[SidebarMenuItem(title: newFile, enabled: writable(url)) { session.beginNewFile(in: url) }],
+            return [[SidebarMenuItem(title: newFile, enabled: writable(url)) { session.beginNewFile(in: url, in: window) }],
                     [SidebarMenuItem(title: openInNewWindow) { SidebarFiles.openInNewWindow(url, isDirectory: true) }],
                     finder(url)]
         case .root:
-            return [[SidebarMenuItem(title: newFile, enabled: writable(root)) { session.beginNewFile(in: root) }],
+            return [[SidebarMenuItem(title: newFile, enabled: writable(root)) { session.beginNewFile(in: root, in: window) }],
                     finder(root, relative: false)]
         }
     }

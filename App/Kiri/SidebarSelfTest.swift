@@ -324,7 +324,7 @@ extension SelfTest {
             report(false, "the folder window's session for the menu checks"); return
         }
         typealias Menu = SidebarMenu
-        func groups(_ target: Menu.Target) -> [[SidebarMenuItem]] { Menu.groups(for: target, session: session) }
+        func groups(_ target: Menu.Target) -> [[SidebarMenuItem]] { Menu.groups(for: target, session: session, window: shown) }
         func titles(_ target: Menu.Target) -> [[String]] { groups(target).map { $0.map(\.title) } }
         func item(_ title: String, _ target: Menu.Target) -> SidebarMenuItem? { groups(target).joined().first { $0.title == title } }
         func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: f.file(name).path) }
@@ -393,7 +393,7 @@ extension SelfTest {
         if shown.occlusionState.contains(.visible), await f.wait(1.5, until: { fieldEditor(of: shown) != nil }) {
             typed = await typeKeys("new note.md\r", in: shown)
         } else {
-            session.commitEdit("new note.md", from: shown)
+            session.commitEdit("new note.md")
         }
         let made = await f.wait { exists("sub/new note.md") && session.editing == nil }
         let madeWindow = await f.wait { window(of: "sub/new note.md").map { f.group(first).contains($0) && $0.firstResponder is KiriTextView } ?? false }
@@ -405,10 +405,10 @@ extension SelfTest {
         // Names that can't be used: said, and nothing is made or written over.
         let aBefore = f.onDisk("a.swift")
         item(Menu.newFile, .root)?.action()
-        session.commitEdit("a.swift", from: shown)
+        session.commitEdit("a.swift")
         let taken = session.editing == .newFile(in: f.root) && session.editProblem != nil
         let takenSays = session.editProblem ?? ""
-        session.commitEdit("x/y.txt", from: shown)
+        session.commitEdit("x/y.txt")
         let slash = session.editing != nil && session.editProblem != nil
         session.cancelEdit()
         report(taken && slash && session.editing == nil && f.onDisk("a.swift") == aBefore && !exists("x"),
@@ -422,7 +422,7 @@ extension SelfTest {
             _ = await f.wait { eDocument.isDocumentEdited }
             item(Menu.rename, .file(f.file("e.py")))?.action()
             let renaming = session.editing == .rename(f.file("e.py"))
-            session.commitEdit("renamed.py", from: shown)
+            session.commitEdit("renamed.py")
             let moved = await f.wait { !exists("e.py") && exists("renamed.py") && eDocument.fileURL?.standardizedFileURL == f.file("renamed.py") && session.editing == nil }
             let model = { (first.tabGroup?.selectedWindow).flatMap { WindowTabs.model(for: $0) } }
             let followed = await f.wait {
@@ -443,9 +443,9 @@ extension SelfTest {
         // Rename… on a file that isn't open; and never onto another file.
         let documents = f.openDocuments().count
         item(Menu.rename, .file(f.file("b.md")))?.action()
-        session.commitEdit("a.swift", from: shown)
+        session.commitEdit("a.swift")
         let kept = session.editProblem != nil && exists("b.md") && f.onDisk("a.swift") == aBefore
-        session.commitEdit("notes.md", from: shown)
+        session.commitEdit("notes.md")
         let renamed = await f.wait { exists("notes.md") && !exists("b.md") && session.editing == nil }
         report(kept && renamed && f.onDisk("notes.md") == SidebarFixture.contents["b.md"] && f.openDocuments().count == documents
                && session.visibleRows().contains { $0.node.url == f.file("notes.md") } && session.cursor == f.file("notes.md"),
