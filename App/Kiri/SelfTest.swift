@@ -446,19 +446,27 @@ import os
             let files = (UserDefaults.standard.string(forKey: "KiriOpenFolderFiles") ?? "").split(separator: ":")
                 .map { KiriCLI.Request.Entry.file(URL(fileURLWithPath: String($0)), line: 0, column: 0) }
             // -KiriSidebarKeep <path:path:…> then double-clicks those files'
-            // rows (each opens to stay), and -KiriSidebarClick <path:path:…>
-            // clicks those, one after another (each shows in the preview tab).
+            // rows (each opens to stay), -KiriSidebarType <path:path:…> does
+            // the same and types a line into each (unsaved changes), and
+            // -KiriSidebarClick <path:path:…> clicks those, one after
+            // another (each shows in the preview tab).
             func paths(_ key: String) -> [URL] {
                 (UserDefaults.standard.string(forKey: key) ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
             }
-            var clicks = paths("KiriSidebarKeep").map { ($0, true) } + paths("KiriSidebarClick").map { ($0, false) }
+            var clicks = paths("KiriSidebarKeep").map { ($0, true, false) } + paths("KiriSidebarType").map { ($0, true, true) }
+                + paths("KiriSidebarClick").map { ($0, false, false) }
             let root = URL(fileURLWithPath: folder).standardizedFileURL
             func click() {
                 guard !clicks.isEmpty else { return }
                 guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }) else { return }
-                let (url, keep) = clicks.removeFirst()
-                SidebarOpen.open(url, keep: keep, from: window) { _ in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { click() }
+                let (url, keep, type) = clicks.removeFirst()
+                SidebarOpen.open(url, keep: keep, from: window) { shown in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if type, let text = shown.flatMap({ findTextView(in: $0.contentView) }) {
+                            text.insertText("unsaved ", replacementRange: NSRange(location: 0, length: 0))
+                        }
+                        click()
+                    }
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

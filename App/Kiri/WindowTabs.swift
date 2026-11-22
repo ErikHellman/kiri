@@ -37,6 +37,24 @@ import SwiftUI
         }
     }
 
+    /// How the folder sidebar marks the row of a file that is open in one
+    /// of this window's tabs.
+    struct FileMark: Equatable {
+        /// It has unsaved changes: the tab's dot.
+        let edited: Bool
+        /// It shows in the preview tab: the tab's slant.
+        let preview: Bool
+    }
+
+    /// The files open in this window's tabs. Made from `items`, so the
+    /// sidebar's marks follow tabs opening and closing, edits and saves in
+    /// the same refresh as the strip does.
+    var openFiles: [URL: FileMark] {
+        Dictionary(items.compactMap { item in
+            item.path.map { (URL(fileURLWithPath: $0).standardizedFileURL, FileMark(edited: item.dirty, preview: item.preview)) }
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
     private(set) var items: [Item] = []
     private(set) var selected = 0
     /// This window's document has unsaved changes.

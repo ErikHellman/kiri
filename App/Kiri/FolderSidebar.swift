@@ -311,8 +311,9 @@ struct FolderSidebar: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         let _ = session.generation
+                        let marks = tabs.openFiles
                         ForEach(session.root.children) { node in
-                            FileRow(node: node, depth: 0, session: session, currentFile: currentFile,
+                            FileRow(node: node, depth: 0, session: session, currentFile: currentFile, marks: marks,
                                     keyboardFocus: focused, open: open)
                         }
                     }
@@ -462,6 +463,10 @@ private struct FileRow: View {
     let depth: Int
     let session: FolderSession
     let currentFile: URL?
+    /// The files open in the window's tabs: an open file's name is bold
+    /// (slanted while it is the preview), and one with unsaved changes has
+    /// the tabs' amber dot at the row's end.
+    let marks: [URL: WindowTabs.FileMark]
     let keyboardFocus: Bool
     /// Shows the file; `keep` for a double-click.
     let open: (URL, Bool) -> Void
@@ -473,6 +478,8 @@ private struct FileRow: View {
         let expanded = session.expanded.contains(node.url)
         let current = node.url == currentFile
         let cursor = keyboardFocus && node.url == session.cursor
+        let mark = node.isDirectory ? nil : marks[node.url]
+        let isOpen = current || mark != nil
         VStack(alignment: .leading, spacing: 1) {
             Button {
                 session.cursor = node.url
@@ -499,12 +506,19 @@ private struct FileRow: View {
                         .foregroundStyle(node.isDirectory ? Color.honeyAccentInk : Color.honeyMuted)
                         .frame(width: 14)
                     Text(node.name)
-                        .font(.honey(.subheadline, weight: current ? .bold : .semibold))
-                        .foregroundStyle(current ? Color.honeyFg : Color.honeyFg.opacity(0.85))
+                        .font(mark?.preview == true ? .honeyOblique(.subheadline, weight: .bold)
+                              : .honey(.subheadline, weight: isOpen ? .bold : .semibold))
+                        .foregroundStyle(isOpen ? Color.honeyFg : Color.honeyFg.opacity(0.85))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
+                    if mark?.edited == true {
+                        Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
+                            .padding(.trailing, 4)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
+                .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: mark?.edited)
                 .padding(.leading, 6 + CGFloat(depth) * 14)
                 .padding(.trailing, 6)
                 .frame(height: 26)
@@ -530,11 +544,13 @@ private struct FileRow: View {
             .onHover { hovering = $0 }
             .help(node.url.path)
             .accessibilityLabel(node.isDirectory ? "\(node.name), folder, \(expanded ? "expanded" : "collapsed")" : node.name)
+            .accessibilityValue(mark.map { $0.preview ? "Preview" : $0.edited ? "Open, edited" : "Open" } ?? "")
+            .accessibilityAddTraits(current ? .isSelected : [])
 
             if node.isDirectory, expanded {
                 let _ = session.generation
                 ForEach(node.children) { child in
-                    FileRow(node: child, depth: depth + 1, session: session, currentFile: currentFile,
+                    FileRow(node: child, depth: depth + 1, session: session, currentFile: currentFile, marks: marks,
                             keyboardFocus: keyboardFocus, open: open)
                 }
             }

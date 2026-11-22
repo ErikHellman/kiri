@@ -41,6 +41,7 @@ extension SelfTest {
         defer { WindowTabs.safetyNetEnabled = true }
 
         await previewChecks(first, f)
+        await markChecks(first, f)
         await edgeChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
@@ -201,6 +202,53 @@ extension SelfTest {
                "a double-click on a file that isn't open shows it once, to stay, in the preview's tab (\(f.strip(first)); \(iDocuments.count) document, watching its file: \(watching), first click answered \(answeredAtOnce ? "at once" : "later"))")
     }
 
+    /// The marks on rows: which files are open in a tab, which is the
+    /// preview and which have unsaved changes, following the tabs without
+    /// the safety net (it is off for this stage).
+    private static func markChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        /// The marks the sidebar of the tab that shows draws from.
+        func marks() -> [URL: WindowTabs.FileMark] {
+            (first.tabGroup?.selectedWindow).flatMap { WindowTabs.model(for: $0) }?.openFiles ?? [:]
+        }
+        func says(_ m: WindowTabs.FileMark?) -> String { m.map { $0.preview ? "preview" : $0.edited ? "open, edited" : "open" } ?? "not open" }
+        let kept = f.group(first).compactMap { f.document($0)?.fileURL?.standardizedFileURL }
+        let before = marks()
+        report(Set(before.keys) == Set(kept) && before.values.allSatisfy { !$0.edited && !$0.preview } && before[f.file("b.md")] == nil,
+               "the sidebar marks the files open in the window's tabs, and no other (\(before.count) of \(kept.count) tabs; b.md \(says(before[f.file("b.md")])))")
+        // A click: the preview. An edit: unsaved. A save: open. Closed: no mark.
+        guard let g = await f.open("g.txt", from: first), let ktv = findTextView(in: g.contentView) else {
+            report(false, "g.txt opens for the marks"); return
+        }
+        let asPreview = await f.wait { marks()[f.file("g.txt")] == .init(edited: false, preview: true) }
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        ktv.insertText("x", replacementRange: ktv.selectedRange())
+        await settle()
+        let asEdited = await f.wait { marks()[f.file("g.txt")] == .init(edited: true, preview: false) }
+        // What VoiceOver hears on the rows, and that the current one is the selected one.
+        var heard: Bool?, rows = ""
+        if g.occlusionState.contains(.visible) {
+            await wakeAccessibility()
+            let all = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue }
+            // (Below the top bar: the tabs have the files' names too.)
+            let row = { (name: String) in all.first { $0.name == name && $0.frame.maxY < g.frame.maxY - 60 } }
+            rows = ["g.txt", "a.swift", "b.md"].map { "\($0): “\(row($0)?.value ?? "none")”" }.joined(separator: ", ")
+            heard = row("g.txt")?.value == "Open, edited" && row("g.txt")?.selected == true && row("a.swift")?.value == "Open"
+                && row("a.swift")?.selected == false && row("b.md")?.value == ""
+        }
+        f.document(g)?.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+        let asSaved = await f.wait { marks()[f.file("g.txt")] == .init(edited: false, preview: false) }
+        try? "g\n".write(to: f.file("g.txt"), atomically: true, encoding: .utf8)
+        g.performClose(nil)
+        let asClosed = await f.wait { marks()[f.file("g.txt")] == nil && marks().count == kept.count }
+        report(asPreview && asEdited && asSaved && asClosed,
+               "a row's mark follows its tab: the preview when clicked, unsaved once typed in, open when saved, none when the tab closes (\(asPreview) \(asEdited) \(asSaved) \(asClosed))")
+        if let heard {
+            report(heard, "VoiceOver hears a row's state as its value, and the current file as selected (\(rows))")
+        } else {
+            print("SELFTEST SKIP what VoiceOver hears of an open file's row (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+    }
+
     /// The edge between the sidebar and the editor: what a drag, a
     /// double-click and VoiceOver's steps do to the width (by what the
     /// gestures call: no pointer is moved), that every tab has it, that it
@@ -218,7 +266,9 @@ extension SelfTest {
             setArgument(Prefs.sidebarWidthKey, given)
             store.set(SidebarWidth.remembered)
         }
-        let drawn = shown.occlusionState.contains(.visible)
+        // (The tab that showed before this one has just closed.)
+        f.select(shown)
+        let drawn = await f.wait(1) { shown.occlusionState.contains(.visible) }
         let row = Double(shown.frame.width) - 2 * Honey.gap
         func widest(_ w: NSWindow) -> Double { SidebarLayout.widest(in: Double(w.frame.width) - 2 * Honey.gap, gap: Honey.gap) }
         /// The sidebar's width as `w` lays it out: what is left of the editor's panel.
