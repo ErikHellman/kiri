@@ -12,6 +12,9 @@ struct CommandPalette: View {
     /// How many rows there is room for under the field (a short window
     /// shows fewer than `Self.mostRows`).
     var rowsThatFit = CommandPalette.mostRows
+    /// How wide the editor panel is: in a narrow one (beside the sidebar
+    /// in a small window) the field's prompt is one word.
+    var panelWidth: CGFloat = 900
     @FocusState private var focused: Bool
     @Environment(\.honeyOffscreen) private var offscreen
 
@@ -54,6 +57,7 @@ struct CommandPalette: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                         .frame(maxWidth: .infinity, minHeight: Self.rowHeight + 2 * Self.listInset + 12)
                 } else {
                     list
@@ -84,7 +88,7 @@ struct CommandPalette: View {
                 .foregroundStyle(Color.honeyAccentInk)
                 .frame(width: 16)
                 .accessibilityHidden(true)
-            BarTextField(prompt: "Search files, tabs and commands", text: $palette.text)
+            BarTextField(prompt: panelWidth < 360 ? "Search" : "Search files, tabs and commands", text: $palette.text)
                 .focused($focused)
                 // The arrows move through the rows while the keyboard
                 // stays in the field.
@@ -113,23 +117,11 @@ struct CommandPalette: View {
     /// the lines go. Where Return goes it is a row like any other, selected.
     private func lineRow(_ status: PaletteController.LineStatus) -> some View {
         Button { palette.commit() } label: {
-            HStack(spacing: 8) {
-                Image(systemName: status.isProblem ? "exclamationmark.circle" : "arrow.right.to.line")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(status.isProblem ? Color.honeyDanger : Color.honeyMuted)
-                    .frame(width: 16)
-                Text(status.text)
-                    .font(.honey(.subheadline, weight: .semibold))
-                    // The words say it; the color only underlines it.
-                    .foregroundStyle(status.isProblem ? Color.honeyDanger : status.isTarget ? Color.honeyFg : Color.honeyMuted)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Text("of \(lineCount)")
-                    .font(.honey(.caption, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.honeyMuted)
-                    .lineLimit(1)
-                    .fixedSize()
+            // In a narrow panel the count goes first, then the words get shorter.
+            ViewThatFits(in: .horizontal) {
+                lineContent(status, text: status.text, count: true)
+                lineContent(status, text: status.text, count: false)
+                lineContent(status, text: status.short ?? status.text, count: false)
             }
             .padding(.leading, 8)
             .padding(.trailing, 10)
@@ -147,6 +139,29 @@ struct CommandPalette: View {
         .padding(.horizontal, 6)
         .accessibilityLabel("\(status.text), of \(lineCount) lines")
         .accessibilityAddTraits(status.isTarget ? .isSelected : [])
+    }
+
+    private func lineContent(_ status: PaletteController.LineStatus, text: String, count: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: status.isProblem ? "exclamationmark.circle" : "arrow.right.to.line")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(status.isProblem ? Color.honeyDanger : Color.honeyMuted)
+                .frame(width: 16)
+            Text(text)
+                .font(.honey(.subheadline, weight: .semibold))
+                // The words say it; the color only underlines it.
+                .foregroundStyle(status.isProblem ? Color.honeyDanger : status.isTarget ? Color.honeyFg : Color.honeyMuted)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if count {
+                Text("of \(lineCount)")
+                    .font(.honey(.caption, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.honeyMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
     }
 
     @ViewBuilder private var list: some View {
@@ -239,11 +254,12 @@ private struct PaletteRowView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(row.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
                 .frame(width: 16)
-            Text(Self.marked(row.title, row.titleMarks, size: .subheadline, ink: .honeyFg))
+            Text(Self.marked(row.title, row.titleMarks, size: .subheadline, ink: .honeyFg, rest: Color.honeyFg.opacity(0.8)))
                 .lineLimit(1)
                 .truncationMode(.middle)
             if detail, !row.detail.isEmpty {
-                Text(Self.marked(row.detail, row.detailMarks, size: .caption, ink: .honeyMuted))
+                // (Muted already: the rest of a marked detail is not made fainter still.)
+                Text(Self.marked(row.detail, row.detailMarks, size: .caption, ink: .honeyMuted, rest: .honeyMuted))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -251,10 +267,10 @@ private struct PaletteRowView: View {
         }
     }
 
-    /// `text` with the typed letters marked: heavier and in full ink, the
-    /// rest a little lighter in both, so the mark never rests on color.
-    /// Nothing marked is the plain text.
-    static func marked(_ text: String, _ marks: [Range<Int>], size: Font.TextStyle, ink: Color) -> AttributedString {
+    /// `text` with the typed letters marked: heavier and in full ink
+    /// (`fg`), the rest lighter in both (`rest`), so the mark never rests
+    /// on color. Nothing marked is the plain text in `ink`.
+    static func marked(_ text: String, _ marks: [Range<Int>], size: Font.TextStyle, ink: Color, rest: Color) -> AttributedString {
         let plain = Font.honey(size, weight: .semibold)
         guard !marks.isEmpty else {
             var whole = AttributedString(text)
@@ -271,7 +287,7 @@ private struct PaletteRowView: View {
                   let part = String(units[from..<to]) else { return }
             var run = AttributedString(part)
             run.font = marked ? Font.honey(size, weight: .heavy) : plain
-            run.foregroundColor = marked ? Color.honeyFg : ink.opacity(0.8)
+            run.foregroundColor = marked ? Color.honeyFg : rest
             out += run
         }
         for mark in marks where mark.lowerBound >= at {

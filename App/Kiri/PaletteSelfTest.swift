@@ -650,8 +650,8 @@ enum PaletteSample {
         ]
         let states: [(String, PaletteController, Int)] = [
             (": and a line: where Return goes", .sample(text: ":42", rows: [], line: .init(text: "Go to line 42", isTarget: true)), 8),
-            (": with a column", .sample(text: ":42:7", rows: [], line: .init(text: "Go to line 42, column 7", isTarget: true)), 8),
-            (": alone (⌘L)", .sample(text: ":", rows: [], line: .init(text: "Type a line number, or line:column")), 8),
+            (": with a column", .sample(text: ":42:7", rows: [], line: .init(text: "Go to line 42, column 7", short: "Line 42, column 7", isTarget: true)), 8),
+            (": alone (⌘L)", .sample(text: ":", rows: [], line: .init(text: "Type a line number, or line:column", short: "A line number")), 8),
             (": and what is not a line", .sample(text: ":12b", rows: [], line: .init(text: "Not a line", isProblem: true)), 8),
             ("nothing typed: tabs, recent files, commands", .sample(text: "", rows: resting), 8),
             ("“gre” in a folder window: a tab, files and commands, the letters marked", .sample(text: "gre", rows: mixed, selection: 1), 8),
@@ -663,7 +663,7 @@ enum PaletteSample {
             ForEach([860.0, 460.0, 220.0], id: \.self) { width in
                 ForEach(states.indices, id: \.self) { i in
                     strip("\(states[i].0), \(Int(width)) pt", width: width) {
-                        CommandPalette(palette: states[i].1, lineCount: 340, rowsThatFit: states[i].2)
+                        CommandPalette(palette: states[i].1, lineCount: 340, rowsThatFit: states[i].2, panelWidth: width)
                     }
                 }
             }

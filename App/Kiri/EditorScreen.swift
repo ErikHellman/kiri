@@ -17,9 +17,9 @@ struct EditorScreen: View {
     @State private var sidebarWidth = SidebarWidth.shared
     /// How wide the row of sidebar and editor is, once it has been laid out.
     @State private var rowWidth = 0.0
-    /// How tall the editor panel is: the command palette shows as many
-    /// rows as it has room for.
-    @State private var panelHeight = DocumentWindow.defaultSize.height
+    /// The editor panel's size: the command palette shows as many rows as
+    /// it has room for, and fewer words in a narrow one.
+    @State private var panelSize = DocumentWindow.defaultSize
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
@@ -101,16 +101,18 @@ struct EditorScreen: View {
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations))
             // Under the bars: the first-run hint, on the paper of an empty
-            // untitled document until something is typed into it.
+            // untitled document until something is typed into it. (Not
+            // while the palette is open: its list would lie over the
+            // hint's lines, glass over words.)
             .overlay {
-                if model.showsStartHint {
-                    StartHint(commandLineTool: commandLineTool.status)
+                if model.showsStartHint, !model.palette.isOpen {
+                    StartHint(commandLineTool: commandLineTool.status) { model.palette.open() }
                         .padding(.bottom, StartHint.bottomClearance)
                         .transition(.opacity)
                 }
             }
             .honeyPanel()
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { panelSize = $0 }
             .overlay(alignment: .bottom) {
                 EditorStatusBar(model: model, document: document, encoding: encodingBinding, lineEnding: lineEndingBinding,
                                 byteOrderMark: bomBinding)
@@ -121,14 +123,14 @@ struct EditorScreen: View {
                     FindBar(find: model.find).padding(.top, EditorBar.topPadding).transition(arrive)
                 } else if model.palette.isOpen {
                     CommandPalette(palette: model.palette, lineCount: model.lineCount,
-                                   rowsThatFit: CommandPalette.rowsThatFit(in: panelHeight))
+                                   rowsThatFit: CommandPalette.rowsThatFit(in: panelSize.height), panelWidth: panelSize.width)
                         .padding(.top, EditorBar.topPadding).transition(arrive)
                 }
             }
             .animation(motion.shape, value: model.find.isOpen)
             .animation(motion.shape, value: model.palette.isOpen)
             // The hint fades out; with reduced motion it is simply gone.
-            .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint)
+            .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint && !model.palette.isOpen)
     }
 
     /// The toolbar row on the canvas, level with the traffic lights: in a

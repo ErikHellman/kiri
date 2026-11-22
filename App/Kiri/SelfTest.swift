@@ -1585,7 +1585,7 @@ import os
         palette.text = ":\(lines)"
         ktv.marks.update()
         report(model.line == lines && caretIsClear() && ktv.marks.showsLine && (!scrolls || origin().y > before.y)
-               && palette.lineStatus == .init(text: "Go to line \(lines)", isTarget: true) && palette.lastAnnouncement == "Go to line \(lines)",
+               && palette.lineStatus?.text == "Go to line \(lines)" && palette.lineStatus?.isTarget == true && palette.lastAnnouncement == "Go to line \(lines)",
                "typing a line number shows that line, marked, before Return, and the palette says where Return goes (Ln \(model.line), scrolled to \(origin().y), marked \(ktv.marks.showsLine), “\(palette.lineStatus?.text ?? "")”)")
         palette.text = ":1"
         report(model.line == 1 && caretIsClear() && origin().y < 0, "line 1 is shown below the palette (Ln \(model.line), scrolled to \(origin().y))")
@@ -1885,7 +1885,7 @@ import os
 
         // Its lines, as VoiceOver is given them.
         let tool = CommandLineTool.shared.status
-        let expected = ["Open a file, \(Keys.open.spoken)", "Open a folder, \(Keys.openFolder.spoken)", "Keyboard shortcuts, \(Keys.shortcuts.spoken)"]
+        let expected = ["Open a file, \(Keys.open.spoken)", "Open a folder, \(Keys.openFolder.spoken)", "Everything else, \(Keys.palette.spoken)"]
             + (tool == .missing ? ["Install the kiri command"] : [])
         await wakeAccessibility()
         func hint(_ w: NSWindow) -> (group: AccessibilityElement?, lines: [AccessibilityElement]) {
@@ -1911,12 +1911,21 @@ import os
                 report(!isEditor(onLine) && onLine != nil && isEditor(beside) && isEditor(above),
                        "a click on a line is the line's, a click beside or above the hint the editor's (on a line: \(onLine == nil ? "nothing" : isEditor(onLine) ? "the editor" : "the hint"), beside: \(isEditor(beside) ? "the editor" : "not the editor"), above: \(isEditor(above) ? "the editor" : "not the editor"))")
             }
-            // One line pressed: the one that opens no panel and changes nothing.
-            if let shortcuts = shown.lines.first(where: { $0.name.hasPrefix("Keyboard shortcuts") }) {
-                shortcuts.press()
-                let opened = await wait(2) { NSApp.windows.contains { $0.identifier?.rawValue == ShortcutsView.windowID && $0.isVisible } }
-                report(opened && window.firstResponder === tv, "pressing “Keyboard shortcuts” opens that window, the keyboard still in the editor")
-                NSApp.windows.first { $0.identifier?.rawValue == ShortcutsView.windowID }?.close()
+            // One line pressed: the one that opens no panel and changes
+            // nothing. The palette opens over the paper with the keyboard,
+            // the hint out of its way, and Escape brings the hint back.
+            if let everything = shown.lines.first(where: { $0.name.hasPrefix("Everything else") }) {
+                FrontEditor.shared.selfTestMain(window)
+                everything.press()
+                let opened = await wait(2) { model.palette.isOpen && fieldEditor(of: window) != nil }
+                let hidden = await wait(1) { hint(window).group == nil }
+                let listed = model.palette.rows.contains { $0.title == "Keyboard Shortcuts" && $0.shortcut != nil }
+                model.palette.cancel()
+                let back = await wait(1) { hint(window).group != nil }
+                report(opened && hidden && listed && back && model.showsStartHint && window.firstResponder === tv && tv.string.isEmpty,
+                       "pressing “Everything else” opens the palette with the keyboard in it, the hint out of its way; Keyboard Shortcuts is in its list with its key, and Escape brings the hint back (\(opened), \(hidden), \(listed), \(back))")
+            } else {
+                report(false, "the hint has its Everything else line")
             }
         } else if drawn {
             report(false, "the hint's lines are in the window")

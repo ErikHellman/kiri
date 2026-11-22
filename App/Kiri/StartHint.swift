@@ -5,8 +5,8 @@ import SwiftUI
 /// The first-run hint: what an empty untitled document shows in the middle
 /// of its paper until something is typed, pasted or dropped into it. A few
 /// quiet lines, each a button with the key that does the same: open a file,
-/// open a folder, the list of shortcuts, and the `kiri` command until it is
-/// installed.
+/// open a folder, the command palette for everything else (every command
+/// is in it, with its key), and the `kiri` command until it is installed.
 ///
 /// Only the lines take clicks. Everything around them is the text view's,
 /// which keeps the keyboard: the caret is on line 1 and typing starts the
@@ -15,7 +15,8 @@ struct StartHint: View {
     let commandLineTool: CLIInstaller.Status
     /// Draws that line as hovered, for pictures.
     var hovered: Int?
-    @Environment(\.openWindow) private var openWindow
+    /// Opens this window's command palette.
+    var openPalette: () -> Void = {}
 
     /// The hint is centred in the paper above the status capsule.
     static let bottomClearance = EditorStatusBar.bottomPadding + HoneyStatusMetrics.barHeight
@@ -37,9 +38,7 @@ struct StartHint: View {
             StartHintLine("Open a folder", shortcut: Keys.openFolder, hovered: hovered == 1) {
                 FolderSessions.openFolderPanel()
             }
-            StartHintLine("Keyboard shortcuts", shortcut: Keys.shortcuts, hovered: hovered == 2) {
-                openWindow(id: ShortcutsView.windowID)
-            }
+            StartHintLine("Everything else", shortcut: Keys.palette, hovered: hovered == 2, action: openPalette)
             // Until a terminal has the command (this copy's or another's).
             if commandLineTool == .missing {
                 StartHintLine("Install the kiri command", shortcut: nil, hovered: hovered == 3) {

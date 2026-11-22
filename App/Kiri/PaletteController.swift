@@ -110,6 +110,8 @@ struct PaletteRow: Equatable, Identifiable {
     /// will go, what to type, or that what is typed is not a line.
     struct LineStatus: Equatable {
         let text: String
+        /// The same in fewer words, for a narrow panel.
+        var short: String?
         /// Return goes there.
         var isTarget = false
         /// "Not a line".
@@ -122,10 +124,12 @@ struct PaletteRow: Equatable, Identifiable {
         #endif
         guard isOpen, mode == .line, let goToLine = model?.goToLine else { return nil }
         if let target = goToLine.target {
-            return LineStatus(text: target.column > 1 ? "Go to line \(target.line), column \(target.column)" : "Go to line \(target.line)",
-                              isTarget: true)
+            return target.column > 1
+                ? LineStatus(text: "Go to line \(target.line), column \(target.column)", short: "Line \(target.line), column \(target.column)", isTarget: true)
+                : LineStatus(text: "Go to line \(target.line)", isTarget: true)
         }
-        return query.isEmpty ? LineStatus(text: "Type a line number, or line:column") : LineStatus(text: "Not a line", isProblem: true)
+        return query.isEmpty ? LineStatus(text: "Type a line number, or line:column", short: "A line number")
+            : LineStatus(text: "Not a line", isProblem: true)
     }
 
     /// What the list says in place of rows when nothing matches.
