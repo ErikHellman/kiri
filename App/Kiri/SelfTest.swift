@@ -290,6 +290,7 @@ import os
             }
             fflush(stdout)
         }
+        themeFadeDemo()
         // -KiriRenderSave <folder>: the Save button's states in the top bar's
         // row, in every color theme, light and dark, one sheet for each
         // (offscreen: the solid Honey fills stand in for the glass).
@@ -1905,6 +1906,7 @@ import os
                         await frontWindow(window)
                         await toggleCommentStage(window)
                         await dropStage(window)
+                        await themeFadeStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
