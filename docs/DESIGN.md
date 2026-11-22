@@ -85,14 +85,14 @@ Honey is the default; Settings ▸ Theme (and View ▸ Theme) also offers **Matc
 
 - **Nunito** (OFL, weights 400/600/700/800, bundled in `KiriKit/Sources/KiriKit/Fonts`) for all UI: `Font.honey(.body, weight:)`.
 - Scale: 12 caption · 13 meta · 15 body · 17 panel title · 20 view title · 26 heading. Weights: 400 body, 600 secondary emphasis, 700 buttons and tab titles, 800 titles and section labels (11.5 pt uppercase, +0.06 em).
-- **Editor and code:** SF Mono via `Font.honeyMono()` at 13 pt.
+- **Editor and code:** SF Mono at 13 pt, or the family chosen in Settings ▸ Font (`EditorFont`: any installed family whose letters are one width). `EditorFont` makes every font the editor draws with: the text, bold headings in the family's bold, and the line numbers (SF's monospaced digits with SF Mono, the family's own otherwise), at the editor text size. A family that has gone missing draws as SF Mono. `Font.honeyMono()` (code shown in the interface, such as the find bar's `.*`) stays SF Mono.
 - **Slanted** (`Font.honeyOblique`): a title that is provisional, which today is a preview tab's. Nunito has no italic face, so the upright one is sheared by `Honey.obliqueShear` (0.2, about 11°), as a browser does for a font without italics.
 - `Honey.textScale` scales all of it (macOS has no Dynamic Type).
 
 ## 5. Shape and layout
 
 - Radii (`Honey.Radius`): 20 panels, 16 cards, 12 controls, 8 small; buttons, chips and tabs are pills.
-- Window: hidden title bar over `canvas`; traffic lights sit on the canvas; the editor (and any side panel) are 20 pt floating panels inset 10 pt, with the two-layer warm shadow (`honeyPanel()`), or a 2 pt outline with increased contrast.
+- Window: hidden title bar over `canvas`; traffic lights sit on the canvas; the editor (and any side panel) are 20 pt floating panels inset 10 pt, with the two-layer warm shadow (`honeyPanel()`), cast by the panel's shape and never by the views on it, or a 2 pt outline with increased contrast.
 - Toolbar row: glass tab strip and buttons on the canvas, above the editor panel. The status bar is a glass capsule floating over the bottom of the editor panel.
 
 ## 6. Motion
@@ -160,6 +160,20 @@ A folder window (`kiri <folder>`, File ▸ Open Folder…) shows the folder's tr
 - **VoiceOver** hears the panel as "Files in tidepool" and each row as a button: a file by its name, a folder as "Sources, folder" with "collapsed" or "expanded" as its value. A row inside a folder adds its depth ("level 2"), after what it is in a tab ("Open, level 2"). This is the tree in words, not an outline: SwiftUI gives custom rows no outline role, so VoiceOver's own outline commands do not apply.
 - **Its width** is the person's: 230 pt until the edge is dragged, then anything from 180 to 400 pt (`SidebarLayout`), one width for every folder window and tab, remembered (`Prefs.sidebarWidthKey`). The edge is the 10 pt of canvas between the two panels (`SidebarEdge`): the pointer over it is the column-resize cursor and a 4 × 36 pt `fg-muted` grip fades in at its middle (the shape says it can be moved; nothing shows at rest), a drag follows the pointer, a double-click springs back to the default. A window too narrow for the width shows what leaves the editor 220 pt, down to 180, and the whole width again when it is widened; the narrowest window (480 pt) holds both. VoiceOver has it as a slider, "Sidebar width, 230 points", stepping 10 pt, with a Default Width action.
 - **The window's bars**: an open find bar outlives the file and searches the one that shows now; the command palette closes (what it listed, or the line typed in it, was the other file's).
+
+### Settings
+
+One window (⌘,), sized to its content and no taller than a 13" screen holds (764 pt; 778 with the text at 200%): the title on the canvas beside the traffic lights, and one 600 pt panel with four groups under section labels (§4; heard as "Appearance", not spelled out), a `line` hairline between them. Rows are a bold title with a `fg-muted` caption under it and the control at the trailing edge.
+
+- **Appearance:** Theme (the swatches), Light or dark (System, Light, Dark).
+- **Editor:** Font (a menu: System (SF Mono), then the installed monospaced families by name, each item asking for its own face), with a sample line under it on a `current-line` well with a `line` hairline (`let greeting = "Hello, Kiri" // 0O 1lI {}` in the chosen font, the editor's size and the syntax colors); Text size (− 100% +); Wrap lines.
+- **Motion:** Motion (System, Full, Reduced, Off), Typing animations.
+- **Command line tool:** the kiri command, with where it is when installed, or Install… while it is missing or another copy's.
+- Nothing has the keyboard when the window opens.
+
+**Theme swatches** (`ThemePicker`, `ThemeSwatchArt`): six 60 pt high swatches sharing the panel's width, each in its own theme's colors and not the window's: the accent at full strength across the top half over the canvas, and from below the band a corner of the editor's paper (`surface`) with three lines of code in `syn-keyword`, `syn-type`, `syn-function`, `syn-string` and `syn-comment`. The light version is above the diagonal from bottom left to top right, the dark one below it (high-contrast values with increased contrast), with a faint `fg` hairline round the `control`-radius shape. The name is under it, 12 pt, 600 `fg-muted`, or 800 `fg` for the chosen one, which also has a 2.5 pt `focus` ring 4 pt outside the swatch: weight and a ring, not color alone. The pointer on a swatch, or the keyboard once a key has put it there (←/→ go from swatch to swatch), lifts it 4% with a 2 pt muted ring.
+
+- **Trying a theme:** the pointer on a swatch, or a key that moves the keyboard onto one, shows that theme in every window with the theme crossfade (`ThemePreview`, held in memory; the pointer goes before the keyboard). Off the swatches, the Settings window going to the back or closing puts the chosen theme back. A window that opens with the keyboard on a swatch shows nothing until a key moves it. A click, Space or VoiceOver's press chooses (`ThemePreview.keep`, the only write).
 
 ### First-run hint
 
