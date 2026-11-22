@@ -29,7 +29,7 @@ struct EditorScreen: View {
             topBar
             HStack(spacing: Honey.gap) {
                 if let folder = tabs.folder, sidebarShown {
-                    FolderSidebar(session: folder, model: model, currentFile: fileURL?.standardizedFileURL, open: openFromSidebar)
+                    FolderSidebar(session: folder, model: model, tabs: tabs, currentFile: fileURL?.standardizedFileURL)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 editor
@@ -65,6 +65,12 @@ struct EditorScreen: View {
             #endif
         }
         .onChange(of: fileURL) { detectLanguage() }
+        // Another document in this window (the preview tab going from
+        // file to file): a Save that was under way was the other one's.
+        .onChange(of: ObjectIdentifier(document)) {
+            detectLanguage()
+            saveState = .idle
+        }
         .onDisappear { tabs.invalidate() }
     }
 
@@ -105,32 +111,6 @@ struct EditorScreen: View {
             .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint)
     }
 
-    /// Opens a sidebar file as a tab of this window. An empty untitled tab
-    /// (what a folder window starts with) gives its place to the file.
-    private func openFromSidebar(_ url: URL) {
-        let blank = fileURL == nil && document.text.isEmpty && !(tabs.document?.isDocumentEdited ?? true)
-        let blankWindow = tabs.window
-        let folder = tabs.folder
-        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, alreadyOpen, error in
-            MainActor.assumeIsolated {
-                if let error { _ = NSApp.presentError(error); return }
-                guard let doc else { return }
-                if alreadyOpen, let w = Editors.window(for: doc) {
-                    w.tabGroup?.selectedWindow = w
-                    w.makeKeyAndOrderFront(nil)
-                }
-                guard blank, !alreadyOpen, let blankWindow, let folder else { return }
-                Editors.whenReady(doc) { _ in
-                    guard let w = Editors.window(for: doc), blankWindow.tabbedWindows?.contains(w) ?? false else { return }
-                    FolderSessions.set(folder, for: w)
-                    if let d = NSDocumentController.shared.document(for: blankWindow), d.fileURL == nil, !d.isDocumentEdited {
-                        blankWindow.performClose(nil)
-                    }
-                }
-            }
-        }
-    }
-
     /// The toolbar row on the canvas, level with the traffic lights: in a
     /// folder window the sidebar's button, then the tab strip, a new-tab
     /// button and Save.
@@ -160,7 +140,7 @@ struct EditorScreen: View {
                         HoneyTabStrip(tabs.tabs,
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
                                       scrollOffset: Binding(get: { tabs.stripOffset }, set: { tabs.stripOffset = $0 }),
-                                      onClose: { tabs.close($0) })
+                                      onClose: { tabs.close($0) }, onKeep: { tabs.keep($0) })
                     }
                     Button {
                         NSDocumentController.shared.newDocument(nil)
@@ -211,8 +191,8 @@ struct EditorScreen: View {
     }
 
     private func detectLanguage() {
-        let firstLine = document.file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
-        model.language = Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
+        let language = document.detectedLanguage
+        if model.language != language { model.language = language }
     }
 }
 

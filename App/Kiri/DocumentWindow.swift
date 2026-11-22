@@ -43,6 +43,40 @@ import SwiftUI
         return controller
     }
 
+    /// Shows `document` in `window`, in place of the document that is
+    /// there, which closes. The window, and so its tab, stays: the folder
+    /// sidebar's preview tab goes from file to file this way, without a
+    /// tab closing and another opening in the strip.
+    ///
+    /// False, with nothing done, when it can't be: the document there has
+    /// unsaved changes (it is never put aside), or `document` has a window.
+    @discardableResult
+    static func show(_ document: KiriDocument, in window: NSWindow) -> Bool {
+        guard let controller = window.windowController, let old = controller.document as? KiriDocument,
+              old !== document, !old.isDocumentEdited, document.windowControllers.isEmpty,
+              let host = window.contentViewController as? NSHostingController<DocumentRoot> else { return false }
+        old.removeWindowController(controller)
+        document.addWindowController(controller)
+        // The editor at once, not when SwiftUI next updates the window
+        // (which may be a tab that isn't showing): it never comes forward
+        // with the file before.
+        FrontEditor.shared.editor(in: window)?.controller?.show(document)
+        host.rootView = DocumentRoot(document: document)
+        FrontEditor.shared.documentChanged(to: document, in: window)
+        controller.synchronizeWindowTitleWithDocumentName()
+        // The tab's title in the same turn as the text, not one later
+        // (in this window's strip and in that of the tab that shows).
+        for shown in Set([window, window.tabGroup?.selectedWindow ?? window]) {
+            FrontEditor.shared.tabs(in: shown)?.refresh()
+        }
+        window.invalidateRestorableState()
+        old.close()
+        // No window closed, which is what these two wait for.
+        Waits.shared.check()
+        NewFiles.shared.check()
+        return true
+    }
+
     /// Whether `window` shows a document.
     static func isDocumentWindow(_ window: NSWindow) -> Bool {
         window.windowController?.document is KiriDocument

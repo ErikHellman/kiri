@@ -162,6 +162,17 @@ final class KiriDocumentController: NSDocumentController {
         RecentDocuments.shared.refresh()
     }
 
+    /// A file opened by name (⌘O, Open Recent, `kiri`, a drop) that is
+    /// showing in a preview tab is there to stay. (The sidebar opens its
+    /// files without a window first, and says itself what is kept.)
+    override func openDocument(withContentsOf url: URL, display displayDocument: Bool,
+                               completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
+        super.openDocument(withContentsOf: url, display: displayDocument) { document, alreadyOpen, error in
+            if displayDocument, alreadyOpen, let document { MainActor.assumeIsolated { PreviewTabs.keep(document) } }
+            completionHandler(document, alreadyOpen, error)
+        }
+    }
+
     override func clearRecentDocuments(_ sender: Any?) {
         super.clearRecentDocuments(sender)
         RecentDocuments.shared.refresh()

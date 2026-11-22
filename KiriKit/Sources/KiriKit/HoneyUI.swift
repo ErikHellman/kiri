@@ -118,6 +118,16 @@ public extension Font {
         .custom("Nunito", size: honeySize(style) * Honey.textScale, relativeTo: style).weight(weight)
     }
 
+    /// Nunito slanted, for a title that is provisional (a preview tab).
+    /// The family has no italic face, so the upright one is sheared, as a
+    /// browser does for a font without italics.
+    static func honeyOblique(_ style: Font.TextStyle = .body, weight: NSFont.Weight = .regular) -> Font {
+        let descriptor = NSFontDescriptor(fontAttributes: [.family: "Nunito"])
+            .addingAttributes([.traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue]])
+        var shear = CGAffineTransform(a: 1, b: 0, c: Honey.obliqueShear, d: 1, tx: 0, ty: 0)
+        return Font(CTFontCreateWithFontDescriptor(descriptor, honeySize(style) * Honey.textScale, &shear))
+    }
+
     /// Section labels: 11.5 pt, heavy; pair with `.textCase(.uppercase)` and `.tracking(0.7)`.
     static var honeySectionLabel: Font {
         .custom("Nunito", size: 11.5 * Honey.textScale).weight(.heavy)

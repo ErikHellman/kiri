@@ -20,6 +20,8 @@ import SwiftUI
         /// The file, or nil for a document that hasn't been saved.
         let path: String?
         let dirty: Bool
+        /// The folder sidebar's preview tab (`PreviewTabs`).
+        let preview: Bool
     }
 
     /// The items as tabs: each with its path as a tooltip (`~` for the home
@@ -30,7 +32,8 @@ import SwiftUI
         let home = NSHomeDirectory()
         return zip(items, details).map { item, detail in
             HoneyTab(id: item.id, title: item.title, detail: detail,
-                     tooltip: item.path.map { TabNames.abbreviatingHome($0, home: home) }, dirty: item.dirty)
+                     tooltip: item.path.map { TabNames.abbreviatingHome($0, home: home) }, dirty: item.dirty,
+                     preview: item.preview)
         }
     }
 
@@ -188,6 +191,7 @@ import SwiftUI
         on(.NSUndoManagerDidUndoChange)
         on(.NSUndoManagerDidRedoChange)
         on(FolderSessions.didChange)
+        on(PreviewTabs.didChange)
         // A tab closing; when it is this window, there is nothing left to watch.
         let ownWindow = ObjectIdentifier(window)
         tokens.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
@@ -235,6 +239,11 @@ import SwiftUI
         // joining (see `attach`), not itself alone.
         let joining = Self.joining.contains(ObjectIdentifier(window)) && !items.isEmpty
         let windows = window.tabbedWindows ?? [window]
+        // A preview never has unsaved changes: whatever changed it (an
+        // edit is heard of sooner, in the editor) keeps it.
+        for w in windows where PreviewTabs.isPreview(w) && NSDocumentController.shared.document(for: w)?.isDocumentEdited == true {
+            PreviewTabs.keep(w)
+        }
         if !joining {
             show(Self.items(of: windows))
             let sel = (window.tabGroup?.selectedWindow ?? window).windowNumber
@@ -251,7 +260,7 @@ import SwiftUI
         windows.map { w in
             let doc = NSDocumentController.shared.document(for: w)
             return Item(id: w.windowNumber, title: doc?.displayName ?? w.title, path: doc?.fileURL?.path,
-                        dirty: doc?.isDocumentEdited ?? false)
+                        dirty: doc?.isDocumentEdited ?? false, preview: PreviewTabs.isPreview(w))
         }
     }
 
@@ -350,6 +359,11 @@ import SwiftUI
             w.makeKeyAndOrderFront(nil)
         }
         w.performClose(nil)
+    }
+
+    /// A preview tab was double-clicked: it stays.
+    func keep(_ id: Int) {
+        PreviewTabs.keep((window?.tabbedWindows ?? [window].compactMap { $0 }).first { $0.windowNumber == id })
     }
 
     var document: NSDocument? { window.flatMap { NSDocumentController.shared.document(for: $0) } }

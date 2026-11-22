@@ -43,6 +43,18 @@ import SwiftUI
         if window.isMainWindow || window === self.window { windowBecameMain(window) }
     }
 
+    /// The editor of a document window, in front or not.
+    func editor(in window: NSWindow) -> EditorModel? { screens.object(forKey: window)?.editor }
+
+    /// The tabs model of a document window, in front or not.
+    func tabs(in window: NSWindow) -> WindowTabs? { screens.object(forKey: window)?.tabs }
+
+    /// `window` shows another document now (`DocumentWindow.show`).
+    func documentChanged(to document: KiriDocument, in window: NSWindow) {
+        screens.object(forKey: window)?.document = document
+        if window === self.window, self.document !== document { self.document = document }
+    }
+
     func start() {
         guard !started else { return }
         started = true

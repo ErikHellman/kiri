@@ -156,8 +156,9 @@ import SwiftUI
 struct FolderSidebar: View {
     let session: FolderSession
     let model: EditorModel
+    /// This window's tabs: where a file picked here opens.
+    let tabs: WindowTabs
     let currentFile: URL?
-    let open: (URL) -> Void
     @FocusState private var focused: Bool
     @State private var typed = ""
     @State private var typedAt = Date.distantPast
@@ -295,18 +296,25 @@ struct FolderSidebar: View {
         return .handled
     }
 
-    /// Return and Space: a folder opens or closes, a file opens. Return
-    /// also moves the keyboard to the editor.
+    /// Return and Space: a folder opens or closes, a file opens. Space
+    /// shows it in the preview tab and the keyboard stays here; Return
+    /// opens it to stay and moves the keyboard to its editor.
     private func activate(thenEdit: Bool) -> KeyPress.Result {
         guard let i = cursorIndex else { return move(0) }
         let node = rows[i].node
         if node.isDirectory {
             withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
-        } else {
-            open(node.url)
-            if thenEdit { EditorController.focusKeyWindowEditor() }
+        } else if let window = tabs.window {
+            SidebarOpen.open(node.url, keep: thenEdit, from: window, keyboard: thenEdit ? .editor : .sidebar)
         }
         return .handled
+    }
+
+    /// A click on a file's row shows it in the preview tab; the second
+    /// click of a double-click keeps it.
+    private func open(_ url: URL, keep: Bool) {
+        guard let window = tabs.window else { return }
+        SidebarOpen.open(url, keep: keep, from: window)
     }
 
     /// Typing a name's first letters jumps to the next row that starts with
@@ -340,7 +348,8 @@ private struct FileRow: View {
     let session: FolderSession
     let currentFile: URL?
     let keyboardFocus: Bool
-    let open: (URL) -> Void
+    /// Shows the file; `keep` for a double-click.
+    let open: (URL, Bool) -> Void
     @State private var hovering = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
@@ -355,7 +364,7 @@ private struct FileRow: View {
                 if node.isDirectory {
                     withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
                 } else {
-                    open(node.url)
+                    open(node.url, false)
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -397,6 +406,10 @@ private struct FileRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // A double-click keeps the file's tab. Beside the button, not in
+            // its place: the first click shows the file at once.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true) } })
+            .modifier(KeepOpenAction(isFile: !node.isDirectory) { open(node.url, true) })
             .focusable(false) // the sidebar takes the keys, not each row
             .id(node.url)
             .onHover { hovering = $0 }
@@ -410,6 +423,21 @@ private struct FileRow: View {
                             keyboardFocus: keyboardFocus, open: open)
                 }
             }
+        }
+    }
+}
+
+/// "Open in a Tab" for VoiceOver and Voice Control, which have no
+/// double-click: what a double-click on a file's row does.
+private struct KeepOpenAction: ViewModifier {
+    let isFile: Bool
+    let keep: () -> Void
+
+    func body(content: Content) -> some View {
+        if isFile {
+            content.accessibilityAction(named: "Open in a Tab", keep)
+        } else {
+            content
         }
     }
 }

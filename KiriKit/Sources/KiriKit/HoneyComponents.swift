@@ -19,13 +19,18 @@ public struct HoneyTab<ID: Hashable & Sendable>: Identifiable, Sendable {
     public var tooltip: String?
     /// Unsaved changes: shows a dot that turns into the close button on hover.
     public var dirty: Bool
+    /// A preview: the tab the next file looked at will take over. Its
+    /// title slants until it is kept (a double-click, an edit, a save).
+    public var preview: Bool
 
-    public init(id: ID, title: String, detail: String? = nil, tooltip: String? = nil, dirty: Bool = false) {
+    public init(id: ID, title: String, detail: String? = nil, tooltip: String? = nil, dirty: Bool = false,
+                preview: Bool = false) {
         self.id = id
         self.title = title
         self.detail = detail
         self.tooltip = tooltip
         self.dirty = dirty
+        self.preview = preview
     }
 
     /// The title and what tells it apart, for menus and VoiceOver.
@@ -52,6 +57,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     let tabs: [HoneyTab<ID>]
     @Binding var selection: ID
     let onClose: ((ID) -> Void)?
+    let onKeep: ((ID) -> Void)?
     let scrollOffset: Binding<CGFloat>?
     @Namespace private var pill
     @FocusState private var focused: ID?
@@ -65,12 +71,15 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     ///   for when several strips show the same tabs in turn (Kiri has one
     ///   per window of a tab group): each starts where the last one was, so
     ///   the tabs don't jump when one window takes another's place.
+    /// - Parameter onKeep: a preview tab was double-clicked (or VoiceOver's
+    ///   Keep Open chosen): it is to become a tab like any other.
     public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, scrollOffset: Binding<CGFloat>? = nil,
-                onClose: ((ID) -> Void)? = nil) {
+                onClose: ((ID) -> Void)? = nil, onKeep: ((ID) -> Void)? = nil) {
         self.tabs = tabs
         _selection = selection
         self.scrollOffset = scrollOffset
         self.onClose = onClose
+        self.onKeep = onKeep
     }
 
     public var body: some View {
@@ -170,6 +179,8 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
                     select(tab.id, motion)
                 } close: {
                     onClose?(tab.id)
+                } keep: {
+                    onKeep?(tab.id)
                 }
                 .id(tab.id)
                 // A new tab grows in from nothing and a closed one
@@ -214,7 +225,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     /// unsaved ones.
     private func moreItems(_ motion: HoneyMotion) -> some View {
         ForEach(tabs) { tab in
-            Toggle(tab.name(separator: TabText.detailSeparator) + (tab.dirty ? " •" : ""),
+            Toggle(tab.name(separator: TabText.detailSeparator) + (tab.dirty ? " •" : tab.preview ? " (preview)" : ""),
                    isOn: Binding(get: { tab.id == selection }, set: { if $0 { select(tab.id, motion) } }))
         }
     }
@@ -338,6 +349,7 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
     let focused: FocusState<ID?>.Binding
     let select: () -> Void
     let close: () -> Void
+    let keep: () -> Void
     @State private var hovering = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
@@ -353,7 +365,7 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
         // A real button: Tab reaches it with Keyboard Navigation on, Space
         // or Return selects, and VoiceOver hears a button with its state.
         Button(action: select) {
-            Text("\(Text(text.title))\(folder(text.detail))")
+            Text("\(title(text.title))\(folder(text.detail))")
                 .font(.honey(.subheadline, weight: selected ? .bold : .semibold))
                 .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
                 .lineLimit(1)
@@ -373,13 +385,17 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(HoneyTabButtonStyle())
+        // A double-click keeps a preview. Beside the button, not in its
+        // place: the first click selects at once, as on any tab.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { if tab.preview { keep() } })
         .focused(focused, equals: tab.id)
         .focusEffectDisabled()
         .onKeyPress(.return) { select(); return .handled }
         .accessibilityLabel(tab.name(separator: ", "))
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(tab.dirty ? "Edited" : "")
+        .accessibilityValue(tab.dirty ? "Edited" : tab.preview ? "Preview" : "")
         .accessibilityAction(named: "Close") { close() }
+        .modifier(HoneyTabKeepAction(preview: tab.preview, keep: keep))
         .overlay {
             Capsule().strokeBorder(Color.honeyFocus, lineWidth: focused.wrappedValue == tab.id ? 2 : 0)
                 .allowsHitTesting(false)
@@ -392,6 +408,11 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
         }
         .onHover { h in withAnimation(motion.quick) { hovering = h } }
         .help(tab.tooltip ?? "")
+    }
+
+    /// A preview's title slants: it is not here to stay.
+    private func title(_ title: String) -> Text {
+        tab.preview ? Text(title).font(.honeyOblique(.subheadline, weight: selected ? .bold : .semibold)) : Text(title)
     }
 
     /// " · api" after the title: lighter and muted, also on the selected tab.
@@ -422,6 +443,20 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
             Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
                 .allowsHitTesting(false)
                 .transition(.scale.combined(with: .opacity))
+        }
+    }
+}
+
+/// "Keep Open" for VoiceOver and Voice Control, on a preview tab only.
+private struct HoneyTabKeepAction: ViewModifier {
+    let preview: Bool
+    let keep: () -> Void
+
+    func body(content: Content) -> some View {
+        if preview {
+            content.accessibilityAction(named: "Keep Open", keep)
+        } else {
+            content
         }
     }
 }

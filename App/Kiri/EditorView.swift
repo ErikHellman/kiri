@@ -138,6 +138,7 @@ struct EditorView: NSViewRepresentable {
     /// reads its file again (File ▸ Revert to Saved), which it says here.
     func load(_ document: KiriDocument) {
         guard let textView, let storage = textView.textStorage else { return }
+        if let old = self.document, old !== document, old.editor === self { old.editor = nil }
         self.document = document
         document.editor = self
         let text = document.text
@@ -161,6 +162,24 @@ struct EditorView: NSViewRepresentable {
         container?.updateGutterWidth()
         highlighter?.textReplaced()
         updateCaret()
+    }
+
+    /// Another document takes this editor (the preview tab going from
+    /// file to file): what `EditorView` does for a new one, in its order,
+    /// and from the file's first line.
+    func show(_ document: KiriDocument) {
+        guard self.document !== document else { return }
+        // The line asked for was a line of the other file.
+        model.goToLine.documentReplaced()
+        undoManager = document.undoManager
+        setUntitled(document.fileURL == nil)
+        load(document)
+        let language = document.detectedLanguage
+        if model.language != language { model.language = language }
+        setLanguage(language)
+        if let scroll = textView?.enclosingScrollView {
+            scrollOrigin = NSPoint(x: 0, y: -scroll.contentInsets.top)
+        }
     }
 
     func setLanguage(_ language: Language) {
@@ -241,6 +260,8 @@ struct EditorView: NSViewRepresentable {
     /// The document's text changed in `range` (of the new text), by typing,
     /// pasting, a drop, undo or a command.
     private func documentEdited(_ range: NSRange) {
+        // An edit keeps a preview tab: it is the person's file now.
+        PreviewTabs.keep(textView?.window)
         // The first-run hint goes with the first character and stays gone.
         if untouched {
             untouched = false
@@ -444,21 +465,5 @@ struct EditorView: NSViewRepresentable {
     func focus() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
-    }
-
-    /// Puts the keyboard in the front window's editor, once a file opened
-    /// from the sidebar (maybe in another tab) has come forward.
-    static func focusKeyWindowEditor() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            guard let window = NSApp.keyWindow, let view = window.contentView,
-                  let text = findTextView(in: view) else { return }
-            window.makeFirstResponder(text)
-        }
-    }
-
-    private static func findTextView(in view: NSView) -> KiriTextView? {
-        if let t = view as? KiriTextView { return t }
-        for sub in view.subviews { if let t = findTextView(in: sub) { return t } }
-        return nil
     }
 }

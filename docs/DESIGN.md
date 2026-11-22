@@ -86,6 +86,7 @@ Honey is the default; Settings ▸ Theme (and View ▸ Theme) also offers **Matc
 - **Nunito** (OFL, weights 400/600/700/800, bundled in `KiriKit/Sources/KiriKit/Fonts`) for all UI: `Font.honey(.body, weight:)`.
 - Scale: 12 caption · 13 meta · 15 body · 17 panel title · 20 view title · 26 heading. Weights: 400 body, 600 secondary emphasis, 700 buttons and tab titles, 800 titles and section labels (11.5 pt uppercase, +0.06 em).
 - **Editor and code:** SF Mono via `Font.honeyMono()` at 13 pt.
+- **Slanted** (`Font.honeyOblique`): a title that is provisional, which today is a preview tab's. Nunito has no italic face, so the upright one is sheared by `Honey.obliqueShear` (0.2, about 11°), as a browser does for a font without italics.
 - `Honey.textScale` scales all of it (macOS has no Dynamic Type).
 
 ## 5. Shape and layout
@@ -143,6 +144,15 @@ Call `Honey.registerFonts()` once at launch.
 - **A steady width.** The position keeps the room of the widest text the document can show (as many digits as its last line, its longest line and its length need; at least "Ln 88, Sel 888"), in tabular digits, text at the leading edge. A selection's length takes the column's place ("Ln 12, Sel 5"), not more room. The indentation keeps the room of "Spaces: 8". The room changes only when a count passes a power of ten.
 - **Rest.** While the person types or scrolls, the bar fades to `Honey.restOpacity` (35 %) over `Honey.medium`: its content, and the glass gives way to 35 % of its solid fill with a hairline, so the text under it is neither blurred nor bent. It comes back over `Honey.quick` a second after the last key or scroll, when the pointer moves within 40 pt of it, when the keyboard goes to one of its items or when a menu opens; it takes clicks all the while. With reduced motion (the system's or Motion: Reduced or Off) and with increased contrast it stays solid.
 - **Names.** VoiceOver hears "Language, Swift", "Encoding, UTF-8", "Line endings, LF" (pop-up buttons), "Go to Line" with "Line 12 of 340, column 5" as its value, and "Indentation, 4 spaces".
+
+### The folder sidebar
+
+A folder window (`kiri <folder>`, File ▸ Open Folder…) shows the folder's tree in a `chrome` glass panel beside the editor (`FolderSidebar`); every tab of the window shares it (`FolderSession`).
+
+- **The preview tab.** A click on a file's row, or Space with the keyboard on it, shows the file in the window's preview tab, and the next file shown that way takes that tab over: the document in the tab's window is replaced (`DocumentWindow.show`), so no tab closes or opens, the strip stays where it is and only a title changes, in the same turn as the text. An empty untitled tab (what a folder window starts with) is taken over the same way; with neither, the preview opens after the tab the file was picked in. A file that is open already is selected instead.
+- **Its title slants** (`Font.honeyOblique`), in the tab and in the strip's overflow menu ("name (preview)"): the shape says it is provisional, not color. VoiceOver hears "Preview" as the tab's value and has a Keep Open action; a file's row has Open in a Tab.
+- **Keeping it.** An edit (a preview never has unsaved changes), a save, a double-click on the row or on the tab, Return on the row (which also moves the keyboard to the editor), or opening the file by name (⌘O, Open Recent, `kiri`, a drop) makes it a tab like any other, and the next file clicked gets a new preview.
+- **The window's bars** outlive the file: an open find bar searches the file that shows now, and Go to Line closes (its line was a line of the other file).
 
 ### First-run hint
 

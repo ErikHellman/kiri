@@ -184,6 +184,9 @@ public enum Honey {
     public static let typeScale: [Double] = [12, 13, 15, 17, 20, 26]
     /// The editor's default monospace size.
     public static let editorFontSize = 13.0
+    /// How far a slanted title leans: Nunito has no italic face, so the
+    /// upright one is sheared by this (about 11°).
+    public static let obliqueShear = 0.2
 }
 
 /// How much the interface animates. `system` follows the OS reduce-motion switch.

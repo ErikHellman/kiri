@@ -655,6 +655,18 @@ import Observation
         if focusEditor { controller?.focus() }
     }
 
+    /// Another document takes the editor (the folder sidebar's preview
+    /// tab): the field closes, and where the caret was in the document
+    /// before is not gone back to.
+    func documentReplaced() {
+        guard isOpen else { return }
+        let window = controller?.textView?.window
+        let inField = (window?.firstResponder as? NSTextView)?.isFieldEditor == true
+        end()
+        // The keyboard was in the field that just went.
+        if inField { controller?.focus() }
+    }
+
     private func end() {
         isOpen = false
         before = nil

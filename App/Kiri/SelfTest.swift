@@ -28,6 +28,23 @@ import os
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { behavior(textView) }
             return
         }
+        // -KiriSidebarTest YES: the folder sidebar's checks alone (they are
+        // part of -KiriBehaviorTest too).
+        if UserDefaults.standard.bool(forKey: "KiriSidebarTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for the sidebar checks"); quit(); return }
+                FrontEditor.shared.selfTestMain(window)
+                Task { @MainActor in
+                    await sidebarStage(window)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE sidebar")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         if let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") {
             guard !started else { return }
             started = true
@@ -428,8 +445,26 @@ import os
             openedFolder = true
             let files = (UserDefaults.standard.string(forKey: "KiriOpenFolderFiles") ?? "").split(separator: ":")
                 .map { KiriCLI.Request.Entry.file(URL(fileURLWithPath: String($0)), line: 0, column: 0) }
+            // -KiriSidebarKeep <path:path:…> then double-clicks those files'
+            // rows (each opens to stay), and -KiriSidebarClick <path:path:…>
+            // clicks those, one after another (each shows in the preview tab).
+            func paths(_ key: String) -> [URL] {
+                (UserDefaults.standard.string(forKey: key) ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
+            }
+            var clicks = paths("KiriSidebarKeep").map { ($0, true) } + paths("KiriSidebarClick").map { ($0, false) }
+            let root = URL(fileURLWithPath: folder).standardizedFileURL
+            func click() {
+                guard !clicks.isEmpty else { return }
+                guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }) else { return }
+                let (url, keep) = clicks.removeFirst()
+                SidebarOpen.open(url, keep: keep, from: window) { _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { click() }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))] + files))
+                KiriCLI.open(KiriCLI.Request(entries: [.folder(URL(fileURLWithPath: folder))] + files)) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { click() }
+                }
             }
         }
         // Screenshot helpers for the tab strip, run once the launch's files
@@ -1058,7 +1093,7 @@ import os
     /// on one of its buttons, with `anywhere`): never into the document,
     /// but for Escape.
     @discardableResult
-    private static func typeKeys(_ text: String, in window: NSWindow, modifiers: NSEvent.ModifierFlags = [],
+    static func typeKeys(_ text: String, in window: NSWindow, modifiers: NSEvent.ModifierFlags = [],
                                  anywhere: Bool = false) async -> Bool {
         guard anywhere && (text == "\u{1b}" || !(window.firstResponder is KiriTextView)) || fieldEditor(of: window) != nil else {
             report(false, "the keyboard is in a bar's field for typing “\(text.unicodeScalars.map { $0.value < 32 ? "⌃" : String($0) }.joined())” (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
@@ -1082,7 +1117,7 @@ import os
     }
 
     /// The field of a bar that has the keyboard, if one has.
-    private static func fieldEditor(of window: NSWindow) -> NSTextView? {
+    static func fieldEditor(of window: NSWindow) -> NSTextView? {
         (window.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0 : nil }
     }
 
@@ -1913,6 +1948,7 @@ import os
                         await frontWindow(window)
                         await toggleCommentStage(window)
                         await dropStage(window)
+                        await sidebarStage(window)
                         await themeFadeStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
@@ -2506,13 +2542,20 @@ import os
 
     /// What VoiceOver is given for a window, flattened: each element's role,
     /// name, frame on screen and whether it is selected.
-    private struct AccessibilityElement {
+    struct AccessibilityElement {
         let role: String, name: String, value: String, frame: NSRect, selected: Bool, focused: Bool
         let object: AnyObject
 
         /// Presses it, as VoiceOver would.
         @MainActor func press() {
             _ = object.perform(NSSelectorFromString("accessibilityPerformPress"))
+        }
+
+        /// The names of its custom actions (VoiceOver's Actions menu).
+        @MainActor var actions: [String] {
+            let selector = NSSelectorFromString("accessibilityCustomActions")
+            guard object.responds(to: selector) else { return [] }
+            return (object.perform(selector)?.takeUnretainedValue() as? [NSAccessibilityCustomAction] ?? []).map(\.name)
         }
     }
 
@@ -2523,7 +2566,7 @@ import os
 
     /// SwiftUI builds its accessibility elements once something has asked
     /// this process for them, from another thread.
-    private static func wakeAccessibility() async {
+    static func wakeAccessibility() async {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             DispatchQueue.global().async {
                 var value: AnyObject?
@@ -2534,7 +2577,7 @@ import os
         try? await Task.sleep(for: .milliseconds(300))
     }
 
-    private static func accessibilityElements(of root: Any, depth: Int = 0) -> [AccessibilityElement] {
+    static func accessibilityElements(of root: Any, depth: Int = 0) -> [AccessibilityElement] {
         // SwiftUI's elements answer these without declaring the protocol.
         func ask(_ selector: String) -> Any? {
             let o = root as AnyObject, sel = NSSelectorFromString(selector)
@@ -2661,6 +2704,13 @@ struct TabStripSample: View {
                                    sidebar: true, width: width))
         rows.append(TabStripSample(caption: "folder window, 12 tabs", tabs: tabs(Array(names.prefix(12))), selected: 6,
                                    sidebar: true, width: width))
+        // A preview tab (a file clicked once in the sidebar): its title slants.
+        for selected in [3, 0] {
+            var four = tabs(Array(names.prefix(4)), dirty: [])
+            four[3].preview = true
+            rows.append(TabStripSample(caption: "folder window, tab 4 a preview, tab \(selected + 1) selected", tabs: four,
+                                       selected: selected, sidebar: true, width: width))
+        }
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(rows.indices, id: \.self) { rows[$0] }
         }

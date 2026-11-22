@@ -142,6 +142,18 @@ extension UTType {
         try super.write(to: url, ofType: typeName, for: saveOperation, originalContentsURL: absoluteOriginalContentsURL)
     }
 
+    /// A save keeps a preview tab: a file that was saved here is one
+    /// being worked on. (A recovery copy is no save.)
+    override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
+                       completionHandler: @escaping (Error?) -> Void) {
+        super.save(to: url, ofType: typeName, for: saveOperation) { error in
+            if error == nil, saveOperation != .autosaveElsewhereOperation {
+                MainActor.assumeIsolated { PreviewTabs.keep(self) }
+            }
+            completionHandler(error)
+        }
+    }
+
     // MARK: Recovery copies
 
     /// AppKit keeps the recovery copy of a document that has a file beside
@@ -178,6 +190,12 @@ extension UTType {
         }
     }
 
+    /// The language the file's name, or its first line, says it is in.
+    var detectedLanguage: Language {
+        let firstLine = file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
+        return Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
+    }
+
     // MARK: Changes on disk
 
     /// The file was changed by something else (git, a formatter, another
@@ -205,6 +223,8 @@ extension UTType {
         let old = self[keyPath: keyPath]
         guard old != new else { return }
         self[keyPath: keyPath] = new
+        // Unsaved changes, so no longer a preview.
+        PreviewTabs.keep(self)
         undoManager?.registerUndo(withTarget: self) { document in
             MainActor.assumeIsolated { document.change(keyPath, to: old, actionName: actionName) }
         }
