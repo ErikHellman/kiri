@@ -11,6 +11,8 @@ enum Prefs {
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
     static let typingAnimationsKey = "typingAnimations"
+    /// The editor's font family (`EditorFont`), absent for SF Mono.
+    static let editorFontKey = "editorFont"
     /// How wide the folder sidebar is, in points (`SidebarWidth`): set by
     /// dragging its edge, absent until then.
     static let sidebarWidthKey = "sidebarWidth"
@@ -33,6 +35,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @State private var commandLineTool = CommandLineTool.shared
+    @State private var editorFont = EditorFont.shared
 
     var body: some View {
         panel
@@ -77,6 +80,7 @@ struct SettingsView: View {
                 Toggle("Typing animations", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
                     .disabled(motion == .off)
             }
+            fontRow
             row("Editor text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
                 HStack(spacing: 8) {
                     Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller Text", systemImage: "minus") }
@@ -95,6 +99,26 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 600)
         .honeyPanel()
+    }
+
+    /// The editor's typeface: a menu of the installed monospaced families,
+    /// each in its own face, and a line of code in the chosen one at the
+    /// editor's size, under it.
+    private var fontRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            row("Font", detail: "The editor's typeface. The size is the text size's.") {
+                Picker("Font", selection: Binding(get: { editorFont.shown }, set: { editorFont.choose($0) })) {
+                    Text(EditorFont.systemName).font(Font(EditorFont.font("", size: 13))).tag("")
+                    Divider()
+                    ForEach(EditorFont.families, id: \.self) { family in
+                        Text(family).font(Font(EditorFont.font(family, size: 13))).tag(family)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            FontSample(family: editorFont.shown, scale: textScale)
+        }
     }
 
     /// The `kiri` command: whether a terminal has it, and where; a button
@@ -136,6 +160,39 @@ struct SettingsView: View {
     }
 }
 
+
+/// A line of code in the editor's font, size and colors: what the text
+/// will look like.
+private struct FontSample: View {
+    let family: String
+    let scale: Double
+
+    var body: some View {
+        let font = EditorFont.font(family, size: Honey.editorFontSize * scale)
+        Text(sample)
+            .font(Font(font))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.honeyCurrentLine, in: RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous).strokeBorder(Color.honeyLine, lineWidth: 1))
+            .accessibilityLabel("Sample in \(family.isEmpty ? "SF Mono" : family)")
+    }
+
+    /// `let greeting = "Hello, Kiri" // 0O 1lI {}`: the letters people tell
+    /// fonts apart by, in the syntax colors.
+    private var sample: AttributedString {
+        func part(_ text: String, _ token: Honey.Token) -> AttributedString {
+            var a = AttributedString(text)
+            a.foregroundColor = Color.honey(token)
+            return a
+        }
+        return part("let ", Honey.synKeyword) + part("greeting", Honey.fg) + part(" = ", Honey.synPunctuation)
+            + part("\"Hello, Kiri\"", Honey.synString) + part(" // 0O 1lI {}", Honey.synComment)
+    }
+}
 
 /// The color themes as swatches, each in its own colors (`ThemeSwatchArt`).
 /// The pointer on a swatch, or the keyboard moved onto one, shows that

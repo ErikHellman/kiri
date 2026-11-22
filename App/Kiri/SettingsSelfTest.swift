@@ -84,6 +84,8 @@ extension SelfTest {
         preview.end()
         ThemeController.apply()
 
+        await fontChecks(original, settings: settings)
+
         // Closing Settings with the pointer still on a swatch (it never
         // says it left) puts the chosen theme back.
         SwatchPreview.pointer(others[4])
@@ -95,6 +97,58 @@ extension SelfTest {
 
         let after = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
         report(NSDictionary(dictionary: saved).isEqual(to: after), "nothing in Settings' checks wrote a saved preference")
+    }
+
+    /// Settings ▸ Font: what the menu lists, and every window's editor
+    /// (its text, bold headings and line numbers) following a choice at
+    /// once, at the size it had; a family that is gone gives SF Mono.
+    private static func fontChecks(_ original: NSWindow, settings: NSWindow) async {
+        let store = EditorFont.shared
+        let givenFamily = store.family
+        let families = EditorFont.families
+        print("SELFTEST info editor fonts: \(families.joined(separator: ", "))")
+        // Measured here, apart from how the list was made: every family's
+        // regular face sets i, W, m, 0 and a space equally wide.
+        let uneven = families.filter { family in
+            let font = EditorFont.font(family, size: 13)
+            let widths = ["i", "W", "m", "0", " "].map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+            return font.familyName != family || widths.contains { abs($0 - widths[0]) > 0.01 }
+        }
+        report(!families.isEmpty && families.contains("Menlo") && uneven.isEmpty && !families.contains { $0.hasPrefix(".") || $0 == "SF Mono" }
+               && families == families.sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+               "the Font menu lists \(families.count) installed families, by name, every one with letters of one width (not: \(uneven))")
+
+        // (Whether the menu lists them so, each in its own face, a test
+        // can't see: SwiftUI makes the menu's items only when it opens.)
+        print("SELFTEST SKIP the Font menu's items in their own faces (SwiftUI builds the menu only when it is opened, which a test launch must not do)")
+
+        guard let controller = FrontEditor.shared.editor(in: original)?.controller, let text = controller.textView,
+              let gutter = controller.gutter else { report(false, "the editor of the test's window"); return }
+        let size = text.font?.pointSize ?? 0, gutterSize = gutter.font.pointSize
+        func shows(_ family: String) -> Bool {
+            let storageFont = text.textStorage?.length ?? 0 > 0
+                ? text.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont : text.font
+            return text.font?.familyName == family && storageFont?.familyName == family && gutter.font.familyName == family
+                && text.font?.pointSize == size && gutter.font.pointSize == gutterSize
+        }
+        let other = families.first { $0 == "Menlo" } ?? families.first ?? ""
+        store.choose(other)
+        var followed = false
+        for _ in 0..<40 where !followed { await settle(25); followed = shows(other) }
+        report(followed && UserDefaults.standard.string(forKey: Prefs.editorFontKey) == other,
+               "choosing \(other) changes the open window's text and line numbers to it at once, at the size they had (\(text.font?.fontName ?? "-") \(text.font?.pointSize ?? 0), gutter \(gutter.font.fontName))")
+
+        // A family that isn't installed (uninstalled since it was chosen).
+        let missing = "Kiri Missing Mono \(getpid())"
+        store.choose(missing)
+        await settle(150)
+        let system = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        report(store.shown.isEmpty && text.font?.fontName == system.fontName && EditorFont.font(missing, size: 13, weight: .bold).pointSize == 13,
+               "a family that is gone gives SF Mono in the editor (\(text.font?.fontName ?? "-"))")
+
+        store.choose(givenFamily)
+        setArgument(Prefs.editorFontKey, givenFamily.isEmpty ? nil : givenFamily)
+        await settle(100)
     }
 
     /// Kiri ▸ Settings… chosen from the app menu (SwiftUI opens the

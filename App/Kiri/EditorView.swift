@@ -59,6 +59,8 @@ struct EditorView: NSViewRepresentable {
     let document: KiriDocument
     let model: EditorModel
     let fontScale: Double
+    /// The editor's font family (`EditorFont`), "" for SF Mono.
+    let fontFamily: String
     let language: Language
     /// The document has no file yet.
     let isUntitled: Bool
@@ -90,7 +92,7 @@ struct EditorView: NSViewRepresentable {
         c.undoManager = document.undoManager
         c.setUntitled(isUntitled)
         if c.document !== document { c.load(document) }
-        c.setFontScale(fontScale)
+        c.setFont(family: fontFamily, scale: fontScale)
         c.setLanguage(language)
         c.setWrap(wrapLines)
         view.textView.setAnimation(animation)
@@ -105,6 +107,7 @@ struct EditorView: NSViewRepresentable {
     private(set) weak var document: KiriDocument?
     private weak var container: EditorContainerView?
     private var fontScale = 1.0
+    private var fontFamily = ""
     private var lineIndex = LineIndex()
     private var highlighter: SyntaxHighlighter?
     /// The longest line the document has had since it loaded (UTF-16
@@ -128,6 +131,8 @@ struct EditorView: NSViewRepresentable {
     }
 
     var textView: KiriTextView? { container?.textView }
+    /// The line numbers beside the text.
+    var gutter: LineNumberGutter? { container?.gutter }
 
     func attach(_ view: EditorContainerView) {
         container = view
@@ -201,13 +206,14 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: Font
 
-    func setFontScale(_ scale: Double) {
-        guard scale != fontScale else { return }
+    func setFont(family: String, scale: Double) {
+        guard scale != fontScale || family != fontFamily else { return }
         fontScale = scale
+        fontFamily = family
         applyFont()
     }
 
-    private var font: NSFont { .monospacedSystemFont(ofSize: Honey.editorFontSize * fontScale, weight: .regular) }
+    private var font: NSFont { EditorFont.font(fontFamily, size: Honey.editorFontSize * fontScale) }
 
     private var textAttributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -227,8 +233,9 @@ struct EditorView: NSViewRepresentable {
             storage.endEditing()
         }
         highlighter?.baseFont = font
+        highlighter?.boldFont = EditorFont.font(fontFamily, size: font.pointSize, weight: .bold)
         highlighter?.invalidateColors()
-        container?.gutter.font = .monospacedDigitSystemFont(ofSize: max(9, 11 * fontScale), weight: .regular)
+        container?.gutter.font = EditorFont.gutterFont(fontFamily, size: max(9, 11 * fontScale))
         container?.updateGutterWidth()
     }
 

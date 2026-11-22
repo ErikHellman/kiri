@@ -21,6 +21,7 @@ struct EditorScreen: View {
     /// it has room for, and fewer words in a narrow one.
     @State private var panelSize = DocumentWindow.defaultSize
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
+    @State private var editorFont = EditorFont.shared
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @Environment(\.openWindow) private var openWindow
@@ -96,7 +97,7 @@ struct EditorScreen: View {
         let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
         // The bars pop in; with Reduce Motion they fade.
         let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
-        return EditorView(document: document, model: model, fontScale: textScale, language: model.language,
+        return EditorView(document: document, model: model, fontScale: textScale, fontFamily: editorFont.shown, language: model.language,
                    isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations))

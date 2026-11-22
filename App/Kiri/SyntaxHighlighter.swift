@@ -22,6 +22,8 @@ import KiriSyntax
     private var colored = IndexSet()
     private var scheduled = false
     var baseFont: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
+    /// Headings and strong text (`EditorFont`, in the editor's family).
+    var boldFont: NSFont = .monospacedSystemFont(ofSize: 13, weight: .bold)
 
     /// Files bigger than this skip Tree-sitter and use the fallback lexer.
     static let treeSitterLimit = 10 * 1024 * 1024
@@ -263,7 +265,7 @@ import KiriSyntax
     private func font(for kind: SyntaxKind) -> NSFont? {
         switch kind {
         case .heading, .strong:
-            NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .bold)
+            boldFont
         case .emphasis:
             NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
         default: nil
