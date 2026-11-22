@@ -285,9 +285,20 @@ extension SelfTest {
             let all = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue }
             // (Below the top bar: the tabs have the files' names too.)
             let row = { (name: String) in all.first { $0.name == name && $0.frame.maxY < g.frame.maxY - 60 } }
+            // (sub is open: f.rs, inside it, was shown from the sidebar earlier, but by its path. Open it here.)
+            if let session = FolderSessions.session(for: g), !session.expanded.contains(f.file("sub")) {
+                all.first { $0.name == "sub, folder" }?.press()
+                _ = await f.wait(1) { session.expanded.contains(f.file("sub")) }
+                await settle(150)
+            }
+            let after = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue && $0.frame.maxY < g.frame.maxY - 60 }
+            let deep = { (name: String) in after.first { $0.name == name } }
             rows = ["g.txt", "a.swift", "b.md"].map { "\($0): “\(row($0)?.value ?? "none")”" }.joined(separator: ", ")
+                + ", sub: “\(deep("sub, folder")?.value ?? "none")”, f.rs in it: “\(deep("f.rs")?.value ?? "none")”"
             heard = row("g.txt")?.value == "Open, edited" && row("g.txt")?.selected == true && row("a.swift")?.value == "Open"
                 && row("a.swift")?.selected == false && row("b.md")?.value == ""
+                && all.first { $0.name == "sub, folder" }?.value == "collapsed" && deep("sub, folder")?.value == "expanded"
+                && deep("f.rs")?.value == "Open, level 2"
         }
         f.document(g)?.save(withDelegate: nil, didSave: nil, contextInfo: nil)
         let asSaved = await f.wait { marks()[f.file("g.txt")] == .init(edited: false, preview: false) }
@@ -297,7 +308,7 @@ extension SelfTest {
         report(asPreview && asEdited && asSaved && asClosed,
                "a row's mark follows its tab: the preview when clicked, unsaved once typed in, open when saved, none when the tab closes (\(asPreview) \(asEdited) \(asSaved) \(asClosed))")
         if let heard {
-            report(heard, "VoiceOver hears a row's state as its value, and the current file as selected (\(rows))")
+            report(heard, "VoiceOver hears a row's state as its value (a folder collapsed or expanded, a file in a folder its level), and the current file as selected (\(rows))")
         } else {
             print("SELFTEST SKIP what VoiceOver hears of an open file's row (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }

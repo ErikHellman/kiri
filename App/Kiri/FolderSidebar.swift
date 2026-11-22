@@ -669,8 +669,11 @@ private struct FileRow: View {
                 .id(node.url)
                 .onHover { hovering = $0 }
                 .help(node.url.path)
-                .accessibilityLabel(node.isDirectory ? "\(node.name), folder, \(expanded ? "expanded" : "collapsed")" : node.name)
-                .accessibilityValue(mark.map { $0.preview ? "Preview" : $0.edited ? "Open, edited" : "Open" } ?? "")
+                // The tree in words, since SwiftUI has no outline to say
+                // it is: a folder is open or closed, and a row inside one
+                // says how deep it is.
+                .accessibilityLabel(node.isDirectory ? "\(node.name), folder" : node.name)
+                .accessibilityValue(Self.spokenState(folderExpanded: node.isDirectory ? expanded : nil, mark: mark, depth: depth))
                 .accessibilityAddTraits(current ? .isSelected : [])
             }
 
@@ -685,6 +688,19 @@ private struct FileRow: View {
                 }
             }
         }
+    }
+}
+
+extension FileRow {
+    /// What VoiceOver hears after a row's name: "expanded" or "collapsed"
+    /// for a folder, "Open", "Open, edited" or "Preview" for a file in a
+    /// tab, and "level 2" and deeper for a row inside a folder.
+    static func spokenState(folderExpanded: Bool?, mark: WindowTabs.FileMark?, depth: Int) -> String {
+        var parts: [String] = []
+        if let folderExpanded { parts.append(folderExpanded ? "expanded" : "collapsed") }
+        if let mark { parts.append(mark.preview ? "Preview" : mark.edited ? "Open, edited" : "Open") }
+        if depth > 0 { parts.append("level \(depth + 1)") }
+        return parts.joined(separator: ", ")
     }
 }
 
