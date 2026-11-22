@@ -353,10 +353,17 @@ struct FolderSidebar: View {
     /// What shows of `SidebarWidth`'s width in this window.
     let width: Double
     @FocusState private var focused: Bool
+    #if DEBUG || KIRI_SELFTEST
+    /// A background launch never has the key window: the self-test (and
+    /// -KiriSidebarKeyLook YES, for a picture) says to draw as in one.
+    static var drawsAsKey = UserDefaults.standard.bool(forKey: "KiriSidebarKeyLook")
+    #endif
     @State private var typed = ""
     @State private var typedAt = Date.distantPast
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
+    /// The window is the key one (or the main one).
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -395,7 +402,7 @@ struct FolderSidebar: View {
                         }
                         ForEach(session.root.children) { node in
                             FileRow(node: node, depth: 0, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
-                                    keyboardFocus: focused, open: open)
+                                    keyboardFocus: showsKeyboard, open: open)
                         }
                     }
                     .padding(.horizontal, 6)
@@ -414,12 +421,9 @@ struct FolderSidebar: View {
         .contentShape(Rectangle())
         .contextMenu { SidebarMenuItems(groups: SidebarMenu.groups(for: .root, session: session)) }
         .honeyGlass(.chrome, radius: .panel)
-        .overlay {
-            RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous)
-                .strokeBorder(Color.honeyFocus, lineWidth: focused ? 2 : 0)
-                .allowsHitTesting(false)
-        }
-        // Keyboard: ⇧⌘E (View ▸ Focus Sidebar) moves here and back.
+        // Keyboard: ⇧⌘E (View ▸ Focus Sidebar) moves here and back. The
+        // panel itself shows nothing for it: the keyboard's row does
+        // (`showsKeyboard`).
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -445,6 +449,9 @@ struct FolderSidebar: View {
         .onChange(of: session.editing) { old, new in
             if old != nil, new == nil { focused = true }
         }
+        .onChange(of: showsKeyboard, initial: true) { _, now in
+            if model.sidebarShowsKeyboard != now { model.sidebarShowsKeyboard = now }
+        }
         .onChange(of: focused) { _, now in
             model.sidebarHasFocus = now
             if now, session.cursor == nil || !rows.contains(where: { $0.node.url == session.cursor }) {
@@ -462,6 +469,17 @@ struct FolderSidebar: View {
     // MARK: Keyboard
 
     private var rows: [FolderSession.Row] { session.visibleRows() }
+
+    /// The keyboard's row shows the Honey focus ring: only while the
+    /// sidebar really has the keyboard, which it has only in the key
+    /// window. Otherwise the current file's capsule is all a row shows.
+    private var showsKeyboard: Bool {
+        #if DEBUG || KIRI_SELFTEST
+        focused && (appearsActive || Self.drawsAsKey)
+        #else
+        focused && appearsActive
+        #endif
+    }
 
     /// A name is being typed in place (Rename…, New File…).
     private var typing: Bool { session.editing != nil }
@@ -630,7 +648,7 @@ private struct FileRow: View {
                     .background {
                         if cursor {
                             Capsule().fill(current ? Color.honeyAccentSoft : Color.honeySurface2)
-                                .overlay { Capsule().strokeBorder(Color.honeyFocus, lineWidth: 1.5) }
+                                .overlay { Capsule().strokeBorder(Color.honeyFocus, lineWidth: 2) }
                         } else if current {
                             Capsule().fill(Color.honeyAccentSoft)
                         } else if hovering {

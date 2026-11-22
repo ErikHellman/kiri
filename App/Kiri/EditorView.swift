@@ -22,6 +22,9 @@ import SwiftUI
     let statusRest = StatusBarRest()
     /// The folder sidebar has the keyboard (⇧⌘E moves it there and back).
     var sidebarHasFocus = false
+    /// The sidebar shows the keyboard's row: it has the keyboard, in the
+    /// key window.
+    var sidebarShowsKeyboard = false
     /// Bumped to ask the sidebar to take the keyboard.
     var sidebarFocusRequest = 0
     /// Set by the editor once it exists.

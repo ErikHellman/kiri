@@ -40,6 +40,7 @@ extension SelfTest {
         WindowTabs.safetyNetEnabled = false
         defer { WindowTabs.safetyNetEnabled = true }
 
+        await focusChecks(first, f)
         await previewChecks(first, f)
         // The rows' icons: a symbol this macOS has for every language, and
         // the fixture's files told apart (the mapping and the tints'
@@ -57,6 +58,50 @@ extension SelfTest {
         for w in f.group(first) { w.performClose(nil) }
         let closed = await f.wait { f.openDocuments().isEmpty && !NSApp.windows.contains { $0.isVisible && FolderSessions.session(for: $0)?.root.url == f.root } }
         report(closed, "the folder window's tabs all close, and no document of the folder is left open (\(f.openDocuments().count) left)")
+    }
+
+    /// Where the keyboard is when a folder window opens, and when the
+    /// sidebar shows that it has it: on the keyboard's row, in the key
+    /// window only. (A background launch has no key window: the test says
+    /// when the sidebar is to draw as in one.)
+    private static func focusChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        guard let model = FrontEditor.shared.editor(in: first) else { report(false, "the folder window's editor for the focus checks"); return }
+        // A folder alone: nothing to edit yet, and the files are a key away.
+        let inSidebar = await f.wait(first.occlusionState.contains(.visible) ? 2 : 0.3) { model.sidebarHasFocus }
+        if inSidebar || first.occlusionState.contains(.visible) {
+            report(inSidebar && !model.sidebarShowsKeyboard,
+                   "a folder window with no file open has the keyboard in its sidebar, which shows no ring while the window is not the key one (in the sidebar \(model.sidebarHasFocus), ring \(model.sidebarShowsKeyboard))")
+        } else {
+            print("SELFTEST SKIP where the keyboard is in a folder window with no file open (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // As in the key window: the keyboard's row has the ring; back in the editor it has not.
+        if inSidebar {
+            FolderSidebar.drawsAsKey = true
+            model.controller?.focus()
+            let left = await f.wait(1) { !model.sidebarHasFocus && !model.sidebarShowsKeyboard }
+            model.sidebarFocusRequest += 1
+            let ringed = await f.wait(1) { model.sidebarHasFocus && model.sidebarShowsKeyboard }
+            FolderSidebar.drawsAsKey = false
+            report(left && ringed, "in the key window the sidebar shows the keyboard's row while it has the keyboard, and not once the editor has it (\(left), \(ringed))")
+        }
+
+        // A folder opened with a file: the keyboard is in the file's editor.
+        let sub = f.file("sub")
+        let before = Set(NSApp.windows.map { ObjectIdentifier($0) })
+        KiriCLI.open(KiriCLI.Request(entries: [.folder(sub), .file(f.file("sub/f.rs"), line: 0, column: 0)]))
+        var second: NSWindow?
+        _ = await f.wait(4) {
+            second = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible && f.document($0)?.fileURL?.standardizedFileURL == f.file("sub/f.rs") }
+            return second.map { FolderSessions.session(for: $0)?.root.url == sub && findTextView(in: $0.contentView) != nil } ?? false
+        }
+        guard let second, let secondModel = FrontEditor.shared.editor(in: second) else { report(false, "a folder window opens with a file for the focus check"); return }
+        await settle(400)
+        report(second.firstResponder is KiriTextView && !secondModel.sidebarHasFocus && !secondModel.sidebarShowsKeyboard,
+               "a folder window that opens with a file has the keyboard in the editor, not the sidebar (first responder \(second.firstResponder.map { "\(type(of: $0))" } ?? "nil"), sidebar \(secondModel.sidebarHasFocus))")
+        second.performClose(nil)
+        _ = await f.wait { !second.isVisible && f.openDocuments().isEmpty }
+        first.makeKeyAndOrderFront(nil)
+        FrontEditor.shared.selfTestMain(first)
     }
 
     /// The preview tab: one click shows a file in it, the next file takes

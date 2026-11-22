@@ -129,9 +129,21 @@ final class KiriTextView: NSTextView {
         keyObservers.forEach(NotificationCenter.default.removeObserver)
         keyObservers = []
         guard let window else { return }
-        // Type right away in a new window or tab.
+        // Type right away in a new window or tab. In a folder window the
+        // sidebar is the first thing that can take the keyboard, and
+        // AppKit gives it to it: with a file showing, the editor takes
+        // it from there, unless the sidebar was asked to have it (Space
+        // on a row, which shows a file and stays in the sidebar).
         DispatchQueue.main.async { [weak self, weak window] in
-            guard let self, let window, window.firstResponder === window || window.firstResponder == nil else { return }
+            guard let self, let window else { return }
+            let responder = window.firstResponder
+            let nobody = responder === window || responder == nil
+            let controller = self.delegate as? EditorController
+            // (Told by the responder itself, a control of SwiftUI's and no
+            // text field: the model hears of the sidebar's focus a turn later.)
+            let sidebarByDefault = !(responder is NSText) && controller?.model.sidebarFocusRequest == 0
+                && controller?.document?.fileURL != nil
+            guard nobody || sidebarByDefault else { return }
             window.makeFirstResponder(self)
         }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
