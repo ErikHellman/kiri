@@ -67,8 +67,8 @@ extension SelfTest {
     private static func focusChecks(_ first: NSWindow, _ f: SidebarFixture) async {
         guard let model = FrontEditor.shared.editor(in: first) else { report(false, "the folder window's editor for the focus checks"); return }
         // A folder alone: nothing to edit yet, and the files are a key away.
-        let inSidebar = await f.wait(first.occlusionState.contains(.visible) ? 2 : 0.3) { model.sidebarHasFocus }
-        if inSidebar || first.occlusionState.contains(.visible) {
+        let inSidebar = await f.wait(f.drawn(first) ? 2 : 0.3) { model.sidebarHasFocus }
+        if inSidebar || f.drawn(first) {
             report(inSidebar && !model.sidebarShowsKeyboard,
                    "a folder window with no file open has the keyboard in its sidebar, which shows no ring while the window is not the key one (in the sidebar \(model.sidebarHasFocus), ring \(model.sidebarShowsKeyboard))")
         } else {
@@ -232,7 +232,7 @@ extension SelfTest {
         report(f.openDocuments().count == f.group(first).count, "every open document of the folder has its tab (\(f.openDocuments().count) documents, \(f.group(first).count) tabs)")
 
         // What VoiceOver hears of a preview tab.
-        if let seventh, seventh.occlusionState.contains(.visible) {
+        if let seventh, f.drawn(seventh) {
             await wakeAccessibility()
             let tab = accessibilityElements(of: seventh).first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "g.txt" && $0.value == "Preview" }
             report(tab != nil && tab?.actions.contains("Keep Open") == true,
@@ -280,7 +280,7 @@ extension SelfTest {
         let asEdited = await f.wait { marks()[f.file("g.txt")] == .init(edited: true, preview: false) }
         // What VoiceOver hears on the rows, and that the current one is the selected one.
         var heard: Bool?, rows = ""
-        if g.occlusionState.contains(.visible) {
+        if f.drawn(g) {
             await wakeAccessibility()
             let all = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue }
             // (Below the top bar: the tabs have the files' names too.)
@@ -342,27 +342,44 @@ extension SelfTest {
                && titles(targets[1]) == [[Menu.newFile], [Menu.openInNewWindow], finder]
                && titles(targets[2]) == [[Menu.newFile], [Menu.reveal, Menu.copyPath]] && allOn,
                "a file's menu has Open in New Window, Reveal in Finder, Copy Path, Copy Relative Path and Rename…; a folder's has New File… and no Rename…; the empty area's is the folder's own (\(titles(targets[0]).joined().count), \(titles(targets[1]).joined().count) and \(titles(targets[2]).joined().count) items, all on)")
-        // The menu the row really shows is made of the same values; where
-        // AppKit hands it over without showing it, it is read too.
-        if shown.occlusionState.contains(.visible) {
-            await wakeAccessibility()
-            let row = accessibilityElements(of: shown).first { $0.name == "b.md" && $0.role == NSAccessibility.Role.button.rawValue }
-            if let row, let content = shown.contentView {
-                let onScreen = NSPoint(x: row.frame.midX, y: row.frame.midY)
-                let inWindow = shown.convertPoint(fromScreen: onScreen)
-                let event = NSEvent.mouseEvent(with: .rightMouseDown, location: inWindow, modifierFlags: [], timestamp: 0,
-                                               windowNumber: shown.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
-                let hit = content.hitTest(content.superview?.convert(inWindow, from: nil) ?? inWindow)
-                var view = hit, menu: NSMenu?
-                while let v = view, menu == nil, let event { menu = v.menu(for: event); view = v.superview }
-                if let menu {
-                    let drawn = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
-                    report(drawn == titles(targets[0]).joined().map { $0 } && menu.items.filter(\.isSeparatorItem).count == 2,
-                           "a right-click on a file's row is given that menu (\(drawn))")
-                } else {
-                    print("SELFTEST info the row's menu is not handed over without a real right-click: its items are checked as the values it is drawn from")
-                }
+        // The menus the sidebar really shows are made of the same values;
+        // AppKit asks the window for them as a right-click would, without
+        // one being shown: on a file's row, a folder's, and the empty area.
+        await wakeAccessibility()
+        let elements = accessibilityElements(of: shown)
+        /// The menu a right-click at `onScreen` would open, not opened.
+        func menu(at onScreen: NSPoint) -> NSMenu? {
+            guard let content = shown.contentView else { return nil }
+            let inWindow = shown.convertPoint(fromScreen: onScreen)
+            guard let event = NSEvent.mouseEvent(with: .rightMouseDown, location: inWindow, modifierFlags: [], timestamp: 0,
+                                                 windowNumber: shown.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return nil }
+            var view = content.hitTest(content.superview?.convert(inWindow, from: nil) ?? inWindow)
+            while let v = view {
+                if let menu = v.menu(for: event) { return menu }
+                view = v.superview
             }
+            return nil
+        }
+        func shownTitles(_ menu: NSMenu?) -> [[String]] {
+            (menu?.items ?? []).split(whereSeparator: \.isSeparatorItem).map { $0.map(\.title) }
+        }
+        let fileRow = elements.first { $0.name == "b.md" && $0.role == NSAccessibility.Role.button.rawValue }
+        let folderRow = elements.first { $0.name == "sub, folder" }
+        let panel = elements.first { $0.name == "Files in \(session.name)" }
+        if let fileRow, let folderRow, let panel {
+            let onFile = menu(at: NSPoint(x: fileRow.frame.midX, y: fileRow.frame.midY))
+            let onFolder = menu(at: NSPoint(x: folderRow.frame.midX, y: folderRow.frame.midY))
+            // Under the last row, where the panel is empty.
+            let onEmpty = menu(at: NSPoint(x: panel.frame.midX, y: panel.frame.minY + 14))
+            if onFile != nil || onFolder != nil || onEmpty != nil {
+                let on = [onFile, onFolder, onEmpty].allSatisfy { $0?.items.allSatisfy { $0.isSeparatorItem || $0.isEnabled } ?? false }
+                report(shownTitles(onFile) == titles(targets[0]) && shownTitles(onFolder) == titles(targets[1]) && shownTitles(onEmpty) == titles(targets[2]) && on,
+                       "a right-click on a file's row, a folder's row and the empty area is given those menus, their items on (\(shownTitles(onFile).joined().count), \(shownTitles(onFolder).joined().count) and \(shownTitles(onEmpty).joined().count) items: \(shownTitles(onEmpty)))")
+            } else {
+                print("SELFTEST info the rows' menus are not handed over without a real right-click: their items are checked as the values they are drawn from")
+            }
+        } else {
+            print("SELFTEST info no rows to ask for their menus (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }
 
         // A folder that can't be written to: nothing to make or rename there.
@@ -390,7 +407,7 @@ extension SelfTest {
         item(Menu.newFile, .folder(sub))?.action()
         let fieldUp = session.editing == .newFile(in: sub) && session.expanded.contains(sub)
         var typed = false
-        if shown.occlusionState.contains(.visible), await f.wait(1.5, until: { fieldEditor(of: shown) != nil }) {
+        if f.drawn(shown), await f.wait(1.5, until: { fieldEditor(of: shown) != nil }) {
             typed = await typeKeys("new note.md\r", in: shown)
         } else {
             session.commitEdit("new note.md")
@@ -491,7 +508,7 @@ extension SelfTest {
         }
         // (The tab that showed before this one has just closed.)
         f.select(shown)
-        let drawn = await f.wait(1) { shown.occlusionState.contains(.visible) }
+        let drawn = await f.wait(1) { f.drawn(shown) }
         let row = Double(shown.frame.width) - 2 * Honey.gap
         func widest(_ w: NSWindow) -> Double { SidebarLayout.widest(in: Double(w.frame.width) - 2 * Honey.gap, gap: Honey.gap) }
         /// The sidebar's width as `w` lays it out: what is left of the editor's panel.
@@ -543,7 +560,7 @@ extension SelfTest {
         f.select(other)
         let otherShows = await shows(320, in: other)
         f.select(shown)
-        if drawn && other.occlusionState.contains(.visible) || otherShows {
+        if drawn && f.drawn(other) || otherShows {
             report(otherShows, "another tab of the window has the same width (\(laidOut(other) ?? -1) pt)")
         } else {
             print("SELFTEST SKIP another tab of the window has the same width (the window is covered or the screen locked: SwiftUI isn't updating it)")
@@ -596,6 +613,14 @@ extension SelfTest {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return done()
+    }
+
+    /// Whether SwiftUI is drawing `w`: it stops while a window is covered,
+    /// the display asleep or the screen locked, and what is read off the
+    /// drawn window is then skipped. -KiriAssumeDrawn YES runs those
+    /// checks anyway (they may then fail for that reason alone).
+    func drawn(_ w: NSWindow) -> Bool {
+        w.occlusionState.contains(.visible) || UserDefaults.standard.bool(forKey: "KiriAssumeDrawn")
     }
 
     /// Brings a tab forward, as a click on it in the strip does.

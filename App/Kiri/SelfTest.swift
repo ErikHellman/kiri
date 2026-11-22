@@ -472,6 +472,18 @@ import os
                     return
                 }
                 if let name = UserDefaults.standard.string(forKey: "KiriSidebarName") { session.commitEdit(name) }
+                // -KiriSidebarTypeName <name> types it into the field as
+                // keys instead (with -KiriSidebarTypeReturn YES, then
+                // Return: only in a folder that is the test's to change).
+                if let name = UserDefaults.standard.string(forKey: "KiriSidebarTypeName") {
+                    let end = UserDefaults.standard.bool(forKey: "KiriSidebarTypeReturn") ? "\r" : ""
+                    Task { @MainActor in
+                        for _ in 0..<40 where fieldEditor(of: window) == nil { try? await Task.sleep(for: .milliseconds(50)) }
+                        let typed = await typeKeys(name + end, in: window)
+                        print("SELFTEST info typed “\(name)” into the sidebar's name field: \(typed); the field holds “\(fieldEditor(of: window)?.string ?? "no field")”, editing \(String(describing: session.editing)), cursor \(session.cursor?.lastPathComponent ?? "none")")
+                        fflush(stdout)
+                    }
+                }
             }
             func click() {
                 guard !clicks.isEmpty else { name(); return }
