@@ -89,6 +89,7 @@ import KiriKit
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
         try? FileManager.default.removeItem(at: file)
         guard let request = Request(parsing: text) else { return }
+        // (A test launch stays behind: `SelfTest.stayInTheBackground`.)
         NSApp.activate()
         open(request)
     }

@@ -516,6 +516,7 @@ import os
     /// recovery copies in the temporary folder. Without it, nothing runs.
     static func guardLaunch() {
         guard isTestLaunch else { return }
+        stayInTheBackground()
         // (A copy under another bundle identifier has state of its own:
         // the relaunch tests, which need AppKit to reopen things, run so.)
         guard UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState") || !isKiriItself else {
@@ -524,6 +525,62 @@ import os
             exit(2)
         }
         watchRelaunch()
+    }
+
+    /// A test launch never becomes the front app: the person is working
+    /// in another one, and a test that came forward would take the
+    /// keyboard from them. AppKit activates an app by itself when it opens
+    /// the files it was launched with (`-[NSApplication _doOpenFile:…]`,
+    /// from `finishLaunching`) and when it reopens windows, and Kiri does
+    /// for a `kiri` request. In a test launch every way of asking is
+    /// turned into nothing, before anything is opened: the public calls,
+    /// and `_activateWithInfo:`, which AppKit's own requests go through.
+    /// (A click on one of the test's windows still brings it forward:
+    /// that is the person's doing.) `-KiriTraceActivation YES` prints who
+    /// asked.
+    private static func stayInTheBackground() {
+        func replace(_ type: AnyClass, _ selector: String, with block: Any) {
+            guard let method = class_getInstanceMethod(type, NSSelectorFromString(selector)) else { return }
+            method_setImplementation(method, imp_implementationWithBlock(block))
+        }
+        func asked(_ how: String) {
+            activationRequests += 1
+            guard UserDefaults.standard.bool(forKey: "KiriTraceActivation") else { return }
+            print("SELFTEST info activation asked (\(how)) and refused, by:\n" + Thread.callStackSymbols.dropFirst(2).prefix(14).joined(separator: "\n"))
+            fflush(stdout)
+        }
+        let withInfo: @convention(block) (AnyObject, AnyObject?) -> Void = { _, _ in asked("_activateWithInfo:") }
+        replace(NSApplication.self, "_activateWithInfo:", with: withInfo)
+        let ignoring: @convention(block) (AnyObject, Bool) -> Void = { _, _ in asked("activateIgnoringOtherApps:") }
+        replace(NSApplication.self, "activateIgnoringOtherApps:", with: ignoring)
+        let plain: @convention(block) (AnyObject) -> Void = { _ in asked("activate") }
+        replace(NSApplication.self, "activate", with: plain)
+        let event: @convention(block) (AnyObject, AnyObject?) -> Void = { _, _ in asked("activateUsingEvent:") }
+        replace(NSApplication.self, "activateUsingEvent:", with: event)
+        let running: @convention(block) (AnyObject, UInt) -> Bool = { _, _ in asked("NSRunningApplication activateWithOptions:"); return false }
+        replace(NSRunningApplication.self, "activateWithOptions:", with: running)
+        let from: @convention(block) (AnyObject, AnyObject?, UInt) -> Bool = { _, _, _ in
+            asked("NSRunningApplication activateFromApplication:options:"); return false
+        }
+        replace(NSRunningApplication.self, "activateFromApplication:options:", with: from)
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                activations += 1
+                print("SELFTEST info this test launch became the front app")
+                fflush(stdout)
+            }
+        }
+    }
+
+    /// How often this launch was asked to come forward (and didn't), and
+    /// how often it became the front app all the same.
+    nonisolated(unsafe) private static var activationRequests = 0
+    private static var activations = 0
+
+    /// The last check of a run: it stayed behind the app the person is in.
+    static func reportStayedInTheBackground() {
+        report(activations == 0 && !NSApp.isActive,
+               "the test launch never became the front app (asked \(activationRequests) times, came forward \(activations) times; a click on one of its windows counts)")
     }
 
     /// A test that is stopped (`kill`) leaves no recovery copies behind: its
@@ -1842,6 +1899,7 @@ import os
                         await crowdedStrip(window)
                         await startHintStage(window)
                         // The last line of a run that got to its end.
+                        reportStayedInTheBackground()
                         print("SELFTEST DONE behavior")
                         fflush(stdout)
                         quit()

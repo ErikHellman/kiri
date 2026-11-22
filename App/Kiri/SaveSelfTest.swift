@@ -42,6 +42,7 @@ extension SelfTest {
         ]
         for (name, stage) in stages where only == nil || only == name { await stage(dir) }
         report(leftovers().isEmpty, "no recovery copy of the test's is left (\(leftovers().map(\.lastPathComponent)))")
+        reportStayedInTheBackground()
         print("SELFTEST DONE save")
         fflush(stdout)
     }
