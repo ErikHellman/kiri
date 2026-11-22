@@ -82,7 +82,7 @@ struct PaletteRow: Equatable, Identifiable {
     private(set) var focusRequest = 0
     /// What is typed in the field.
     var text = "" {
-        didSet { if text != oldValue, isOpen { search() } }
+        didSet { if text != oldValue, isOpen { textChanged() } }
     }
     private(set) var rows: [PaletteRow] = []
     /// The row Return runs: an index into `rows`.
@@ -93,19 +93,44 @@ struct PaletteRow: Equatable, Identifiable {
         case everything
         /// `>`: commands only.
         case commands
+        /// `:`: a line of this document (`:42`, `:42:7` for a column),
+        /// shown as it is typed. Go to Line (`GoToLineController`).
+        case line
     }
 
-    var mode: Mode { text.hasPrefix(">") ? .commands : .everything }
+    var mode: Mode { text.hasPrefix(">") ? .commands : text.hasPrefix(":") ? .line : .everything }
 
     /// What is looked for: the text without the prefix that says where.
     var query: String {
-        let typed = mode == .commands ? String(text.dropFirst()) : text
+        let typed = mode == .everything ? text : String(text.dropFirst())
         return typed.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// In `:` mode, what the one line under the field says: where Return
+    /// will go, what to type, or that what is typed is not a line.
+    struct LineStatus: Equatable {
+        let text: String
+        /// Return goes there.
+        var isTarget = false
+        /// "Not a line".
+        var isProblem = false
+    }
+
+    var lineStatus: LineStatus? {
+        #if DEBUG || KIRI_SELFTEST
+        if let sampleLineStatus { return sampleLineStatus }
+        #endif
+        guard isOpen, mode == .line, let goToLine = model?.goToLine else { return nil }
+        if let target = goToLine.target {
+            return LineStatus(text: target.column > 1 ? "Go to line \(target.line), column \(target.column)" : "Go to line \(target.line)",
+                              isTarget: true)
+        }
+        return query.isEmpty ? LineStatus(text: "Type a line number, or line:column") : LineStatus(text: "Not a line", isProblem: true)
     }
 
     /// What the list says in place of rows when nothing matches.
     var emptyMessage: String? {
-        guard rows.isEmpty, isOpen else { return nil }
+        guard rows.isEmpty, isOpen, mode != .line else { return nil }
         if query.isEmpty { return "Nothing to show yet." }
         return mode == .commands ? "No command matches “\(query)”. Fewer letters may find it."
             : "No file, tab or command matches “\(query)”. Fewer letters may find it."
@@ -147,7 +172,6 @@ struct PaletteRow: Equatable, Identifiable {
         if !isOpen {
             // One bar at a time.
             model.find.close(focusEditor: false)
-            model.goToLine.cancel(focusEditor: false)
             // The menus are read while the editor has the keyboard: what
             // Edit has on and off is then what it will be when a command
             // runs, with the keyboard back there.
@@ -158,7 +182,7 @@ struct PaletteRow: Equatable, Identifiable {
             isOpen = true
             model.overlayChanged()
         }
-        if text != prefill { text = prefill } else { search() }
+        if text != prefill { text = prefill } else { textChanged() }
         focusRequest += 1
         placeCaret()
     }
@@ -187,13 +211,16 @@ struct PaletteRow: Equatable, Identifiable {
         }
     }
 
-    /// Escape, or ⌘K again: closes it and gives the keyboard back to the editor.
+    /// Escape, or ⌘K again: closes it and gives the keyboard back to the
+    /// editor, which is where it was before a line was typed.
     func cancel() {
         close()
     }
 
     func close(focusEditor: Bool = true) {
         guard isOpen else { return }
+        // A line that was only being looked at is gone back from.
+        model?.goToLine.cancel(focusEditor: false)
         isOpen = false
         rows = []
         selection = 0
@@ -214,6 +241,9 @@ struct PaletteRow: Equatable, Identifiable {
     /// tab): what the palette listed was listed for the other one.
     func documentReplaced() {
         guard isOpen else { return }
+        // (A line that was being typed was a line of the other document:
+        // it is not gone back from.)
+        model?.goToLine.documentReplaced()
         let window = controller?.textView?.window
         let inField = (window?.firstResponder as? NSTextView)?.isFieldEditor == true
         close(focusEditor: inField)
@@ -270,9 +300,17 @@ struct PaletteRow: Equatable, Identifiable {
 
     var selectedRow: PaletteRow? { rows.indices.contains(selection) ? rows[selection] : nil }
 
-    /// Return: runs the selected row.
+    /// Return: runs the selected row, or in `:` mode keeps the line (what
+    /// is not a line number keeps the palette open, and says so).
     func commit() {
-        if let row = selectedRow { run(row) }
+        if mode == .line {
+            guard isOpen, let goToLine = model?.goToLine else { return }
+            // The line is kept and the keyboard is the editor's; then
+            // the palette goes, with nothing left to go back from.
+            if goToLine.commit() { close() } else { announce(rowsChanged: true) }
+        } else if let row = selectedRow {
+            run(row)
+        }
     }
 
     /// Runs a row (Return, or a click on it): the palette closes and the
@@ -315,6 +353,23 @@ struct PaletteRow: Equatable, Identifiable {
     /// keyboard in the editor then fails.
     static var selfTestRunsFirst = UserDefaults.standard.bool(forKey: "KiriPaletteRunsFirst")
     #endif
+
+    /// The field's text changed: a line is shown (`:`), or the list filled.
+    private func textChanged() {
+        guard isOpen, let goToLine = model?.goToLine else { return }
+        if mode == .line {
+            // From the first colon on, where the editor was is kept to go back to.
+            goToLine.begin()
+            goToLine.text = String(text.dropFirst())
+            rows = []
+            selection = 0
+            announce(rowsChanged: true)
+        } else {
+            // The colon was taken away: back to where the editor was.
+            goToLine.cancel(focusEditor: false)
+            search()
+        }
+    }
 
     /// Fills the list for what is typed. With nothing typed: the other
     /// tabs, the recent files, then every command. Otherwise what matches,
@@ -397,7 +452,11 @@ struct PaletteRow: Equatable, Identifiable {
 
     private func announce(rowsChanged: Bool) {
         var parts: [String] = []
-        if rowsChanged { parts.append(rows.isEmpty ? (emptyMessage ?? "No results") : rows.count == 1 ? "1 result" : "\(rows.count) results") }
+        if let lineStatus {
+            parts.append(lineStatus.text)
+        } else if rowsChanged {
+            parts.append(rows.isEmpty ? (emptyMessage ?? "No results") : rows.count == 1 ? "1 result" : "\(rows.count) results")
+        }
         if let row = selectedRow {
             parts.append(rowsChanged ? row.spoken : "\(row.spoken), \(selection + 1) of \(rows.count)")
         }
@@ -410,13 +469,16 @@ struct PaletteRow: Equatable, Identifiable {
     #if DEBUG || KIRI_SELFTEST
     /// A palette in a given state with no editor behind it, for pictures
     /// drawn offscreen.
-    static func sample(text: String, rows: [PaletteRow], selection: Int = 0) -> PaletteController {
+    static func sample(text: String, rows: [PaletteRow], selection: Int = 0, line: LineStatus? = nil) -> PaletteController {
         let palette = PaletteController()
         palette.text = text
         palette.rows = rows
         palette.selection = selection
+        palette.sampleLineStatus = line
         palette.isOpen = true
         return palette
     }
+
+    @ObservationIgnored private var sampleLineStatus: LineStatus?
     #endif
 }

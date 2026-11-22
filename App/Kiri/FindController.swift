@@ -589,18 +589,27 @@ import Observation
 
 /// Go to Line (⌘L): the line shows as its number is typed, Return keeps it
 /// and Escape goes back to where the editor was.
+///
+/// It has no bar of its own: it is what the command palette does with a
+/// line number after a colon (`PaletteController`, its `:` mode), and ⌘L
+/// opens the palette with the colon typed. This is the engine of that
+/// mode: where the editor was, the preview and going back.
 @MainActor @Observable final class GoToLineController {
     @ObservationIgnored weak var model: EditorModel?
 
+    /// A line is being typed: the palette is in its `:` mode.
     private(set) var isOpen = false
-    /// Bumped to ask the field to take the keyboard.
-    private(set) var focusRequest = 0
-    /// "12", or "12:5" for a column too.
+    /// "12", or "12:5" for a column too: what the palette has after its colon.
     var text = "" {
         didSet { if text != oldValue, isOpen { preview() } }
     }
     /// The text is not a line number.
     private(set) var isInvalid = false
+    /// Where the text says to go, or nil for nothing typed or not a line.
+    var target: LineTarget? {
+        guard let controller, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return LineTarget(text, lineCount: controller.lineCount)
+    }
 
     /// Where the editor was when Go to Line opened.
     @ObservationIgnored private var before: (selection: [NSValue], origin: NSPoint)?
@@ -609,8 +618,7 @@ import Observation
     private var controller: EditorController? { model?.controller }
 
     #if DEBUG || KIRI_SELFTEST
-    /// The field in a given state with no editor behind it, for pictures
-    /// drawn offscreen.
+    /// In a given state with no editor behind it, for pictures drawn offscreen.
     static func sample(text: String, invalid: Bool = false) -> GoToLineController {
         let goToLine = GoToLineController()
         goToLine.text = text
@@ -620,33 +628,42 @@ import Observation
     }
     #endif
 
+    /// ⌘L, Edit ▸ Go to Line…, the status bar's position: the palette,
+    /// with the colon typed and the keyboard after it.
     func open() {
+        model?.palette.open(with: ":")
+    }
+
+    /// The palette's field begins with a colon: from here on the line
+    /// shows as its number is typed, and where the editor is now is where
+    /// Escape goes back to.
+    func begin() {
         guard !isOpen, let controller, let textView = controller.textView else { return }
-        model?.find.close(focusEditor: false)
-        model?.palette.close(focusEditor: false)
         text = ""
         isInvalid = false
         previewing = false
         before = (textView.selectedRanges, controller.scrollOrigin)
         isOpen = true
-        focusRequest += 1
         model?.overlayChanged()
     }
 
     /// Return: the caret stays on the line and the keyboard goes back to
-    /// the editor. Text that isn't a line number keeps the field open.
-    func commit() {
-        guard isOpen, let controller else { return }
+    /// the editor. Text that isn't a line number keeps the field open
+    /// (false); nothing typed is Escape.
+    @discardableResult
+    func commit() -> Bool {
+        guard isOpen, let controller else { return false }
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
             cancel()
-            return
+            return true
         }
         guard let target = LineTarget(text, lineCount: controller.lineCount) else {
             isInvalid = true
-            return
+            return false
         }
         end()
         controller.goTo(line: target.line, column: target.column)
+        return true
     }
 
     /// Escape: back to the selection and the scroll position from before.
@@ -658,15 +675,11 @@ import Observation
     }
 
     /// Another document takes the editor (the folder sidebar's preview
-    /// tab): the field closes, and where the caret was in the document
-    /// before is not gone back to.
+    /// tab): the line was a line of the other one, and where the caret
+    /// was in it is not gone back to. (The palette closes itself.)
     func documentReplaced() {
         guard isOpen else { return }
-        let window = controller?.textView?.window
-        let inField = (window?.firstResponder as? NSTextView)?.isFieldEditor == true
         end()
-        // The keyboard was in the field that just went.
-        if inField { controller?.focus() }
     }
 
     private func end() {

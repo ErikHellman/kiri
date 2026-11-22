@@ -29,13 +29,13 @@ import SwiftUI
     var sidebarFocusRequest = 0
     /// Set by the editor once it exists.
     @ObservationIgnored weak var controller: EditorController?
-    /// Find and replace (⌘F) and Go to Line (⌘L): the two glass bars that
-    /// float over the top of the editor, one at a time (opening one closes
-    /// the other).
+    /// Find and replace (⌘F) and the command palette (⌘K): the glass bars
+    /// that float over the top of the editor, one at a time (opening one
+    /// closes the other). Go to Line (⌘L) is the palette's `:` mode, and
+    /// `goToLine` what that mode does to the editor.
     let find = FindController()
-    let goToLine = GoToLineController()
-    /// The command palette (⌘K), the third of those bars.
     let palette = PaletteController()
+    let goToLine = GoToLineController()
 
     init() {
         find.model = self
@@ -46,8 +46,11 @@ import SwiftUI
     /// A bar opened, closed or changed height: the editor keeps what it
     /// scrolls to clear of it.
     func overlayChanged() {
+        // (The palette covers some of the text while it lists files and
+        // commands, and is gone again; while a line is typed, the line
+        // shows below it.)
         controller?.setTopObstruction(find.isOpen ? FindBar.obstruction(replace: find.showsReplace)
-                                      : goToLine.isOpen ? GoToLine.obstruction : 0)
+                                      : goToLine.isOpen ? CommandPalette.lineObstruction : 0)
     }
 }
 

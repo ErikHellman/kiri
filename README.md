@@ -35,8 +35,8 @@ Kiri is a native SwiftUI app for macOS that launches instantly, opens the files 
 | ⌘F / ⌥⌘F | Find / Find and Replace (in the bar: Return and ⇧Return for next and previous, Tab between the fields, Esc to close with the match selected) |
 | ⌘G / ⇧⌘G | Find next / previous, with the bar open or closed |
 | ⌘E / ⌘J | Use the selection as the find text / scroll to the selection |
-| ⌘K or ⌘P | Command palette: type a few letters of a file in the window's folder, a tab, a recent file or a command (shown with its key); ↑ ↓ choose, Return opens or runs it, Esc or ⌘K closes. `>` lists commands only |
-| ⌘L | Go to line (`12` or `12:5` for line and column; Return keeps it, Esc goes back) |
+| ⌘K or ⌘P | Command palette: type a few letters of a file in the window's folder, a tab, a recent file or a command (shown with its key); ↑ ↓ choose, Return opens or runs it, Esc or ⌘K closes. `>` lists commands only, `:` goes to a line |
+| ⌘L | Go to line: the palette with a colon typed (`:12`, or `:12:5` for line and column; the line shows as you type, Return keeps it, Esc goes back) |
 | ⌘] / ⌘[ | Shift lines right / left |
 | ⌘/ | Comment or uncomment the selected lines (Format ▸ Toggle Comment), in the language's own way: `//`, `#`, `--`, `<!-- -->`, `/* */` |
 | ⇧⌘] / ⇧⌘[ , ⌘1–⌘9 | Next / previous tab, go to tab |

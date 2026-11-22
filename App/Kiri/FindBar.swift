@@ -1,9 +1,9 @@
 import KiriKit
 import SwiftUI
 
-// Two of the bars that float over the top of the editor panel as warm
-// glass, one at a time: find and replace (⌘F) and Go to Line (⌘L); the
-// third is the command palette (`CommandPalette`). Chrome is glass
+// The bars that float over the top of the editor panel as warm glass, one
+// at a time: find and replace (⌘F) here, and the command palette
+// (`CommandPalette`, ⌘K; Go to Line, ⌘L, is its `:` mode). Chrome is glass
 // and the document is paper (DESIGN.md §1), so neither pushes the text down;
 // the editor scrolls what they point at clear of them instead (`reveal`).
 
@@ -313,53 +313,5 @@ private struct BarFocusRing: ViewModifier {
                     .strokeBorder(Color.honeyFocus, lineWidth: focused ? 2 : 0)
                     .allowsHitTesting(false)
             }
-    }
-}
-
-/// ⌘L: a small glass field over the top of the editor. The line shows as
-/// its number is typed (`GoToLineController`).
-struct GoToLine: View {
-    @Bindable var goToLine: GoToLineController
-    let lineCount: Int
-    @FocusState private var focused: Bool
-
-    private static let height: CGFloat = 38
-
-    /// How much of the editor's top the field covers, with air below it.
-    static var obstruction: CGFloat { EditorBar.topPadding + height + EditorBar.clearance }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.right.to.line").font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.honeyAccentInk)
-                .accessibilityHidden(true)
-            // One hint: the placeholder says what to type, the label after
-            // it how far the lines go.
-            BarTextField(prompt: "Line", text: $goToLine.text)
-                .frame(width: 180)
-                .focused($focused)
-                .onSubmit { goToLine.commit() }
-                .accessibilityLabel("Line number")
-            ZStack(alignment: .trailing) {
-                Text("Not a line").hidden()
-                Text(goToLine.isInvalid ? "Not a line" : "of \(lineCount)")
-            }
-            .font(.honey(.caption, weight: .semibold))
-            .monospacedDigit()
-            .foregroundStyle(goToLine.isInvalid ? Color.honeyDanger : Color.honeyMuted)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: Self.height)
-        .honeyGlass(.chrome, radius: .control)
-        .overlay {
-            RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
-                .strokeBorder(Color.honeyFocus, lineWidth: 2)
-        }
-        // Not `onAppear`: a field that is opened again while it is still
-        // leaving is the same view and would not get the keyboard.
-        .onChange(of: goToLine.focusRequest, initial: true) { focused = true }
-        .onExitCommand { goToLine.cancel() }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Go to line")
     }
 }

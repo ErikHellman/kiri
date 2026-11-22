@@ -164,14 +164,15 @@ extension SelfTest {
                "the find bar, open on one file, counts and marks its matches in the next file clicked (\(find.label), \(ktv.marks.shownMatches) marked)")
         find.close()
         ktv.setSelectedRange(NSRange(location: (ktv.string as NSString).length, length: 0))
+        let palette = controller.model.palette
         goToLine.open()
-        goToLine.text = "3"
+        palette.text = ":3"
         let previewed = await f.wait { controller.model.line == 3 }
         _ = await f.open("a.swift", from: first)
-        let goToLineClosed = !goToLine.isOpen
-        goToLine.cancel() // Escape, late: nothing of the other file's to go back to
+        let goToLineClosed = !goToLine.isOpen && !palette.isOpen
+        palette.cancel() // Escape, late: nothing of the other file's to go back to
         report(previewed && goToLineClosed && ktv.selectedRange() == NSRange(location: 0, length: 0) && ktv.string == f.onDisk("a.swift"),
-               "Go to Line, open on a line of one file, closes when the next file is clicked, and the caret is at its start (open: \(goToLine.isOpen), selection \(ktv.selectedRange()))")
+               "Go to Line (the palette, on a line of one file) closes when the next file is clicked, and the caret is at its start (open: \(goToLine.isOpen), selection \(ktv.selectedRange()))")
 
         // Kept by an edit, in the tab that went from file to file; and the
         // menus act on the file it shows now.

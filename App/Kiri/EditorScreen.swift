@@ -120,15 +120,12 @@ struct EditorScreen: View {
                 if model.find.isOpen {
                     FindBar(find: model.find).padding(.top, EditorBar.topPadding).transition(arrive)
                 } else if model.palette.isOpen {
-                    CommandPalette(palette: model.palette, rowsThatFit: CommandPalette.rowsThatFit(in: panelHeight))
-                        .padding(.top, EditorBar.topPadding).transition(arrive)
-                } else if model.goToLine.isOpen {
-                    GoToLine(goToLine: model.goToLine, lineCount: model.lineCount)
+                    CommandPalette(palette: model.palette, lineCount: model.lineCount,
+                                   rowsThatFit: CommandPalette.rowsThatFit(in: panelHeight))
                         .padding(.top, EditorBar.topPadding).transition(arrive)
                 }
             }
             .animation(motion.shape, value: model.find.isOpen)
-            .animation(motion.shape, value: model.goToLine.isOpen)
             .animation(motion.shape, value: model.palette.isOpen)
             // The hint fades out; with reduced motion it is simply gone.
             .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint)

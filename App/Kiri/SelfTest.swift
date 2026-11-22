@@ -122,7 +122,7 @@ import os
                 fflush(stdout)
             }
         }
-        // -KiriRenderFind <folder>: the find bar and Go to Line in their
+        // -KiriRenderFind <folder>: the find bar in its
         // states, drawn offscreen (no window, so no glass: the solid Honey
         // fill stands in for it).
         if let folder = UserDefaults.standard.string(forKey: "KiriRenderFind"), !renderedFind {
@@ -569,13 +569,14 @@ import os
         if UserDefaults.standard.bool(forKey: "KiriScrollerInfo") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { scrollerInfo(textView) }
         }
-        // -KiriShowGoToLine YES opens Go to Line; -KiriGoToLine <text> also
-        // types that into it (the line shows as it is typed).
+        // -KiriShowGoToLine YES opens Go to Line (the palette with its
+        // colon); -KiriGoToLine <text> also types that after the colon
+        // (the line shows as it is typed).
         if UserDefaults.standard.bool(forKey: "KiriShowGoToLine") || UserDefaults.standard.string(forKey: "KiriGoToLine") != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                guard let goToLine = (textView.delegate as? EditorController)?.model.goToLine else { return }
-                goToLine.open()
-                if let text = UserDefaults.standard.string(forKey: "KiriGoToLine") { goToLine.text = text }
+                guard let model = (textView.delegate as? EditorController)?.model else { return }
+                model.goToLine.open()
+                if let text = UserDefaults.standard.string(forKey: "KiriGoToLine") { model.palette.text = ":" + text }
             }
         }
         if perf, !started {
@@ -1557,12 +1558,13 @@ import os
         controller.scrollOrigin = .zero
     }
 
-    /// Go to Line (`GoToLineController`, shown by `GoToLine`): the line
-    /// shows while its number is typed, Return keeps it, Escape goes back
-    /// to the selection and the scroll position from before.
+    /// Go to Line (`GoToLineController`), which is the command palette
+    /// with a colon typed (⌘L opens it so): the line shows while its
+    /// number is typed, Return keeps it, Escape goes back to the selection
+    /// and the scroll position from before, and so does taking the colon away.
     private static func goToLineStage(_ ktv: KiriTextView, _ controller: EditorController) async {
         guard let window = ktv.window, let scroll = ktv.enclosingScrollView else { return }
-        let model = controller.model, goToLine = model.goToLine
+        let model = controller.model, goToLine = model.goToLine, palette = model.palette
         func origin() -> NSPoint { scroll.contentView.bounds.origin }
         func caretIsClear() -> Bool { isClear(ktv.selectedRange(), in: ktv) }
         let lines = controller.lineCount
@@ -1576,36 +1578,56 @@ import os
         let scrolls = ktv.frame.height > scroll.contentView.bounds.height - scroll.contentInsets.bottom
 
         goToLine.open()
-        report(goToLine.isOpen && origin() == before && ktv.selectedRange() == selection && scroll.contentInsets.top == GoToLine.obstruction,
-               "Go to Line opens without moving anything (\(before.y) → \(origin().y))")
-        goToLine.text = "\(lines)"
+        report(goToLine.isOpen && palette.isOpen && palette.text == ":" && palette.mode == .line && palette.rows.isEmpty
+               && palette.lineStatus?.isTarget == false && palette.lineStatus?.isProblem == false
+               && origin() == before && ktv.selectedRange() == selection && scroll.contentInsets.top == CommandPalette.lineObstruction,
+               "Go to Line opens the palette with its colon typed, without moving anything (\(before.y) → \(origin().y); “\(palette.lineStatus?.text ?? "")”)")
+        palette.text = ":\(lines)"
         ktv.marks.update()
-        report(model.line == lines && caretIsClear() && ktv.marks.showsLine && (!scrolls || origin().y > before.y),
-               "typing a line number shows that line, marked, before Return (Ln \(model.line), scrolled to \(origin().y), marked \(ktv.marks.showsLine))")
-        goToLine.text = "1"
-        report(model.line == 1 && caretIsClear() && origin().y < 0, "line 1 is shown below the field (Ln \(model.line), scrolled to \(origin().y))")
-        goToLine.text = "99999"
-        report(model.line == lines && !goToLine.isInvalid, "a number past the end is the last line (Ln \(model.line))")
-        goToLine.text = "9x"
-        report(goToLine.isInvalid && model.line == lines && goToLine.isOpen, "what isn't a line number is marked invalid and goes nowhere")
-        goToLine.commit()
-        report(goToLine.isOpen && goToLine.isInvalid, "and Return does nothing with it")
-        goToLine.text = ""
+        report(model.line == lines && caretIsClear() && ktv.marks.showsLine && (!scrolls || origin().y > before.y)
+               && palette.lineStatus == .init(text: "Go to line \(lines)", isTarget: true) && palette.lastAnnouncement == "Go to line \(lines)",
+               "typing a line number shows that line, marked, before Return, and the palette says where Return goes (Ln \(model.line), scrolled to \(origin().y), marked \(ktv.marks.showsLine), “\(palette.lineStatus?.text ?? "")”)")
+        palette.text = ":1"
+        report(model.line == 1 && caretIsClear() && origin().y < 0, "line 1 is shown below the palette (Ln \(model.line), scrolled to \(origin().y))")
+        palette.text = ":99999"
+        report(model.line == lines && !goToLine.isInvalid && palette.lineStatus?.text == "Go to line \(lines)",
+               "a number past the end is the last line (Ln \(model.line))")
+        palette.text = ":9x"
+        report(goToLine.isInvalid && model.line == lines && goToLine.isOpen && palette.lineStatus == .init(text: "Not a line", isProblem: true),
+               "what isn't a line number is said not to be one and goes nowhere (“\(palette.lineStatus?.text ?? "")”)")
+        palette.commit()
+        report(goToLine.isOpen && goToLine.isInvalid && palette.isOpen, "and Return does nothing with it")
+        palette.text = ":"
         report(!goToLine.isInvalid && ktv.selectedRange() == selection && origin() == before,
-               "clearing the field goes back to where the editor was (selection \(ktv.selectedRange()), \(origin().y))")
-        goToLine.text = "12"
-        goToLine.cancel()
+               "clearing the number goes back to where the editor was (selection \(ktv.selectedRange()), \(origin().y))")
+        palette.text = ":12"
+        palette.cancel()
         ktv.marks.update()
-        report(!goToLine.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv
+        report(!goToLine.isOpen && !palette.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv
                && scroll.contentInsets.top == 0 && !ktv.marks.showsLine,
                "Escape restores the selection and the scroll position (selection \(ktv.selectedRange()), \(origin().y))")
         goToLine.open()
-        goToLine.text = "5:3"
+        palette.text = ":5:3"
         let previewed = (model.line, model.column)
-        goToLine.commit()
-        report(previewed == (5, 3) && !goToLine.isOpen && model.line == 5 && model.column == 3 && ktv.selectedRange().length == 0
-               && window.firstResponder === ktv && scroll.contentInsets.top == 0,
-               "5:3 previews and Return keeps Ln \(model.line), Col \(model.column) with the keyboard in the editor")
+        let says = palette.lineStatus?.text
+        palette.commit()
+        report(previewed == (5, 3) && says == "Go to line 5, column 3" && !goToLine.isOpen && !palette.isOpen && model.line == 5 && model.column == 3
+               && ktv.selectedRange().length == 0 && window.firstResponder === ktv && scroll.contentInsets.top == 0,
+               ":5:3 previews and Return keeps Ln \(model.line), Col \(model.column) with the keyboard in the editor (“\(says ?? "")”)")
+
+        // The colon typed into a palette that is open begins it, and
+        // taking it away goes back: the list is there again.
+        ktv.setSelectedRange(selection)
+        controller.scrollOrigin = .zero
+        palette.open()
+        let listed = !palette.rows.isEmpty && !goToLine.isOpen && scroll.contentInsets.top == 0
+        palette.text = ":12"
+        let inLine = goToLine.isOpen && model.line == 12 && palette.rows.isEmpty && scroll.contentInsets.top == CommandPalette.lineObstruction
+        palette.text = "12"
+        report(listed && inLine && !goToLine.isOpen && palette.isOpen && palette.mode == .everything && ktv.selectedRange() == selection && origin() == before
+               && scroll.contentInsets.top == 0,
+               "a colon typed into the open palette shows the line, and taking the colon away puts the selection back (\(listed), \(inLine), selection \(ktv.selectedRange()))")
+        palette.cancel()
 
         // The field itself: SwiftUI has to be drawing the window for these.
         ktv.setSelectedRange(selection)
@@ -1613,22 +1635,25 @@ import os
         goToLine.open()
         await settle(400)
         if fieldEditor(of: window) != nil {
+            // (The caret is after the colon: what is typed is added to it.)
+            for _ in 0..<50 where fieldEditor(of: window)?.selectedRange() != NSRange(location: 1, length: 0) { try? await Task.sleep(for: .milliseconds(20)) }
             await typeKeys("7", in: window)
-            let typed = model.line
+            let typed = model.line, text = palette.text
             await typeKeys("\u{1b}", in: window)
-            report(typed == 7 && !goToLine.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv,
-                   "typed into the field: 7 previews line 7, Escape goes back (Ln \(typed), selection \(ktv.selectedRange()))")
+            report(typed == 7 && text == ":7" && !goToLine.isOpen && !palette.isOpen && ktv.selectedRange() == selection && origin() == before && window.firstResponder === ktv,
+                   "typed into the field after the colon: 7 previews line 7, Escape goes back (Ln \(typed), “\(text)”, selection \(ktv.selectedRange()))")
             goToLine.open()
             await settle(400)
+            for _ in 0..<50 where fieldEditor(of: window)?.selectedRange() != NSRange(location: 1, length: 0) { try? await Task.sleep(for: .milliseconds(20)) }
             await typeKeys("8\r", in: window)
-            report(!goToLine.isOpen && model.line == 8 && window.firstResponder === ktv,
+            report(!goToLine.isOpen && !palette.isOpen && model.line == 8 && window.firstResponder === ktv,
                    "typed into the field: 8 and Return go to line 8 (Ln \(model.line))")
         } else if window.occlusionState.contains(.visible) {
-            report(false, "Go to Line puts the keyboard in its field (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+            report(false, "Go to Line puts the keyboard in the palette's field (first responder \(window.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
         } else {
             print("SELFTEST SKIP Go to Line's field: typing, Return, Escape (the window is covered or the screen locked: SwiftUI isn't drawing it)")
         }
-        goToLine.cancel()
+        palette.cancel()
         window.makeFirstResponder(ktv)
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         controller.scrollOrigin = .zero
@@ -1681,8 +1706,8 @@ import os
         if let position {
             position.press()
             await settle(150)
-            report(model.goToLine.isOpen, "pressing the position opens Go to Line")
-            model.goToLine.cancel()
+            report(model.goToLine.isOpen && model.palette.isOpen && model.palette.text == ":", "pressing the position opens Go to Line")
+            model.palette.cancel()
         }
 
         // The width holds wherever the caret is. Drawn offscreen from the
@@ -2818,7 +2843,8 @@ enum SaveButtonSample {
     }
 }
 
-/// The find bar and Go to Line in their states, for `-KiriRenderFind`: each
+/// The find bar in its states, for `-KiriRenderFind` (Go to Line is the
+/// command palette's, `-KiriRenderPalette`): each
 /// over a strip of the editor's paper, as wide as a default window's editor
 /// and as narrow as the narrowest.
 private enum FindBarSample {
@@ -2842,9 +2868,6 @@ private enum FindBarSample {
                     strip("\(bars[i].0), \(Int(width)) pt", width: width) { FindBar(find: bars[i].1, sampleFocus: bars[i].2) }
                 }
             }
-            strip("Go to Line", width: 460) { GoToLine(goToLine: .sample(text: ""), lineCount: 340) }
-            strip("Go to Line, a line typed", width: 460) { GoToLine(goToLine: .sample(text: "128"), lineCount: 340) }
-            strip("Go to Line, not a line", width: 460) { GoToLine(goToLine: .sample(text: "12b", invalid: true), lineCount: 340) }
         }
         .padding(16)
         .background(Color.honeyCanvas)

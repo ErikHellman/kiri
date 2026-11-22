@@ -115,7 +115,7 @@ extension SelfTest {
         window.makeFirstResponder(ktv)
         find.board = NSPasteboard.withUniqueName()
         find.close()
-        goToLine.cancel()
+        palette.cancel()
         EditAction.selfTestTarget = ktv
         let original = ktv.string
         let preferences = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
@@ -188,19 +188,37 @@ extension SelfTest {
                "VoiceOver is told how many results there are and the selected row as it changes (“\(first)”; “\(second)”)")
         palette.cancel()
 
-        // Never open together with the find bar or Go to Line.
+        // Never open together with the find bar; and Go to Line is the
+        // palette itself, with a colon, so never beside either.
         palette.open()
         find.show()
         let findAlone = find.isOpen && !palette.isOpen
         palette.open()
         let paletteAlone = palette.isOpen && !find.isOpen
         goToLine.open()
-        let lineAlone = goToLine.isOpen && !palette.isOpen && !find.isOpen
+        let lineAlone = goToLine.isOpen && palette.isOpen && palette.mode == .line && !find.isOpen
+        find.show()
+        let findAgain = find.isOpen && !palette.isOpen && !goToLine.isOpen
         palette.open()
-        report(findAlone && paletteAlone && lineAlone && palette.isOpen && !goToLine.isOpen && !find.isOpen,
-               "the palette, the find bar and Go to Line are never open together (\(findAlone), \(paletteAlone), \(lineAlone))")
+        report(findAlone && paletteAlone && lineAlone && findAgain && palette.isOpen && !goToLine.isOpen && !find.isOpen,
+               "the palette, the find bar and Go to Line are never open together (\(findAlone), \(paletteAlone), \(lineAlone), \(findAgain))")
         palette.cancel()
         report(!palette.isOpen && window.firstResponder === ktv, "Escape closes it and the editor has the keyboard")
+
+        // ⌘L, as a key: the palette with the colon typed. A line typed
+        // there moves the caret, and Escape puts it back.
+        let caret = NSRange(location: 3, length: 4)
+        ktv.setSelectedRange(caret)
+        paletteKey("l", code: 37, .command, in: window)
+        let byL = await wait { palette.isOpen && goToLine.isOpen }
+        let colon = palette.text == ":" && palette.mode == .line
+        palette.text = ":12"
+        let moved = model.line == 12 && palette.lineStatus?.text == "Go to line 12"
+        palette.text = ":12:7"
+        let column = model.line == 12 && model.column == 7
+        palette.cancel()
+        report(byL && colon && moved && column && ktv.selectedRange() == caret && !goToLine.isOpen && window.firstResponder === ktv,
+               "⌘L opens the palette with a colon typed; :12 moves the caret there, :12:7 to its column, and Escape puts the selection back (\(byL), \(colon), \(moved), \(column), selection \(ktv.selectedRange()))")
 
         // Return on a command runs it with the keyboard in the editor:
         // Make Upper Case changes the document's word, not the field's.
@@ -509,6 +527,10 @@ enum PaletteSample {
             command("Find and Replace…", "Edit ▸ Find", Keys.findAndReplace, marks: [9..<10, 10..<11, 11..<12]),
         ]
         let states: [(String, PaletteController, Int)] = [
+            (": and a line: where Return goes", .sample(text: ":42", rows: [], line: .init(text: "Go to line 42", isTarget: true)), 8),
+            (": with a column", .sample(text: ":42:7", rows: [], line: .init(text: "Go to line 42, column 7", isTarget: true)), 8),
+            (": alone (⌘L)", .sample(text: ":", rows: [], line: .init(text: "Type a line number, or line:column")), 8),
+            (": and what is not a line", .sample(text: ":12b", rows: [], line: .init(text: "Not a line", isProblem: true)), 8),
             ("nothing typed: tabs, recent files, commands", .sample(text: "", rows: resting), 8),
             ("“gre” in a folder window: a tab, files and commands, the letters marked", .sample(text: "gre", rows: mixed, selection: 1), 8),
             ("> and a letter: commands with their keys, more than fit", .sample(text: ">s", rows: commands, selection: 5), 8),
@@ -519,7 +541,7 @@ enum PaletteSample {
             ForEach([860.0, 460.0, 220.0], id: \.self) { width in
                 ForEach(states.indices, id: \.self) { i in
                     strip("\(states[i].0), \(Int(width)) pt", width: width) {
-                        CommandPalette(palette: states[i].1, rowsThatFit: states[i].2)
+                        CommandPalette(palette: states[i].1, lineCount: 340, rowsThatFit: states[i].2)
                     }
                 }
             }

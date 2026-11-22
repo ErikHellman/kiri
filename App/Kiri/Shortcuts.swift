@@ -196,11 +196,12 @@ struct ShortcutGroup: Identifiable {
             Item("Choose a result", "↑  ↓"),
             Item("Run the chosen result", "↩"),
             Item("Commands only", "Type >"),
+            Item("A line of the document (Go to Line)", "Type :42"),
             Item("Close the palette", "⎋"),
         ]),
         ShortcutGroup(title: "Moving around", systemImage: "arrow.up.and.down.text.horizontal", items: [
             Item("Go to line (or line:column)", Keys.goToLine),
-            Item("Keep the line / go back, in Go to Line", "↩  ⎋"),
+            Item("Keep the line / go back, while a line is typed", "↩  ⎋"),
             Item("Start / end of line", "⌘←  ⌘→"),
             Item("Start / end of document", "⌘↑  ⌘↓"),
             Item("Word left / right", "⌥←  ⌥→"),

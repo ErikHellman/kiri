@@ -7,6 +7,8 @@ import SwiftUI
 /// finds. All of it is `PaletteController`'s; this only shows it.
 struct CommandPalette: View {
     @Bindable var palette: PaletteController
+    /// The document's lines, for `:` mode ("of 340").
+    var lineCount = 1
     /// How many rows there is room for under the field (a short window
     /// shows fewer than `Self.mostRows`).
     var rowsThatFit = CommandPalette.mostRows
@@ -21,6 +23,13 @@ struct CommandPalette: View {
     /// More rows than this scroll.
     static let mostRows = 8
 
+    /// How much of the editor's top the palette covers while a line is
+    /// typed (`:` mode: the field and one line under it), with air below
+    /// it. The editor shows the line that is typed clear of that.
+    static var lineObstruction: CGFloat {
+        EditorBar.topPadding + fieldHeight + 1 + rowHeight + 2 * listInset + EditorBar.clearance
+    }
+
     /// How many rows a panel `height` tall has room for, between the top
     /// of the panel and the status capsule at its bottom.
     static func rowsThatFit(in height: CGFloat) -> Int {
@@ -33,7 +42,10 @@ struct CommandPalette: View {
         let shape = RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
         VStack(spacing: 0) {
             field
-            if !palette.rows.isEmpty || palette.emptyMessage != nil {
+            if let status = palette.lineStatus {
+                Rectangle().fill(Color.honeyLine).frame(height: 1)
+                lineRow(status)
+            } else if !palette.rows.isEmpty || palette.emptyMessage != nil {
                 Rectangle().fill(Color.honeyLine).frame(height: 1)
                 if let message = palette.emptyMessage {
                     Text(message)
@@ -68,8 +80,9 @@ struct CommandPalette: View {
 
     private var field: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .bold))
+            Image(systemName: palette.mode == .line ? "arrow.right.to.line" : "magnifyingglass").font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.honeyAccentInk)
+                .frame(width: 16)
                 .accessibilityHidden(true)
             BarTextField(prompt: "Search files, tabs and commands", text: $palette.text)
                 .focused($focused)
@@ -93,6 +106,47 @@ struct CommandPalette: View {
         }
         .padding(.horizontal, 14)
         .frame(height: Self.fieldHeight)
+    }
+
+    /// `:` mode: in place of the list, one line that says where Return
+    /// goes ("Go to line 42"), what to type, or "Not a line", and how far
+    /// the lines go. Where Return goes it is a row like any other, selected.
+    private func lineRow(_ status: PaletteController.LineStatus) -> some View {
+        Button { palette.commit() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: status.isProblem ? "exclamationmark.circle" : "arrow.right.to.line")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(status.isProblem ? Color.honeyDanger : Color.honeyMuted)
+                    .frame(width: 16)
+                Text(status.text)
+                    .font(.honey(.subheadline, weight: .semibold))
+                    // The words say it; the color only underlines it.
+                    .foregroundStyle(status.isProblem ? Color.honeyDanger : status.isTarget ? Color.honeyFg : Color.honeyMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("of \(lineCount)")
+                    .font(.honey(.caption, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.honeyMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 10)
+            .frame(height: Self.rowHeight - 2)
+            .background { if status.isTarget { Capsule().fill(Color.honeyAccentSoft) } }
+            .frame(height: Self.rowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        // (Not disabled, which would dim words that are there to be read:
+        // with nowhere to go, a click simply does nothing.)
+        .allowsHitTesting(status.isTarget)
+        .padding(.vertical, Self.listInset)
+        .padding(.horizontal, 6)
+        .accessibilityLabel("\(status.text), of \(lineCount) lines")
+        .accessibilityAddTraits(status.isTarget ? .isSelected : [])
     }
 
     @ViewBuilder private var list: some View {
