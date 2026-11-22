@@ -157,7 +157,10 @@ final class KiriTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
-        if ok { model?.find.editorFocusChanged(hasFocus: true) }
+        if ok {
+            model?.find.editorFocusChanged(hasFocus: true)
+            model?.palette.editorTookKeyboard()
+        }
         effects?.update(animated: false)
         return ok
     }

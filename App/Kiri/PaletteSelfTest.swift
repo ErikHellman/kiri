@@ -308,12 +308,30 @@ extension SelfTest {
         FrontEditor.shared.selfTestMain(NSWindow())
         await settle(250)
         updateMenu(main)
-        let off = view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == false
+        let goToFile = main.item(withTitle: "File")?.submenu?.item(withTitle: KiriCommands.goToFileTitle)
+        let off = view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == false && goToFile?.isEnabled == false
         FrontEditor.shared.selfTestMain(window)
         await settle(250)
         updateMenu(main)
-        report(off && view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == true,
-               "with no document window in front, Command Palette… is off")
+        report(off && view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == true
+               && main.item(withTitle: "File")?.submenu?.item(withTitle: KiriCommands.goToFileTitle)?.isEnabled == true,
+               "with no document window in front, Command Palette… and Go to File… are off")
+
+        // The keyboard going to the text (a click there) closes it, as
+        // Escape does: a line that was only being looked at is gone back from.
+        ktv.setSelectedRange(caret)
+        palette.open(with: ":12")
+        let looking = model.line == 12
+        if await wait(drawn ? 2 : 0.6, until: { inField() }) {
+            window.makeFirstResponder(ktv)
+            report(looking && !palette.isOpen && !goToLine.isOpen && ktv.selectedRange() == caret && window.firstResponder === ktv,
+                   "the keyboard going to the text closes the palette, the selection back where it was (\(looking), open: \(palette.isOpen), selection \(ktv.selectedRange()))")
+        } else if drawn {
+            report(false, "the palette's field takes the keyboard, for the check of what the text taking it back does")
+        } else {
+            skip("the keyboard going from the palette's field to the text")
+        }
+        palette.cancel()
 
         await palettePreviews(window, model)
 
@@ -549,7 +567,7 @@ extension SelfTest {
         // A file anywhere under the folder, by a few letters.
         palette.text = "hon"
         let honey = palette.rows.first
-        report(honey.map { isFile($0, "Sources/Kit/Honey.swift") } == true && honey?.title == "Honey.swift" && honey?.detail == "Sources/Kit"
+        report(honey.map { isFile($0, "Sources/Kit/Honey.swift") } == true && honey?.title == "Honey.swift" && honey?.detail == "Sources/Kit" && honey?.shortDetail == "…/Kit"
                && honey?.titleMarks == [0..<3] && honey?.symbol == FileIcon.forFile(named: "a.swift").symbol && honey?.tint == FileIcon.forFile(named: "a.swift").tint
                && honey?.spoken == "Honey.swift, Sources/Kit",
                "“hon” finds Sources/Kit/Honey.swift: its name with the letters marked, its folder after it, its kind's icon (\(honey.map { "\($0.title) · \($0.detail) \($0.titleMarks)" } ?? "nothing"))")

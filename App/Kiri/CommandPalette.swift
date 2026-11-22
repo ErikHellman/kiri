@@ -222,10 +222,12 @@ private struct PaletteRowView: View {
     var body: some View {
         Button(action: action) {
             // In a panel too narrow for all of it (the editor beside the
-            // sidebar in a small window) the detail goes, never the key.
+            // sidebar in a small window) a file's folders shorten to the
+            // nearest one, then the detail goes; never the key.
             ViewThatFits(in: .horizontal) {
-                content(detail: true)
-                content(detail: false)
+                content(detail: row.detail, marks: row.detailMarks)
+                if let short = row.shortDetail { content(detail: short, marks: []) }
+                content(detail: "", marks: [])
             }
             .padding(.leading, 8)
             .padding(.trailing, row.shortcut == nil ? 10 : 5)
@@ -248,7 +250,7 @@ private struct PaletteRowView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func content(detail: Bool) -> some View {
+    private func content(detail: String, marks: [Range<Int>]) -> some View {
         HStack(spacing: 8) {
             Image(systemName: row.symbol)
                 .font(.system(size: 11, weight: .semibold))
@@ -257,9 +259,9 @@ private struct PaletteRowView: View {
             Text(Self.marked(row.title, row.titleMarks, size: .subheadline, ink: .honeyFg, rest: Color.honeyFg.opacity(0.8)))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if detail, !row.detail.isEmpty {
+            if !detail.isEmpty {
                 // (Muted already: the rest of a marked detail is not made fainter still.)
-                Text(Self.marked(row.detail, row.detailMarks, size: .caption, ink: .honeyMuted, rest: .honeyMuted))
+                Text(Self.marked(detail, marks, size: .caption, ink: .honeyMuted, rest: .honeyMuted))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)

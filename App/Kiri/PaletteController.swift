@@ -36,6 +36,18 @@ struct PaletteRow: Equatable, Identifiable {
         }
     }
 
+    /// The detail in less room: a file's nearest folder ("…/Tidepool"
+    /// for "Sources/Tidepool"), which still tells two files of a name
+    /// apart. Nil where there is nothing shorter to say.
+    var shortDetail: String? {
+        switch action {
+        case .command: return nil
+        case .tab, .file:
+            guard let slash = detail.lastIndex(of: "/"), detail.index(after: slash) < detail.endIndex else { return nil }
+            return "…" + detail[slash...]
+        }
+    }
+
     /// What VoiceOver hears: "Save, Command S", "Greeter.swift, tab,
     /// Sources/Tidepool".
     var spoken: String {
@@ -381,6 +393,13 @@ struct PaletteRow: Equatable, Identifiable {
         folderObserver = nil
         model?.overlayChanged()
         if focusEditor { controller?.focus() }
+    }
+
+    /// The keyboard went to the editor while the palette was open (a
+    /// click in the text): the palette is the keyboard's, and goes, as
+    /// Escape would have it go.
+    func editorTookKeyboard() {
+        close(focusEditor: false)
     }
 
     /// Another document takes the editor (the folder sidebar's preview
