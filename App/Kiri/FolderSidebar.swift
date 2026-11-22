@@ -405,14 +405,18 @@ struct FolderSidebar: View {
             .frame(height: 38)
             .help(session.root.url.path)
 
+            // New File… in the folder itself: its field stays above the
+            // rows, wherever they are scrolled to (a row of the list is
+            // not made while it is out of view, and would never get the
+            // keyboard).
+            if session.editing(in: tabs.window) == .newFile(in: session.root.url) {
+                NameRow(session: session, depth: 0).padding(.horizontal, 6)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         let _ = session.generation
                         let marks = tabs.openFiles
-                        if session.editing(in: tabs.window) == .newFile(in: session.root.url) {
-                            NameRow(session: session, depth: 0)
-                        }
                         ForEach(session.root.children) { node in
                             FileRow(node: node, depth: 0, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
                                     keyboardFocus: showsKeyboard, open: open)
@@ -425,6 +429,11 @@ struct FolderSidebar: View {
                 .onChange(of: session.cursor) { _, url in
                     guard let url, focused else { return }
                     withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { proxy.scrollTo(url) }
+                }
+                // New File… in a folder of the list: its field comes into view.
+                .onChange(of: session.editing(in: tabs.window)) { _, editing in
+                    guard case .newFile(let folder) = editing, folder != session.root.url else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(NameRow.newFileID) }
                 }
             }
         }
@@ -452,8 +461,13 @@ struct FolderSidebar: View {
         .onKeyPress(.return) { typing ? .ignored : activate(thenEdit: true) }
         .onKeyPress(.space) { typing ? .ignored : activate(thenEdit: false) }
         .onKeyPress(.escape) {
-            guard !typing else { return .ignored }
-            model.controller?.focus()
+            // (A name's field takes Escape itself; should the keyboard not
+            // be in it, Escape still gives the name up.)
+            if typing {
+                session.cancelEdit()
+            } else {
+                model.controller?.focus()
+            }
             return .handled
         }
         .onKeyPress(phases: .down) { press in typing ? .ignored : typeSelect(press) }
@@ -694,7 +708,7 @@ private struct FileRow: View {
             if node.isDirectory, expanded {
                 let _ = session.generation
                 if session.editing(in: tabs.window) == .newFile(in: node.url) {
-                    NameRow(session: session, depth: depth + 1)
+                    NameRow(session: session, depth: depth + 1).id(NameRow.newFileID)
                 }
                 ForEach(node.children) { child in
                     FileRow(node: child, depth: depth + 1, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
@@ -752,7 +766,6 @@ private struct NameField: View {
             .foregroundStyle(Color.honeyFg)
             .focused($focused)
             .onSubmit { session.commitEdit(text) }
-            .onExitCommand { session.cancelEdit() }
             .onChange(of: text) { if session.editProblem != nil { session.editProblem = nil } }
             .onChange(of: focused) { was, now in if was, !now { session.cancelEdit() } }
             .onAppear {
@@ -776,6 +789,9 @@ private struct NameRow: View {
     var name = ""
     var label = "Name of the new file"
 
+    /// What the list scrolls to when New File… puts its row in a folder.
+    static let newFileID = "se.hellsoft.kiri.sidebar.new-file"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
@@ -791,6 +807,9 @@ private struct NameRow: View {
             .frame(height: 26)
             if let problem = session.editProblem { NameProblem(text: problem, depth: depth) }
         }
+        // Escape in the field (on the row, as the find bar has it on the
+        // bar: the field itself is not told).
+        .onExitCommand { session.cancelEdit() }
     }
 }
 

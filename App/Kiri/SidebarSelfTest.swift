@@ -254,6 +254,18 @@ extension SelfTest {
         report(both != nil && !isPreview(both) && both.map { f.text($0) } == f.onDisk("i.txt") && iDocuments.count == 1 && watching
                && f.group(first).count == tabsBefore && f.openDocuments().count == f.group(first).count,
                "a double-click on a file that isn't open shows it once, to stay, in the preview's tab (\(f.strip(first)); \(iDocuments.count) document, watching its file: \(watching), first click answered \(answeredAtOnce ? "at once" : "later"))")
+
+        // A file showing in the preview that is then opened by name (⌘O,
+        // Open Recent, `kiri`, a drop) is there to stay.
+        let byName = await f.open("h.txt", from: first)
+        let wasPreviewed = isPreview(byName)
+        let tabsThen = f.group(first).count
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(entries: [.file(f.file("h.txt"), line: 0, column: 0)])) { c.resume() }
+        }
+        let keptByName = await f.wait { byName.map { !PreviewTabs.isPreview($0) && WindowTabs.model(for: $0)?.tabs.contains { $0.title == "h.txt" && !$0.preview } == true } ?? false }
+        report(wasPreviewed && keptByName && f.group(first).count == tabsThen && byName?.tabGroup?.selectedWindow === byName,
+               "a file in the preview tab that is opened by name stays: the same tab, no longer a preview (\(f.strip(first)))")
     }
 
     /// The marks on rows: which files are open in a tab, which is the
@@ -418,6 +430,31 @@ extension SelfTest {
         report(fieldUp && made && madeWindow && f.onDisk("sub/new note.md").isEmpty && newWindow.map { !PreviewTabs.isPreview($0) } == true
                && session.cursor == f.file("sub/new note.md") && session.visibleRows().contains { $0.node.url == f.file("sub/new note.md") },
                "New File… on a folder asks for the name in place, makes the empty file there and opens it in a tab to stay, the keyboard in its editor (“new note.md”, \(typed ? "typed as keys, the space too" : "given without keys: the window is covered or the screen locked, and SwiftUI isn't showing the field"))")
+
+        // New File… on the folder itself with the rows scrolled away from
+        // the top: its field is there all the same, and takes the keyboard.
+        let editor = FrontEditor.shared.editor(in: shown)
+        // (The new file's tab is in front: back to the one the menus are asked of.)
+        f.select(shown)
+        _ = await f.wait(1) { shown.tabGroup?.selectedWindow === shown && shown.isVisible }
+        if f.drawn(shown), let editor, let last = session.visibleRows().last?.node.url {
+            let frame = shown.frame
+            shown.setFrame(NSRect(x: frame.minX, y: frame.maxY - shown.contentMinSize.height, width: frame.width, height: shown.contentMinSize.height), display: true)
+            editor.sidebarFocusRequest += 1
+            _ = await f.wait(1) { editor.sidebarHasFocus }
+            session.cursor = last
+            await settle(300)
+            item(Menu.newFile, .root)?.action()
+            let rootField = await f.wait(1.5) { fieldEditor(of: shown) != nil }
+            let escaped = rootField ? await typeKeys("\u{1b}", in: shown) : false
+            let gone = await f.wait(1) { session.editing == nil }
+            shown.setFrame(frame, display: true)
+            report(rootField && escaped && gone, "with the rows scrolled to the end in a short window, New File… on the folder still shows its field, with the keyboard in it, and Escape gives it up (\(rootField), \(gone))")
+            session.cancelEdit()
+            editor.controller?.focus()
+        } else {
+            print("SELFTEST SKIP New File… on the folder with the rows scrolled away (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
 
         // Names that can't be used: said, and nothing is made or written over.
         let aBefore = f.onDisk("a.swift")
