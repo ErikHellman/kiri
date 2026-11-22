@@ -106,6 +106,9 @@ import Testing
         // Equal scores: the shorter text first, then the one that came first.
         let twins = ["b/notes.txt", "a/notes.txt", "notes.txt", "c/notes.txt"].map { FuzzyCandidate($0, isPath: true) }
         #expect(FuzzyQuery("notes").rank(twins, limit: 3)!.map(\.index) == [2, 0, 1])
+        // The shorter name before the shorter path: the file that is all of what was typed.
+        let names = ["Tests/GreeterTests.swift", "Sources/Tidepool/Greeter.swift"].map { FuzzyCandidate($0, isPath: true) }
+        #expect(FuzzyQuery("gr").rank(names, limit: 2)!.map(\.index) == [1, 0])
         #expect(FuzzyQuery("zzz").rank(candidates, limit: 10)!.isEmpty)
         #expect(FuzzyQuery("e").rank(candidates, limit: 10, isCancelled: { true }) != nil) // too few to be asked
     }

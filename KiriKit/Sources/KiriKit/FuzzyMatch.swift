@@ -125,8 +125,10 @@ public struct FuzzyQuery: Sendable {
 
     /// The candidates the query is found in, best first, at most `limit`
     /// of them, without the matches too weak to mean anything (`weakest`).
-    /// Equal scores keep the shorter text first and then the order they
-    /// came in. With nothing typed: the first `limit`, as they came.
+    /// Equal scores keep the shorter name first ("Greeter.swift" before
+    /// "GreeterTests.swift", wherever they are), then the shorter text,
+    /// then the order they came in. With nothing typed: the first
+    /// `limit`, as they came.
     ///
     /// - Parameter isCancelled: asked now and then; true gives up (nil).
     public func rank(_ candidates: [FuzzyCandidate], limit: Int,
@@ -147,8 +149,10 @@ public struct FuzzyQuery: Sendable {
             if index & 0x3FF == 0x3FF, isCancelled() { return nil }
             guard mask & ~candidates[index].mask == 0,
                   let score = work.score(self, in: candidates[index], tracing: false), score >= floor else { continue }
-            // Score first, then the shorter text; earlier ones stay ahead of equals.
-            let key = score << 16 | (0xFFFF - min(candidates[index].units.count, 0xFFFF))
+            // Score first, then the shorter name, then the shorter text;
+            // earlier ones stay ahead of equals.
+            let length = candidates[index].units.count, name = length - candidates[index].nameStart
+            let key = score << 28 | (0xFFF - min(name, 0xFFF)) << 16 | (0xFFFF - min(length, 0xFFFF))
             if top.count == limit {
                 guard key > top[limit - 1].key else { continue }
                 top.removeLast()
