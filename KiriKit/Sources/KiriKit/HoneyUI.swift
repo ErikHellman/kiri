@@ -236,12 +236,18 @@ private struct HoneyPanel: ViewModifier {
                 .clipShape(shape)
                 .overlay(shape.strokeBorder(Color.honeyLine, lineWidth: 2))
         } else {
-            // Warm brown in light mode, black in dark (§3 `shadow`).
+            // Warm brown in light mode, black in dark (§3 `shadow`). Cast
+            // by the panel's shape alone: a shadow on the content would be
+            // cast by every view in it (each word and control of Settings
+            // darkening what lies under and beside it).
             let ink = scheme == .dark ? Color.black.opacity(0.5) : Color(nsColor: NSColor(honeyRGB: 0x5A3A1A)).opacity(0.16)
             content.background(Color.honeySurface, in: shape)
                 .clipShape(shape)
-                .shadow(color: ink, radius: 15, y: 10)
-                .shadow(color: ink.opacity(0.6), radius: 3, y: 2)
+                .background {
+                    shape.fill(Color.honeySurface)
+                        .shadow(color: ink, radius: 15, y: 10)
+                        .shadow(color: ink.opacity(0.6), radius: 3, y: 2)
+                }
         }
     }
 }
