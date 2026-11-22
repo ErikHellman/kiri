@@ -66,6 +66,12 @@ import Testing
 
     @Test func startsOfWordsCount() {
         #expect(score("tc", "Toggle Comment") > score("tc", "Text Encoding"))
+        // Two words' first letters beat the same two letters met inside a word.
+        #expect(score("tc", "Toggle Comment") > score("tc", "Theme: Matcha"))
+        #expect(score("tc", "Toggle Comment") > score("tc", "Keyboard Shortcuts"))
+        // And letters in a row from a word's start beat a row from inside one.
+        #expect(score("lin", "Wrap Lines") > score("lin", "Smaller Inline"))
+        #expect(marked("lin", "Go to Line…") == ["Lin"])
         #expect(score("es", "EditorScreen.swift") > score("es", "Greeters.swift"))
         #expect(score("rm", "read_me.txt") > score("rm", "format.txt"))
         #expect(marked("es", "EditorScreen.swift") == ["E", "S"])

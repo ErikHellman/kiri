@@ -162,8 +162,11 @@ enum Fuzzy {
 
     /// A matched letter.
     static let letter = 16
-    /// A letter right after the one matched before it.
-    static let consecutive = 12
+    /// A letter right after the one matched before it is worth what the
+    /// first letter of that run is (a run from the start of a word counts
+    /// as the start of a word all along), and never less than this. Less
+    /// than a word's start: "tc" is Toggle Comment before it is Matcha.
+    static let consecutive = 5
     /// The first letter of the file's name in a path, or of the text.
     static let nameStartBonus = 12
     /// The first letter of a folder in a path.
@@ -219,13 +222,15 @@ enum Fuzzy {
     ///
     /// For each letter of the query, at each place in the candidate where
     /// that letter stands, the best score of a match of the query so far
-    /// that puts the letter there (`matched`), and where the letter before
-    /// it then is (`back`, kept only when the match is to be marked). Only
+    /// that puts the letter there (`matched`), how many letters in a row
+    /// that match ends with (`runs`), and where the letter before it then
+    /// is (`back`, kept only when the match is to be marked). Only
     /// the places a letter can be are looked at: from where it is first
     /// possible (the letters before it found as early as they go) to
     /// where it is last possible.
     struct Work {
         private var matched: UnsafeMutablePointer<Int32>?
+        private var runs: UnsafeMutablePointer<Int32>?
         private var back: UnsafeMutablePointer<Int32>?
         private var first: UnsafeMutablePointer<Int32>?
         private var last: UnsafeMutablePointer<Int32>?
@@ -237,10 +242,12 @@ enum Fuzzy {
 
         mutating func free() {
             matched?.deallocate()
+            runs?.deallocate()
             back?.deallocate()
             first?.deallocate()
             last?.deallocate()
             matched = nil
+            runs = nil
             back = nil
             first = nil
             last = nil
@@ -251,9 +258,11 @@ enum Fuzzy {
         private mutating func reserve(cells wanted: Int, letters n: Int) {
             if wanted > cells {
                 matched?.deallocate()
+                runs?.deallocate()
                 back?.deallocate()
                 cells = max(wanted, cells * 2, 1024)
                 matched = .allocate(capacity: cells)
+                runs = .allocate(capacity: cells)
                 back = .allocate(capacity: cells)
             }
             if n > letters {
@@ -273,7 +282,7 @@ enum Fuzzy {
             guard n > 0 else { return 0 }
             guard n <= m, query.mask & ~candidate.mask == 0 else { return nil }
             reserve(cells: (tracing ? n : 2) * m, letters: n)
-            guard let matched, let back, let first, let last else { return nil }
+            guard let matched, let runs, let back, let first, let last else { return nil }
             let none = Self.none
             let letter = Int32(Fuzzy.letter), consecutive = Int32(Fuzzy.consecutive)
             let gapOpen = Int32(Fuzzy.gapOpen), gapExtend = Int32(Fuzzy.gapExtend)
@@ -304,6 +313,7 @@ enum Fuzzy {
                                     if c[k] == unit {
                                         let here = letter + Int32(bonus[k])
                                         matched[k] = here
+                                        runs[k] = 1
                                         if n == 1, here > best {
                                             best = here
                                             bestAt = k
@@ -334,19 +344,25 @@ enum Fuzzy {
                                         p += 1
                                     }
                                     let worth = letter + Int32(bonus[k])
-                                    var here = none, from = 0
+                                    var here = none, from = 0, run: Int32 = 1
                                     if k - 1 >= previousFrom, k - 1 <= previousTo, c[k - 1] == previous {
-                                        here = matched[above + k - 1] + worth + consecutive
+                                        // In a row: worth what the run's first letter is.
+                                        let before = runs[above + k - 1]
+                                        let inherited = max(consecutive, Int32(bonus[k - Int(before)]), Int32(bonus[k]))
+                                        here = matched[above + k - 1] + letter + inherited
                                         from = k - 1
+                                        run = before + 1
                                     }
                                     if far > none {
                                         let skipping = far - gapOpen - gapExtend * Int32(k - 2) + worth
                                         if skipping > here {
                                             here = skipping
                                             from = farAt
+                                            run = 1
                                         }
                                     }
                                     matched[row + k] = here
+                                    runs[row + k] = run
                                     if tracing { back[row + k] = Int32(from) }
                                     if i == n - 1, here > best {
                                         best = here
