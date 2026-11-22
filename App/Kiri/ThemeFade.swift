@@ -38,13 +38,16 @@ import QuartzCore
 
     /// Whether a change fades now.
     static var isOn: Bool {
-        var level = UserDefaults.standard.string(forKey: Prefs.motionKey).flatMap(HoneyMotionLevel.init(rawValue:)) ?? .system
-        var systemReduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         #if DEBUG || KIRI_SELFTEST
-        if let selfTestMotion { (level, systemReduced) = selfTestMotion }
+        if let selfTestMotion { return isOn(selfTestMotion.level, systemReduced: selfTestMotion.systemReduced) }
         #endif
+        return isOn(UserDefaults.standard.string(forKey: Prefs.motionKey).flatMap(HoneyMotionLevel.init(rawValue:)) ?? .system,
+                    systemReduced: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    private static func isOn(_ level: HoneyMotionLevel, systemReduced: Bool) -> Bool {
         // (Off counts as reduced.)
-        return !HoneyMotion(HoneyAppearance(motion: level), systemReduced: systemReduced).reduced
+        !HoneyMotion(HoneyAppearance(motion: level), systemReduced: systemReduced).reduced
     }
 
     private static let fading = NSHashTable<CALayer>.weakObjects()
