@@ -32,6 +32,17 @@ extension SelfTest {
         report(settings.firstResponder === settings && preview.theme == nil && Honey.theme == chosen,
                "Settings opens with no control focused and no theme shown in place of the chosen one (first responder \(settings.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
 
+        // The groups, in order, as VoiceOver hears their titles, and the
+        // text size as a percentage with no space before the sign.
+        await wakeAccessibility()
+        let elements = accessibilityElements(of: settings)
+        // (The window's title, in the band above the panel, is one too.)
+        let headings = elements.filter { $0.role == "AXHeading" && $0.name != "Settings" }.map(\.name)
+        let percent = "\(Int((UserDefaults.standard.double(forKey: Prefs.textScaleKey).nonZero ?? 1) * 100))%"
+        let shown = elements.contains { $0.name == percent || $0.value == percent }
+        report(headings == ["Appearance", "Editor", "Motion", "Command line tool"] && shown,
+               "Settings is in four groups, Appearance, Editor, Motion and Command line tool, and shows the text size as \(percent) (\(headings), \(shown))")
+
         // The pointer: on a swatch its theme shows, on the next one that
         // one (entered before the last says it was left), off them the
         // chosen theme again.
@@ -166,5 +177,8 @@ extension SelfTest {
         }
         return nil
     }
+}
+private extension Double {
+    var nonZero: Double? { self == 0 ? nil : self }
 }
 #endif

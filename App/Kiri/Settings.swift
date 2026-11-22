@@ -24,7 +24,9 @@ enum Prefs {
     static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
 }
 
-/// Kiri ▸ Settings…: appearance, motion and the editor's text size.
+/// Kiri ▸ Settings…, in four groups: Appearance (the color theme, light
+/// or dark), Editor (font, text size, wrapping), Motion, and the command
+/// line tool.
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -60,28 +62,59 @@ struct SettingsView: View {
             }
     }
 
+    /// One panel, the groups on it under quiet titles with a hairline
+    /// between them. (A panel for each group was tried: four edges and
+    /// shadows were busier, and the window too tall for a 13" screen.)
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let groups: [(String, AnyView)] = [
+            ("Appearance", AnyView(appearanceGroup)),
+            ("Editor", AnyView(editorGroup)),
+            ("Motion", AnyView(motionGroup)),
+            ("Command line tool", AnyView(commandLineToolRow)),
+        ]
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(groups.indices, id: \.self) { i in
+                if i > 0 { Rectangle().fill(Color.honeyLine).frame(height: 1).padding(.vertical, 14) }
+                groupTitle(groups[i].0).padding(.bottom, 8)
+                groups[i].1
+            }
+        }
+        .padding(22)
+        .frame(width: 600)
+        .honeyPanel()
+    }
+
+    /// A group's title: a section label (DESIGN.md §4).
+    private func groupTitle(_ title: String) -> some View {
+        Text(title.localizedUppercase)
+            .font(.honeySectionLabel)
+            .tracking(0.7)
+            .foregroundStyle(Color.honeyMuted)
+            // In words as written: capitals are only how it looks.
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var appearanceGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Theme").font(.honey(.body, weight: .bold))
-                    Text("Colors for the window, the text and the Dock icon.")
+                    Text("Colors for the window, the text and the Dock icon. Point at one to try it.")
                         .font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
                 }
                 ThemePicker(chosen: colorTheme)
             }
-            row("Appearance", detail: "Follow macOS, or always light or dark.") {
-                HoneySegmentedPicker(selection: $theme).accessibilityLabel("Appearance")
+            row("Light or dark", detail: "Follow macOS, or always light or always dark.") {
+                HoneySegmentedPicker(selection: $theme).accessibilityLabel("Light or dark")
             }
-            row("Motion", detail: "System follows Reduce Motion. Reduced keeps fades only.") {
-                HoneySegmentedPicker(selection: $motion).accessibilityLabel("Motion")
-            }
-            row("Typing animations", detail: "The caret glides, lines and brackets glow. Off with Motion Off.") {
-                Toggle("Typing animations", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
-                    .disabled(motion == .off)
-            }
+        }
+    }
+
+    private var editorGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
             fontRow
-            row("Editor text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
+            row("Text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
                 HStack(spacing: 8) {
                     Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller Text", systemImage: "minus") }
                         .buttonStyle(.honeyIcon)
@@ -91,14 +124,22 @@ struct SettingsView: View {
                         .buttonStyle(.honeyIcon)
                 }
             }
-            row("Wrap lines", detail: "Wrap long lines at the window edge.") {
+            row("Wrap lines", detail: nil) {
                 Toggle("Wrap lines", isOn: $wrapLines).toggleStyle(.switch).labelsHidden()
             }
-            commandLineToolRow
         }
-        .padding(24)
-        .frame(width: 600)
-        .honeyPanel()
+    }
+
+    private var motionGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            row("Motion", detail: "System follows macOS. Reduced only fades.") {
+                HoneySegmentedPicker(selection: $motion).accessibilityLabel("Motion")
+            }
+            row("Typing animations", detail: "The caret glides, lines and brackets glow. Off with Motion Off.") {
+                Toggle("Typing animations", isOn: $typingAnimations).toggleStyle(.switch).labelsHidden()
+                    .disabled(motion == .off)
+            }
+        }
     }
 
     /// The editor's typeface: a menu of the installed monospaced families,
@@ -115,6 +156,8 @@ struct SettingsView: View {
                     }
                 }
                 .labelsHidden()
+                // (The accent itself is too light for text on paper.)
+                .tint(Color.honeyAccentInk)
                 .frame(width: 200)
             }
             FontSample(family: editorFont.shown, scale: textScale)
@@ -126,31 +169,36 @@ struct SettingsView: View {
     @ViewBuilder private var commandLineToolRow: some View {
         switch commandLineTool.status {
         case .installed:
-            row("Command line tool", detail: "kiri opens files and folders from a terminal. It is at \(CLIInstaller.linkPath).") {
+            row("The kiri command", detail: "Opens files and folders from a terminal. It is at \(CLIInstaller.linkPath).") {
                 Label("Installed", systemImage: "checkmark")
                     .font(.honey(.subheadline, weight: .semibold)).foregroundStyle(Color.honeyMuted)
             }
         case .missing:
-            row("Command line tool", detail: "Not installed. kiri opens files and folders from a terminal; installing links \(CLIInstaller.linkPath) to this app.") {
-                Button("Install") { CLIInstaller.install() }.buttonStyle(.honeyGlass)
-                    .accessibilityLabel("Install Command Line Tool")
+            row("The kiri command", detail: "Not installed. It opens files and folders from a terminal; installing links \(CLIInstaller.linkPath) to this app.") {
+                installButton
             }
         case .other(let path):
             // The app the script is in, not the script.
             let app = path.hasSuffix("/Contents/Resources/kiri") ? String(path.dropLast("/Contents/Resources/kiri".count)) : path
-            row("Command line tool", detail: "\(CLIInstaller.linkPath) opens another copy of Kiri (\(TabNames.abbreviatingHome(app, home: NSHomeDirectory()))). Install links it to this one.") {
-                Button("Install") { CLIInstaller.install() }.buttonStyle(.honeyGlass)
-                    .accessibilityLabel("Install Command Line Tool")
+            row("The kiri command", detail: "\(CLIInstaller.linkPath) opens another copy of Kiri (\(TabNames.abbreviatingHome(app, home: NSHomeDirectory()))). Install links it to this one.") {
+                installButton
             }
         }
     }
 
-    private func row<C: View>(_ title: String, detail: String, @ViewBuilder control: () -> C) -> some View {
+    private var installButton: some View {
+        Button("Install…") { CLIInstaller.install() }.buttonStyle(.honeyGlass)
+            .accessibilityLabel("Install Command Line Tool")
+    }
+
+    private func row<C: View>(_ title: String, detail: String?, @ViewBuilder control: () -> C) -> some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.honey(.body, weight: .bold))
-                Text(detail).font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail).font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .layoutPriority(0)
             Spacer(minLength: 12)
@@ -174,7 +222,7 @@ private struct FontSample: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.honeyCurrentLine, in: RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous).strokeBorder(Color.honeyLine, lineWidth: 1))
@@ -205,13 +253,18 @@ struct ThemePicker: View {
     /// the click from here until the setting says something else.
     @State private var clicked: String?
     @FocusState private var focus: String?
+    /// The swatch that shows it has the keyboard: only once a key has put
+    /// the keyboard there. A window that opens with the keyboard on the
+    /// first swatch (keyboard navigation on) must not look as if that
+    /// swatch were picked out.
+    @State private var keyboardShown: String?
 
     private var selection: String { clicked ?? chosen }
 
     var body: some View {
         HStack(spacing: 12) {
             ForEach(Honey.Theme.all) { theme in
-                ThemeSwatch(theme: theme, selected: theme.id == selection, focused: focus == theme.id) {
+                ThemeSwatch(theme: theme, selected: theme.id == selection, focused: keyboardShown == theme.id) {
                     SwatchPreview.choose(theme)
                     clicked = theme.id
                 } hover: { inside in
@@ -229,13 +282,17 @@ struct ThemePicker: View {
             if j != i { self.focus = Honey.Theme.all[j].id }
         }
         .onChange(of: focus) { _, id in
-            SwatchPreview.keyboard(id.map(Honey.Theme.named), byKey: SwatchPreview.keyMovedFocus)
+            let byKey = SwatchPreview.keyMovedFocus
+            keyboardShown = byKey ? id : nil
+            SwatchPreview.keyboard(id.map(Honey.Theme.named), byKey: byKey)
         }
         .onChange(of: chosen) { clicked = nil }
         // The window going to the back, or closing, puts the chosen theme
         // back (a pointer that was on a swatch never says it left).
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
-            if (note.object as? NSWindow)?.identifier?.rawValue == SettingsView.windowID { SwatchPreview.keyboard(nil, byKey: false) }
+            guard (note.object as? NSWindow)?.identifier?.rawValue == SettingsView.windowID else { return }
+            keyboardShown = nil
+            SwatchPreview.keyboard(nil, byKey: false)
         }
         .onDisappear { SwatchPreview.reset() }
     }
