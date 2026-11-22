@@ -17,6 +17,9 @@ struct EditorScreen: View {
     @State private var sidebarWidth = SidebarWidth.shared
     /// How wide the row of sidebar and editor is, once it has been laid out.
     @State private var rowWidth = 0.0
+    /// How tall the editor panel is: the command palette shows as many
+    /// rows as it has room for.
+    @State private var panelHeight = DocumentWindow.defaultSize.height
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
@@ -107,14 +110,18 @@ struct EditorScreen: View {
                 }
             }
             .honeyPanel()
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
             .overlay(alignment: .bottom) {
                 EditorStatusBar(model: model, document: document, encoding: encodingBinding, lineEnding: lineEndingBinding,
                                 byteOrderMark: bomBinding)
             }
             .overlay(alignment: .top) {
-                // One at a time: opening one closes the other.
+                // One at a time: opening one closes the others.
                 if model.find.isOpen {
                     FindBar(find: model.find).padding(.top, EditorBar.topPadding).transition(arrive)
+                } else if model.palette.isOpen {
+                    CommandPalette(palette: model.palette, rowsThatFit: CommandPalette.rowsThatFit(in: panelHeight))
+                        .padding(.top, EditorBar.topPadding).transition(arrive)
                 } else if model.goToLine.isOpen {
                     GoToLine(goToLine: model.goToLine, lineCount: model.lineCount)
                         .padding(.top, EditorBar.topPadding).transition(arrive)
@@ -122,6 +129,7 @@ struct EditorScreen: View {
             }
             .animation(motion.shape, value: model.find.isOpen)
             .animation(motion.shape, value: model.goToLine.isOpen)
+            .animation(motion.shape, value: model.palette.isOpen)
             // The hint fades out; with reduced motion it is simply gone.
             .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint)
     }

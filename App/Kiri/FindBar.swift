@@ -1,8 +1,9 @@
 import KiriKit
 import SwiftUI
 
-// The two bars that float over the top of the editor panel as warm glass,
-// one at a time: find and replace (⌘F) and Go to Line (⌘L). Chrome is glass
+// Two of the bars that float over the top of the editor panel as warm
+// glass, one at a time: find and replace (⌘F) and Go to Line (⌘L); the
+// third is the command palette (`CommandPalette`). Chrome is glass
 // and the document is paper (DESIGN.md §1), so neither pushes the text down;
 // the editor scrolls what they point at clear of them instead (`reveal`).
 
@@ -213,7 +214,7 @@ struct FindBar: View {
 }
 
 /// A bar's text field: plain, in the Honey UI face.
-private struct BarTextField: View {
+struct BarTextField: View {
     let prompt: String
     @Binding var text: String
     @Environment(\.honeyOffscreen) private var offscreen

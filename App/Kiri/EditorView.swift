@@ -34,10 +34,13 @@ import SwiftUI
     /// the other).
     let find = FindController()
     let goToLine = GoToLineController()
+    /// The command palette (⌘K), the third of those bars.
+    let palette = PaletteController()
 
     init() {
         find.model = self
         goToLine.model = self
+        palette.model = self
     }
 
     /// A bar opened, closed or changed height: the editor keeps what it
@@ -172,8 +175,10 @@ struct EditorView: NSViewRepresentable {
     /// and from the file's first line.
     func show(_ document: KiriDocument) {
         guard self.document !== document else { return }
-        // The line asked for was a line of the other file.
+        // The line asked for was a line of the other file, and what the
+        // palette listed was listed for it.
         model.goToLine.documentReplaced()
+        model.palette.documentReplaced()
         undoManager = document.undoManager
         setUntitled(document.fileURL == nil)
         load(document)

@@ -58,6 +58,8 @@ final class KiriTextView: NSTextView {
     override func cancelOperation(_ sender: Any?) {
         if let model, model.find.isOpen {
             model.find.close()
+        } else if let model, model.palette.isOpen {
+            model.palette.cancel()
         } else if let model, model.goToLine.isOpen {
             model.goToLine.cancel()
         } else {

@@ -18,6 +18,7 @@ enum Keys {
     static let useSelectionForFind = KeyboardShortcut("e", modifiers: .command)
     static let jumpToSelection = KeyboardShortcut("j", modifiers: .command)
     static let goToLine = KeyboardShortcut("l", modifiers: .command)
+    static let palette = KeyboardShortcut("k", modifiers: .command)
     static let shiftRight = KeyboardShortcut("]", modifiers: .command)
     static let shiftLeft = KeyboardShortcut("[", modifiers: .command)
     static let bigger = KeyboardShortcut("+", modifiers: .command)
@@ -186,6 +187,13 @@ struct ShortcutGroup: Identifiable {
             Item("Use selection for find", Keys.useSelectionForFind),
             Item("Jump to selection", Keys.jumpToSelection),
             Item("Close find bar", "⎋"),
+        ]),
+        ShortcutGroup(title: "Command palette", systemImage: "command", items: [
+            Item("Open / close the palette", Keys.palette),
+            Item("Choose a result", "↑  ↓"),
+            Item("Run the chosen result", "↩"),
+            Item("Commands only", "Type >"),
+            Item("Close the palette", "⎋"),
         ]),
         ShortcutGroup(title: "Moving around", systemImage: "arrow.up.and.down.text.horizontal", items: [
             Item("Go to line (or line:column)", Keys.goToLine),

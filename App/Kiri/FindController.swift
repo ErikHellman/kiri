@@ -156,6 +156,7 @@ import Observation
     func show(replace: Bool = false) {
         guard let textView else { return }
         model?.goToLine.cancel(focusEditor: false)
+        model?.palette.close(focusEditor: false)
         adoptBoard()
         if let selected = selectedText(oneLine: true) { quietly { query = selected } }
         if replace { showsReplace = true }
@@ -622,6 +623,7 @@ import Observation
     func open() {
         guard !isOpen, let controller, let textView = controller.textView else { return }
         model?.find.close(focusEditor: false)
+        model?.palette.close(focusEditor: false)
         text = ""
         isInvalid = false
         previewing = false

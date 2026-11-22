@@ -17,6 +17,10 @@ struct KiriCommands: Commands {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @Environment(\.openWindow) private var openWindow
 
+    /// The palette's own menu items, which it leaves out of its list.
+    static let paletteTitle = "Command Palette…"
+    static let goToFileTitle = "Go to File…"
+
     private var editor: EditorModel? { FrontEditor.shared.editor }
     private var folder: FolderSession? { FrontEditor.shared.folder }
     private var tabs: WindowTabs? { FrontEditor.shared.tabs }
@@ -147,6 +151,12 @@ struct KiriCommands: Commands {
         // View. The size is the editor text's (and its line numbers'), not
         // the interface's, so the items say "Text".
         CommandGroup(before: .toolbar) {
+            // Every command here and in the other menus, found by a few
+            // of its letters, with its key.
+            Button(Self.paletteTitle) { editor?.palette.toggle() }
+                .keyboardShortcut(Keys.palette)
+                .disabled(editor == nil)
+            Divider()
             Button("Bigger Text") { textScale = Prefs.bigger(textScale) }
                 .keyboardShortcut(Keys.bigger)
             Button("Smaller Text") { textScale = Prefs.smaller(textScale) }

@@ -45,6 +45,8 @@ import os
             }
             return
         }
+        // The command palette's flags (`PaletteSelfTest.swift`).
+        if paletteFlags(textView) { return }
         if let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") {
             guard !started else { return }
             started = true
@@ -1995,6 +1997,7 @@ import os
                         await tabState(window)
                         await frontWindow(window)
                         await toggleCommentStage(window)
+                        await paletteStage(window)
                         await dropStage(window)
                         await sidebarStage(window)
                         await themeFadeStage(window)
