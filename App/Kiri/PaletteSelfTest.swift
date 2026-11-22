@@ -55,6 +55,8 @@ extension SelfTest {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 guard let window = textView.window else { report(false, "a window for the palette checks"); quit(); return }
                 Task { @MainActor in
+                    // (With the previews the palette shows: `ThemePreview`.)
+                    await themePreviewStage(window)
                     await paletteStage(window)
                     reportStayedInTheBackground()
                     print("SELFTEST DONE palette")

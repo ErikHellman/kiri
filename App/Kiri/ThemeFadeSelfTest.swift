@@ -207,4 +207,91 @@ extension SelfTest {
         report(quiet.count == 3, "with reduced motion or Motion: Off the theme changes without a fade (\(quiet.joined(separator: ", ")))")
     }
 }
+
+extension SelfTest {
+    /// A theme or an appearance shown without being chosen
+    /// (`ThemePreview`): it shows at once, stays through other settings
+    /// changing, goes when the preview ends, and writes nothing until it
+    /// is kept; a run of them shows the first and the last. Kept in a
+    /// test launch, it goes among the launch's arguments, not into the
+    /// saved preferences.
+    static func themePreviewStage(_ window: NSWindow) async {
+        let preview = ThemePreview.shared
+        let chosen = Honey.theme, others = Honey.Theme.all.filter { $0 != Honey.theme }
+        let domain = Bundle.main.bundleIdentifier ?? ""
+        let saved = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
+        func given(_ key: String) -> String? { UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)[key] as? String }
+        let givenTheme = given(Prefs.colorThemeKey), givenAppearance = given(Prefs.themeKey)
+        let settingBefore = UserDefaults.standard.string(forKey: Prefs.colorThemeKey)
+        defer { ThemeFade.selfTestMotion = nil }
+        func pause(_ seconds: Double) async { try? await Task.sleep(for: .milliseconds(Int(seconds * 1000))) }
+
+        // Without a fade: shown at once, held, and gone when it ends.
+        ThemeFade.selfTestMotion = (.off, false)
+        preview.show(.theme(others[0]))
+        let shown = Honey.theme == others[0] && preview.theme == others[0]
+        // Any setting that changes brings the saved theme up to date; a preview stays.
+        ThemeController.apply()
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        await pause(0.05)
+        let held = Honey.theme == others[0] && UserDefaults.standard.string(forKey: Prefs.colorThemeKey) == settingBefore
+        preview.end()
+        report(shown && held && Honey.theme == chosen && preview.theme == nil,
+               "a previewed theme shows at once, stays while other settings change and goes when the preview ends, the setting untouched (\(shown), \(held), back to \(Honey.theme.name))")
+
+        // With the crossfade: a run of previews shows the first and the
+        // last, one fade at a time.
+        ThemeFade.selfTestMotion = (.full, false)
+        await pause(ThemeFade.duration + 0.05)
+        let before = preview.selfTestShown.count
+        preview.show(.theme(others[0]))
+        preview.show(.theme(others[1]))
+        preview.show(.theme(others[2]))
+        let first = Honey.theme
+        await pause(ThemeFade.duration + 0.15)
+        let run = preview.selfTestShown.dropFirst(before)
+        report(first == others[0] && Honey.theme == others[2] && Array(run) == [.theme(others[0]), .theme(others[2])],
+               "three themes previewed in a row show the first at once and the last when its fade is over, never three fades at a time (\(run.map { look in if case .theme(let t)? = look { t.name } else { "the chosen one" } }))")
+        preview.end()
+        await pause(ThemeFade.duration + 0.15)
+        let ended = Honey.theme == chosen
+
+        // Light and dark.
+        ThemeFade.selfTestMotion = (.off, false)
+        let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        preview.show(.appearance(dark ? .light : .dark))
+        let asked = preview.appearance == (dark ? .light : .dark)
+        var flipped = false
+        for _ in 0..<60 where !flipped {
+            await pause(0.025)
+            flipped = (window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua) != dark
+        }
+        preview.end()
+        var back = false
+        for _ in 0..<60 where !back {
+            await pause(0.025)
+            back = (window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua) == dark
+        }
+        if flipped || window.occlusionState.contains(.visible) {
+            report(ended && asked && flipped && back && preview.appearance == nil,
+                   "a previewed appearance turns the window \(dark ? "light" : "dark") and back (\(asked), \(flipped), \(back))")
+        } else {
+            report(ended && asked && preview.appearance == nil, "a previewed appearance is held and let go")
+            print("SELFTEST SKIP the window turning \(dark ? "light" : "dark") for a previewed appearance (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+
+        // Kept: the setting, which in a test launch is one of the
+        // launch's arguments and never a saved preference.
+        preview.show(.theme(others[1]))
+        preview.keep()
+        let kept = given(Prefs.colorThemeKey) == others[1].id && Honey.theme == others[1]
+        setArgument(Prefs.colorThemeKey, givenTheme)
+        setArgument(Prefs.themeKey, givenAppearance)
+        preview.end()
+        ThemeController.apply()
+        let after = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
+        report(kept && Honey.theme == chosen && NSDictionary(dictionary: saved).isEqual(to: after),
+               "a preview that is kept becomes the setting (here among the launch's arguments), and none of this wrote a saved preference (\(kept), \(Honey.theme.name))")
+    }
+}
 #endif

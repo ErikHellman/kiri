@@ -9,8 +9,6 @@ import SwiftUI
 /// the menus (`KiriCommands`) and what the document windows host.
 @main
 struct KiriApp: App {
-    @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
-    @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
     @NSApplicationDelegateAdaptor private var delegate: KiriAppDelegate
 
     init() {
@@ -18,14 +16,12 @@ struct KiriApp: App {
         ThemeController.start()
     }
 
-    private var appearance: HoneyAppearance { HoneyAppearance(theme: theme, motion: motion) }
-
     var body: some Scene {
         // Not a `Settings` scene: that one keeps its system title bar
         // whatever the window style. As a window of its own, Settings looks
         // like every other Kiri window; `KiriCommands` adds Kiri ▸ Settings…
         Window("Settings", id: SettingsView.windowID) {
-            SettingsView().honeyRoot(appearance)
+            AppearanceRoot { SettingsView() }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -37,7 +33,7 @@ struct KiriApp: App {
         .commands { KiriCommands() }
 
         Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
-            ShortcutsView().honeyRoot(appearance)
+            AppearanceRoot { ShortcutsView() }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 760, height: 640)
@@ -48,9 +44,7 @@ struct KiriApp: App {
         // so Release has neither the window nor its Window-menu entry.
         #if DEBUG
         Window("Style Gallery", id: "style-gallery") {
-            StyleGallery()
-                .frame(minWidth: 900, minHeight: 600)
-                .honeyRoot(appearance)
+            AppearanceRoot { StyleGallery().frame(minWidth: 900, minHeight: 600) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)

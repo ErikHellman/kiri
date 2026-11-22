@@ -2026,6 +2026,7 @@ import os
                         await dropStage(window)
                         await sidebarStage(window)
                         await themeFadeStage(window)
+                        await themePreviewStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)

@@ -48,11 +48,22 @@ import KiriKit
         Honey.Theme.named(UserDefaults.standard.string(forKey: Prefs.colorThemeKey) ?? Honey.Theme.honey.id)
     }
 
+    /// The saved theme and appearance show, or what is being previewed
+    /// in their place (`ThemePreview`): a setting that changes while a
+    /// preview is up (any setting: this is called for all of them) does
+    /// not take it down.
     static func apply() {
         #if DEBUG || KIRI_SELFTEST
         if selfTestHoldsTheme { return }
         #endif
-        show(savedTheme, appearance: savedAppearance)
+        let preview = ThemePreview.shared
+        show(preview.theme ?? savedTheme, appearance: preview.appearance?.rawValue ?? savedAppearance)
+    }
+
+    /// `ThemePreview` shows a theme or an appearance for now (nil: the
+    /// saved one), with the crossfade a chosen one has.
+    static func show(previewing theme: Honey.Theme?, appearance: HoneyTheme?) {
+        show(theme ?? savedTheme, appearance: appearance?.rawValue ?? savedAppearance, chosen: theme == nil)
     }
 
     #if DEBUG || KIRI_SELFTEST
@@ -63,12 +74,13 @@ import KiriKit
 
     /// The colors become `theme`'s, in `appearance` (light, dark or
     /// system, which SwiftUI applies to the windows itself), with a
-    /// crossfade if either is a change.
-    static func show(_ theme: Honey.Theme, appearance: String) {
+    /// crossfade if either is a change. The Dock icon follows a theme
+    /// that is `chosen`, not one that is only being looked at.
+    static func show(_ theme: Honey.Theme, appearance: String, chosen: Bool = true) {
         if theme != Honey.theme || appearance != self.appearance { ThemeFade.begin() }
         self.appearance = appearance
         Honey.theme = theme
-        updateDockIcon(theme)
+        if chosen, ThemePreview.shared.theme == nil { updateDockIcon(theme) }
     }
 
     private static func updateDockIcon(_ theme: Honey.Theme) {

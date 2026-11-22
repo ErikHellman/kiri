@@ -170,14 +170,11 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 }
 
 /// What a document window hosts: the editor screen, in the appearance
-/// chosen in Settings.
+/// chosen in Settings (or being previewed).
 private struct DocumentRoot: View {
     let document: KiriDocument
-    @AppStorage(Prefs.themeKey) private var theme = HoneyTheme.system
-    @AppStorage(Prefs.motionKey) private var motion = HoneyMotionLevel.system
 
     var body: some View {
-        EditorScreen(document: document)
-            .honeyRoot(HoneyAppearance(theme: theme, motion: motion))
+        AppearanceRoot { EditorScreen(document: document) }
     }
 }
