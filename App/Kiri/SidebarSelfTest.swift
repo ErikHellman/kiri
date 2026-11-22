@@ -51,6 +51,7 @@ extension SelfTest {
                "every file icon is a symbol this macOS has, and the folder's files differ by shape or tint (\(Set(icons.map(\.symbol)).count) symbols, missing \(missing.sorted()); \(told.count) of 6 differ)")
         await markChecks(first, f)
         await edgeChecks(first, f)
+        await menuChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
         for w in f.group(first) { w.performClose(nil) }
@@ -255,6 +256,164 @@ extension SelfTest {
         } else {
             print("SELFTEST SKIP what VoiceOver hears of an open file's row (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }
+    }
+
+    /// The rows' context menus: their items and when they are off, and
+    /// what New File…, Rename…, the two Copy items and Open in New Window
+    /// do. Everything made or renamed is in the test's own folder; Reveal
+    /// in Finder is never chosen (a test launch would not show Finder
+    /// anyway), and the paths are copied to a pasteboard of the test's.
+    private static func menuChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        guard let session = FolderSessions.session(for: first), let shown = first.tabGroup?.selectedWindow else {
+            report(false, "the folder window's session for the menu checks"); return
+        }
+        typealias Menu = SidebarMenu
+        func groups(_ target: Menu.Target) -> [[SidebarMenuItem]] { Menu.groups(for: target, session: session) }
+        func titles(_ target: Menu.Target) -> [[String]] { groups(target).map { $0.map(\.title) } }
+        func item(_ title: String, _ target: Menu.Target) -> SidebarMenuItem? { groups(target).joined().first { $0.title == title } }
+        func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: f.file(name).path) }
+        func window(of name: String) -> NSWindow? {
+            NSApp.windows.first { $0.isVisible && f.document($0)?.fileURL?.standardizedFileURL == f.file(name) }
+                ?? NSDocumentController.shared.document(for: f.file(name)).flatMap { Editors.window(for: $0) }
+        }
+        let sub = f.file("sub")
+
+        // What each menu has.
+        let finder = [Menu.reveal, Menu.copyPath, Menu.copyRelativePath]
+        let targets: [Menu.Target] = [.file(f.file("b.md")), .folder(sub), .root]
+        let allOn = targets.allSatisfy { groups($0).joined().allSatisfy(\.enabled) }
+        report(titles(targets[0]) == [[Menu.openInNewWindow], finder, [Menu.rename]]
+               && titles(targets[1]) == [[Menu.newFile], [Menu.openInNewWindow], finder]
+               && titles(targets[2]) == [[Menu.newFile], [Menu.reveal, Menu.copyPath]] && allOn,
+               "a file's menu has Open in New Window, Reveal in Finder, Copy Path, Copy Relative Path and Rename…; a folder's has New File… and no Rename…; the empty area's is the folder's own (\(titles(targets[0]).joined().count), \(titles(targets[1]).joined().count) and \(titles(targets[2]).joined().count) items, all on)")
+        // The menu the row really shows is made of the same values; where
+        // AppKit hands it over without showing it, it is read too.
+        if shown.occlusionState.contains(.visible) {
+            await wakeAccessibility()
+            let row = accessibilityElements(of: shown).first { $0.name == "b.md" && $0.role == NSAccessibility.Role.button.rawValue }
+            if let row, let content = shown.contentView {
+                let onScreen = NSPoint(x: row.frame.midX, y: row.frame.midY)
+                let inWindow = shown.convertPoint(fromScreen: onScreen)
+                let event = NSEvent.mouseEvent(with: .rightMouseDown, location: inWindow, modifierFlags: [], timestamp: 0,
+                                               windowNumber: shown.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                let hit = content.hitTest(content.superview?.convert(inWindow, from: nil) ?? inWindow)
+                var view = hit, menu: NSMenu?
+                while let v = view, menu == nil, let event { menu = v.menu(for: event); view = v.superview }
+                if let menu {
+                    let drawn = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+                    report(drawn == titles(targets[0]).joined().map { $0 } && menu.items.filter(\.isSeparatorItem).count == 2,
+                           "a right-click on a file's row is given that menu (\(drawn))")
+                } else {
+                    print("SELFTEST info the row's menu is not handed over without a real right-click: its items are checked as the values it is drawn from")
+                }
+            }
+        }
+
+        // A folder that can't be written to: nothing to make or rename there.
+        let locked = f.file("locked")
+        try? FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try? "l\n".write(to: f.file("locked/l.txt"), atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        let lockedFile = Menu.Target.file(f.file("locked/l.txt")), lockedFolder = Menu.Target.folder(locked)
+        let off = item(Menu.rename, lockedFile)?.enabled == false && item(Menu.newFile, lockedFolder)?.enabled == false
+        let stillOn = [Menu.reveal, Menu.copyPath, Menu.openInNewWindow].allSatisfy { item($0, lockedFile)?.enabled == true && item($0, lockedFolder)?.enabled == true }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+        report(off && stillOn, "in a folder that can't be written to, Rename… and New File… are off and the rest stay on")
+
+        // The paths, on a pasteboard that is not the person's clipboard.
+        let ownBoard = SidebarFiles.pasteboard.name != NSPasteboard.general.name
+        item(Menu.copyPath, .file(f.file("sub/f.rs")))?.action()
+        let path = SidebarFiles.pasteboard.string(forType: .string)
+        item(Menu.copyRelativePath, .file(f.file("sub/f.rs")))?.action()
+        let relative = SidebarFiles.pasteboard.string(forType: .string)
+        report(ownBoard && path == f.file("sub/f.rs").path && relative == "sub/f.rs",
+               "Copy Path copies the file's path and Copy Relative Path the path from the folder (“\(relative ?? "nil")”), in a test launch never to the clipboard (\(ownBoard))")
+
+        // New File… on a folder: the folder opens with a field at its top;
+        // the name is typed as keys (a space among them) and Return makes it.
+        item(Menu.newFile, .folder(sub))?.action()
+        let fieldUp = session.editing == .newFile(in: sub) && session.expanded.contains(sub)
+        var typed = false
+        if shown.occlusionState.contains(.visible), await f.wait(1.5, until: { fieldEditor(of: shown) != nil }) {
+            typed = await typeKeys("new note.md\r", in: shown)
+        } else {
+            session.commitEdit("new note.md", from: shown)
+        }
+        let made = await f.wait { exists("sub/new note.md") && session.editing == nil }
+        let madeWindow = await f.wait { window(of: "sub/new note.md").map { f.group(first).contains($0) && $0.firstResponder is KiriTextView } ?? false }
+        let newWindow = window(of: "sub/new note.md")
+        report(fieldUp && made && madeWindow && f.onDisk("sub/new note.md").isEmpty && newWindow.map { !PreviewTabs.isPreview($0) } == true
+               && session.cursor == f.file("sub/new note.md") && session.visibleRows().contains { $0.node.url == f.file("sub/new note.md") },
+               "New File… on a folder asks for the name in place, makes the empty file there and opens it in a tab to stay, the keyboard in its editor (“new note.md”, \(typed ? "typed as keys, the space too" : "given without keys: the window is covered or the screen locked, and SwiftUI isn't showing the field"))")
+
+        // Names that can't be used: said, and nothing is made or written over.
+        let aBefore = f.onDisk("a.swift")
+        item(Menu.newFile, .root)?.action()
+        session.commitEdit("a.swift", from: shown)
+        let taken = session.editing == .newFile(in: f.root) && session.editProblem != nil
+        let takenSays = session.editProblem ?? ""
+        session.commitEdit("x/y.txt", from: shown)
+        let slash = session.editing != nil && session.editProblem != nil
+        session.cancelEdit()
+        report(taken && slash && session.editing == nil && f.onDisk("a.swift") == aBefore && !exists("x"),
+               "a name that is taken, or has a / in it, is refused with its reason and nothing is made or written over; Escape gives it up (“\(takenSays)”)")
+
+        // Rename… on a file that is open with unsaved changes: the file
+        // moves, its tab follows, and what was unsaved still is.
+        if let eWindow = window(of: "e.py"), let eText = findTextView(in: eWindow.contentView), let eDocument = f.document(eWindow) {
+            eText.insertText("# unsaved\n", replacementRange: NSRange(location: 0, length: 0))
+            await settle()
+            _ = await f.wait { eDocument.isDocumentEdited }
+            item(Menu.rename, .file(f.file("e.py")))?.action()
+            let renaming = session.editing == .rename(f.file("e.py"))
+            session.commitEdit("renamed.py", from: shown)
+            let moved = await f.wait { !exists("e.py") && exists("renamed.py") && eDocument.fileURL?.standardizedFileURL == f.file("renamed.py") && session.editing == nil }
+            let model = { (first.tabGroup?.selectedWindow).flatMap { WindowTabs.model(for: $0) } }
+            let followed = await f.wait {
+                model()?.tabs.contains { $0.title == "renamed.py" && $0.dirty } == true && model()?.openFiles[f.file("renamed.py")]?.edited == true
+                    && model()?.openFiles[f.file("e.py")] == nil
+            }
+            let unsaved = eDocument.isDocumentEdited && eText.string.hasPrefix("# unsaved\n") && f.onDisk("renamed.py") == SidebarFixture.contents["e.py"]
+            report(renaming && moved && followed && unsaved && session.cursor == f.file("renamed.py"),
+                   "Rename… on an open file with unsaved changes moves the file, its tab and its row follow, and the changes are still unsaved (\(f.strip(first)))")
+            // Saved, it is the new name that is written (and the stage ends with nothing unsaved).
+            eDocument.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+            let savedThere = await f.wait { !eDocument.isDocumentEdited && f.onDisk("renamed.py").hasPrefix("# unsaved\n") }
+            report(savedThere && !exists("e.py"), "a save after the rename writes the file under its new name")
+        } else {
+            report(false, "e.py is open in a tab for the rename check")
+        }
+
+        // Rename… on a file that isn't open; and never onto another file.
+        let documents = f.openDocuments().count
+        item(Menu.rename, .file(f.file("b.md")))?.action()
+        session.commitEdit("a.swift", from: shown)
+        let kept = session.editProblem != nil && exists("b.md") && f.onDisk("a.swift") == aBefore
+        session.commitEdit("notes.md", from: shown)
+        let renamed = await f.wait { exists("notes.md") && !exists("b.md") && session.editing == nil }
+        report(kept && renamed && f.onDisk("notes.md") == SidebarFixture.contents["b.md"] && f.openDocuments().count == documents
+               && session.visibleRows().contains { $0.node.url == f.file("notes.md") } && session.cursor == f.file("notes.md"),
+               "Rename… on a file that isn't open renames it without opening it, and refuses another file's name")
+
+        // Open in New Window: a file that is open in a tab moves out to a
+        // window of its own, one that isn't opens in one; neither has the sidebar.
+        let before = f.group(first).count
+        let dWindow = window(of: "d.txt")
+        item(Menu.openInNewWindow, .file(f.file("d.txt")))?.action()
+        let movedOut = await f.wait {
+            dWindow.map { !f.group(first).contains($0) && ($0.tabbedWindows?.count ?? 1) == 1 && WindowTabs.model(for: $0)?.folder == nil && $0.isVisible } ?? false
+        }
+        item(Menu.openInNewWindow, .file(f.file("notes.md")))?.action()
+        let opened = await f.wait {
+            window(of: "notes.md").map { !f.group(first).contains($0) && ($0.tabbedWindows?.count ?? 1) == 1 && WindowTabs.model(for: $0)?.folder == nil } ?? false
+        }
+        report(movedOut && opened && f.group(first).count == before - 1,
+               "Open in New Window moves an open file's tab out to a window of its own and opens another file in one, both without the sidebar (\(f.group(first).count) tabs left of \(before))")
+        for w in [dWindow, window(of: "notes.md")].compactMap({ $0 }) { w.performClose(nil) }
+        _ = await f.wait { window(of: "d.txt") == nil && window(of: "notes.md") == nil }
+        // Back to the folder window, for what comes after.
+        (first.tabGroup?.selectedWindow ?? first).makeKeyAndOrderFront(nil)
+        report(SidebarFiles.revealed.isEmpty, "nothing was shown in Finder (\(SidebarFiles.revealed.count))")
     }
 
     /// The edge between the sidebar and the editor: what a drag, a

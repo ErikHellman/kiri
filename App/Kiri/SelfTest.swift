@@ -456,8 +456,25 @@ import os
             var clicks = paths("KiriSidebarKeep").map { ($0, true, false) } + paths("KiriSidebarType").map { ($0, true, true) }
                 + paths("KiriSidebarClick").map { ($0, false, false) }
             let root = URL(fileURLWithPath: folder).standardizedFileURL
+            // After those: -KiriSidebarRename <path> puts the Rename… field
+            // on that file's row and -KiriSidebarNewFile <folder> the New
+            // File… field in that folder; -KiriSidebarName <name> then gives
+            // that name (one that is taken shows the reason; pictures only
+            // use such a name, so nothing is made or renamed).
+            func name() {
+                guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }),
+                      let session = FolderSessions.session(for: window) else { return }
+                if let path = UserDefaults.standard.string(forKey: "KiriSidebarRename") {
+                    session.beginRename(URL(fileURLWithPath: path).standardizedFileURL)
+                } else if let path = UserDefaults.standard.string(forKey: "KiriSidebarNewFile") {
+                    session.beginNewFile(in: URL(fileURLWithPath: path).standardizedFileURL)
+                } else {
+                    return
+                }
+                if let name = UserDefaults.standard.string(forKey: "KiriSidebarName") { session.commitEdit(name, from: nil) }
+            }
             func click() {
-                guard !clicks.isEmpty else { return }
+                guard !clicks.isEmpty else { name(); return }
                 guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }) else { return }
                 let (url, keep, type) = clicks.removeFirst()
                 SidebarOpen.open(url, keep: keep, from: window) { shown in

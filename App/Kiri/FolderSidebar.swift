@@ -13,6 +13,10 @@ import SwiftUI
     var cursor: URL?
     /// Bumped by Refresh, so rows reread their folders.
     private(set) var generation = 0
+    /// The name being typed in place: Rename… or New File… (`SidebarMenu`).
+    private(set) var editing: SidebarEdit?
+    /// Why the name typed can't be used, shown under the field until it changes.
+    var editProblem: String?
 
     init(root url: URL) {
         root = FileNode(url: url.standardizedFileURL, isDirectory: true)
@@ -32,6 +36,73 @@ import SwiftUI
     func refresh() {
         root.reload()
         generation += 1
+    }
+
+    // MARK: Names typed in place
+
+    /// Rename…: the file's row shows a field with its name.
+    func beginRename(_ url: URL) {
+        editProblem = nil
+        cursor = url
+        editing = .rename(url)
+    }
+
+    /// New File…: an empty field at the top of `folder`, which opens.
+    func beginNewFile(in folder: URL) {
+        editProblem = nil
+        if folder != root.url, !expanded.contains(folder) { expanded.insert(folder) }
+        refresh()
+        editing = .newFile(in: folder)
+    }
+
+    /// Escape, or the keyboard left the field: nothing is done.
+    func cancelEdit() {
+        editProblem = nil
+        editing = nil
+    }
+
+    /// Return in the field. A new file is made empty and opens in a tab
+    /// of `window`, to stay, with the keyboard in its editor; a renamed
+    /// file's tab, if it has one, follows it. A name that can't be used
+    /// leaves the field up and says why.
+    func commitEdit(_ typed: String, from window: NSWindow?) {
+        guard let editing else { return }
+        let name = typed.trimmingCharacters(in: .whitespaces)
+        switch editing {
+        case .newFile(let folder):
+            // Nothing typed: no file was wanted after all.
+            guard !name.isEmpty else { cancelEdit(); return }
+            if let problem = SidebarFiles.problem(with: name, in: folder) { say(problem); return }
+            do {
+                let url = try SidebarFiles.create(named: name, in: folder)
+                cancelEdit()
+                refresh()
+                cursor = url
+                if let window { SidebarOpen.open(url, keep: true, from: window, keyboard: .editor) }
+            } catch {
+                say(error.localizedDescription)
+            }
+        case .rename(let url):
+            guard !name.isEmpty, name != url.lastPathComponent else { cancelEdit(); return }
+            if let problem = SidebarFiles.problem(with: name, in: url.deletingLastPathComponent(), renaming: url) { say(problem); return }
+            SidebarFiles.rename(url, to: name) { [self] result in
+                switch result {
+                case .success(let renamed):
+                    cancelEdit()
+                    refresh()
+                    cursor = renamed
+                case .failure(let error):
+                    say(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func say(_ problem: String) {
+        editProblem = problem
+        // VoiceOver hears it; everyone sees it under the field.
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: problem, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     struct Row {
@@ -68,6 +139,13 @@ import SwiftUI
     static func set(_ session: FolderSession, for window: NSWindow) {
         observe()
         byWindow[ObjectIdentifier(window)] = (WeakWindow(window: window), session)
+        NotificationCenter.default.post(name: didChange, object: nil)
+    }
+
+    /// `window` is no longer one of a folder's (its tab was moved out to
+    /// a window of its own): its sidebar goes.
+    static func remove(for window: NSWindow) {
+        guard byWindow.removeValue(forKey: ObjectIdentifier(window)) != nil else { return }
         NotificationCenter.default.post(name: didChange, object: nil)
     }
 
@@ -312,8 +390,11 @@ struct FolderSidebar: View {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         let _ = session.generation
                         let marks = tabs.openFiles
+                        if session.editing == .newFile(in: session.root.url) {
+                            NameRow(session: session, depth: 0, tabs: tabs)
+                        }
                         ForEach(session.root.children) { node in
-                            FileRow(node: node, depth: 0, session: session, currentFile: currentFile, marks: marks,
+                            FileRow(node: node, depth: 0, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
                                     keyboardFocus: focused, open: open)
                         }
                     }
@@ -329,6 +410,9 @@ struct FolderSidebar: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
+        // The header and the empty area below the rows: the folder itself.
+        .contentShape(Rectangle())
+        .contextMenu { SidebarMenuItems(groups: SidebarMenu.groups(for: .root, session: session)) }
         .honeyGlass(.chrome, radius: .panel)
         .overlay {
             RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous)
@@ -339,21 +423,28 @@ struct FolderSidebar: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onKeyPress(.upArrow) { move(-1) }
-        .onKeyPress(.downArrow) { move(1) }
-        .onKeyPress(.home) { jump(toEnd: false) }
-        .onKeyPress(.end) { jump(toEnd: true) }
-        .onKeyPress(.pageUp) { move(-12) }
-        .onKeyPress(.pageDown) { move(12) }
-        .onKeyPress(.leftArrow) { collapseOrParent() }
-        .onKeyPress(.rightArrow) { expandOrChild() }
-        .onKeyPress(.return) { activate(thenEdit: true) }
-        .onKeyPress(.space) { activate(thenEdit: false) }
+        // (While a name is typed in place, the keys are its field's.)
+        .onKeyPress(.upArrow) { typing ? .ignored : move(-1) }
+        .onKeyPress(.downArrow) { typing ? .ignored : move(1) }
+        .onKeyPress(.home) { typing ? .ignored : jump(toEnd: false) }
+        .onKeyPress(.end) { typing ? .ignored : jump(toEnd: true) }
+        .onKeyPress(.pageUp) { typing ? .ignored : move(-12) }
+        .onKeyPress(.pageDown) { typing ? .ignored : move(12) }
+        .onKeyPress(.leftArrow) { typing ? .ignored : collapseOrParent() }
+        .onKeyPress(.rightArrow) { typing ? .ignored : expandOrChild() }
+        .onKeyPress(.return) { typing ? .ignored : activate(thenEdit: true) }
+        .onKeyPress(.space) { typing ? .ignored : activate(thenEdit: false) }
         .onKeyPress(.escape) {
+            guard !typing else { return .ignored }
             model.controller?.focus()
             return .handled
         }
-        .onKeyPress(phases: .down) { press in typeSelect(press) }
+        .onKeyPress(phases: .down) { press in typing ? .ignored : typeSelect(press) }
+        // The name was given or given up: the keyboard is the sidebar's
+        // again (a new file then takes it to its editor).
+        .onChange(of: session.editing) { old, new in
+            if old != nil, new == nil { focused = true }
+        }
         .onChange(of: focused) { _, now in
             model.sidebarHasFocus = now
             if now, session.cursor == nil || !rows.contains(where: { $0.node.url == session.cursor }) {
@@ -371,6 +462,9 @@ struct FolderSidebar: View {
     // MARK: Keyboard
 
     private var rows: [FolderSession.Row] { session.visibleRows() }
+
+    /// A name is being typed in place (Rename…, New File…).
+    private var typing: Bool { session.editing != nil }
 
     private var cursorIndex: Int? { rows.firstIndex { $0.node.url == session.cursor } }
 
@@ -462,6 +556,7 @@ private struct FileRow: View {
     let node: FileNode
     let depth: Int
     let session: FolderSession
+    let tabs: WindowTabs
     let currentFile: URL?
     /// The files open in the window's tabs: an open file's name is bold
     /// (slanted while it is the preview), and one with unsaved changes has
@@ -481,79 +576,93 @@ private struct FileRow: View {
         let mark = node.isDirectory ? nil : marks[node.url]
         let isOpen = current || mark != nil
         VStack(alignment: .leading, spacing: 1) {
-            Button {
-                session.cursor = node.url
-                if node.isDirectory {
-                    withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
-                } else {
-                    open(node.url, false)
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Group {
-                        if node.isDirectory {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .heavy))
-                                .rotationEffect(.degrees(expanded ? 90 : 0))
-                                .foregroundStyle(Color.honeyMuted)
-                        } else {
-                            Color.clear
+            if session.editing == .rename(node.url) {
+                // Rename…: a field in the row's place (not in the button:
+                // a click in the field is the field's).
+                NameRow(session: session, depth: depth, tabs: tabs, icon: FileIcon.forFile(named: node.name),
+                        name: node.name, label: "Name of \(node.name)")
+                    .id(node.url)
+            } else {
+                Button {
+                    session.cursor = node.url
+                    if node.isDirectory {
+                        withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
+                    } else {
+                        open(node.url, false)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Group {
+                            if node.isDirectory {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .heavy))
+                                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                                    .foregroundStyle(Color.honeyMuted)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                        .frame(width: 10)
+                        // A folder is amber; a file has its kind's shape in its
+                        // language's syntax color (`FileIcon`), from its name alone.
+                        let icon = node.isDirectory ? nil : FileIcon.forFile(named: node.name)
+                        Image(systemName: icon?.symbol ?? "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(node.isDirectory ? Color.honeyAccentInk : icon?.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
+                            .frame(width: 16)
+                        Text(node.name)
+                            .font(mark?.preview == true ? .honeyOblique(.subheadline, weight: .bold)
+                                  : .honey(.subheadline, weight: isOpen ? .bold : .semibold))
+                            .foregroundStyle(isOpen ? Color.honeyFg : Color.honeyFg.opacity(0.85))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        if mark?.edited == true {
+                            Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
+                                .padding(.trailing, 4)
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
-                    .frame(width: 10)
-                    // A folder is amber; a file has its kind's shape in its
-                    // language's syntax color (`FileIcon`), from its name alone.
-                    let icon = node.isDirectory ? nil : FileIcon.forFile(named: node.name)
-                    Image(systemName: icon?.symbol ?? "folder.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(node.isDirectory ? Color.honeyAccentInk : icon?.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
-                        .frame(width: 16)
-                    Text(node.name)
-                        .font(mark?.preview == true ? .honeyOblique(.subheadline, weight: .bold)
-                              : .honey(.subheadline, weight: isOpen ? .bold : .semibold))
-                        .foregroundStyle(isOpen ? Color.honeyFg : Color.honeyFg.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    if mark?.edited == true {
-                        Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
-                            .padding(.trailing, 4)
-                            .transition(.scale.combined(with: .opacity))
+                    .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: mark?.edited)
+                    .padding(.leading, 6 + CGFloat(depth) * 14)
+                    .padding(.trailing, 6)
+                    .frame(height: 26)
+                    .background {
+                        if cursor {
+                            Capsule().fill(current ? Color.honeyAccentSoft : Color.honeySurface2)
+                                .overlay { Capsule().strokeBorder(Color.honeyFocus, lineWidth: 1.5) }
+                        } else if current {
+                            Capsule().fill(Color.honeyAccentSoft)
+                        } else if hovering {
+                            Capsule().fill(Color.honeySurface2.opacity(0.7))
+                        }
                     }
+                    .contentShape(Rectangle())
                 }
-                .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: mark?.edited)
-                .padding(.leading, 6 + CGFloat(depth) * 14)
-                .padding(.trailing, 6)
-                .frame(height: 26)
-                .background {
-                    if cursor {
-                        Capsule().fill(current ? Color.honeyAccentSoft : Color.honeySurface2)
-                            .overlay { Capsule().strokeBorder(Color.honeyFocus, lineWidth: 1.5) }
-                    } else if current {
-                        Capsule().fill(Color.honeyAccentSoft)
-                    } else if hovering {
-                        Capsule().fill(Color.honeySurface2.opacity(0.7))
-                    }
+                .buttonStyle(.plain)
+                // A double-click keeps the file's tab. Beside the button, not in
+                // its place: the first click shows the file at once.
+                .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true) } })
+                .modifier(KeepOpenAction(isFile: !node.isDirectory) { open(node.url, true) })
+                .contextMenu {
+                    SidebarMenuItems(groups: SidebarMenu.groups(for: node.isDirectory ? .folder(node.url) : .file(node.url), session: session))
                 }
-                .contentShape(Rectangle())
+                .focusable(false) // the sidebar takes the keys, not each row
+                .id(node.url)
+                .onHover { hovering = $0 }
+                .help(node.url.path)
+                .accessibilityLabel(node.isDirectory ? "\(node.name), folder, \(expanded ? "expanded" : "collapsed")" : node.name)
+                .accessibilityValue(mark.map { $0.preview ? "Preview" : $0.edited ? "Open, edited" : "Open" } ?? "")
+                .accessibilityAddTraits(current ? .isSelected : [])
             }
-            .buttonStyle(.plain)
-            // A double-click keeps the file's tab. Beside the button, not in
-            // its place: the first click shows the file at once.
-            .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true) } })
-            .modifier(KeepOpenAction(isFile: !node.isDirectory) { open(node.url, true) })
-            .focusable(false) // the sidebar takes the keys, not each row
-            .id(node.url)
-            .onHover { hovering = $0 }
-            .help(node.url.path)
-            .accessibilityLabel(node.isDirectory ? "\(node.name), folder, \(expanded ? "expanded" : "collapsed")" : node.name)
-            .accessibilityValue(mark.map { $0.preview ? "Preview" : $0.edited ? "Open, edited" : "Open" } ?? "")
-            .accessibilityAddTraits(current ? .isSelected : [])
 
             if node.isDirectory, expanded {
                 let _ = session.generation
+                if session.editing == .newFile(in: node.url) {
+                    NameRow(session: session, depth: depth + 1, tabs: tabs)
+                }
                 ForEach(node.children) { child in
-                    FileRow(node: child, depth: depth + 1, session: session, currentFile: currentFile, marks: marks,
+                    FileRow(node: child, depth: depth + 1, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
                             keyboardFocus: keyboardFocus, open: open)
                 }
             }
@@ -573,5 +682,85 @@ private struct KeepOpenAction: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// The field a name is typed into in place: Return gives it, Escape or
+/// the keyboard going elsewhere gives it up. A paper-colored well with
+/// the Honey focus ring, red while the name can't be used.
+private struct NameField: View {
+    let session: FolderSession
+    /// What the field starts with: the file's name, or nothing.
+    let name: String
+    let label: String
+    let tabs: WindowTabs
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
+        TextField("File name", text: $text)
+            .textFieldStyle(.plain)
+            .font(.honey(.subheadline, weight: .semibold))
+            .foregroundStyle(Color.honeyFg)
+            .focused($focused)
+            .onSubmit { session.commitEdit(text, from: tabs.window) }
+            .onExitCommand { session.cancelEdit() }
+            .onChange(of: text) { if session.editProblem != nil { session.editProblem = nil } }
+            .onChange(of: focused) { was, now in if was, !now { session.cancelEdit() } }
+            .onAppear {
+                text = name
+                focused = true
+            }
+            .padding(.horizontal, 5)
+            .frame(height: 22)
+            .background(Color.honeySurface, in: shape)
+            .overlay { shape.strokeBorder(session.editProblem == nil ? Color.honeyFocus : Color.honeyDanger, lineWidth: 2) }
+            .accessibilityLabel(label)
+    }
+}
+
+/// A row whose name is being typed: New File… (an empty field at the top
+/// of its folder) or Rename… (the file's row, with its name).
+private struct NameRow: View {
+    let session: FolderSession
+    let depth: Int
+    let tabs: WindowTabs
+    var icon = FileIcon.document
+    var name = ""
+    var label = "Name of the new file"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Color.clear.frame(width: 10)
+                Image(systemName: icon.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(icon.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
+                    .frame(width: 16)
+                NameField(session: session, name: name, label: label, tabs: tabs)
+            }
+            .padding(.leading, 6 + CGFloat(depth) * 14)
+            .padding(.trailing, 6)
+            .frame(height: 26)
+            if let problem = session.editProblem { NameProblem(text: problem, depth: depth) }
+        }
+    }
+}
+
+/// Why the name typed can't be used, under its field.
+private struct NameProblem: View {
+    let text: String
+    let depth: Int
+
+    var body: some View {
+        Text(text)
+            .font(.honey(.caption, weight: .semibold))
+            .foregroundStyle(Color.honeyDanger)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 6 + CGFloat(depth) * 14 + 38)
+            .padding(.trailing, 6)
+            .padding(.bottom, 3)
+            .accessibilityHidden(true) // announced when it appears
     }
 }
