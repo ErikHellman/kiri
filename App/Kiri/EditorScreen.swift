@@ -13,6 +13,10 @@ struct EditorScreen: View {
     /// What the layout shows: follows `folder.sidebarVisible`, animated
     /// only when the person toggles it.
     @State private var sidebarShown = false
+    /// The folder sidebar's width, the same in every window.
+    @State private var sidebarWidth = SidebarWidth.shared
+    /// How wide the row of sidebar and editor is, once it has been laid out.
+    @State private var rowWidth = 0.0
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
@@ -27,13 +31,24 @@ struct EditorScreen: View {
     var body: some View {
         VStack(spacing: Honey.gap) {
             topBar
-            HStack(spacing: Honey.gap) {
+            HStack(spacing: 0) {
                 if let folder = tabs.folder, sidebarShown {
-                    FolderSidebar(session: folder, model: model, tabs: tabs, currentFile: fileURL?.standardizedFileURL)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    // The sidebar and, in the gap between the panels, the
+                    // edge that is dragged to make it narrower or wider. A
+                    // window too narrow for the width asked for shows what
+                    // leaves the editor its minimum.
+                    let widest = SidebarLayout.widest(in: rowWidth, gap: Honey.gap)
+                    let width = SidebarLayout.shown(preferred: sidebarWidth.preferred, available: rowWidth, gap: Honey.gap)
+                    HStack(spacing: 0) {
+                        FolderSidebar(session: folder, model: model, tabs: tabs, currentFile: fileURL?.standardizedFileURL,
+                                      width: width)
+                        SidebarEdge(width: width, widest: widest, store: sidebarWidth)
+                    }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 editor
             }
+            .onGeometryChange(for: Double.self) { $0.size.width } action: { rowWidth = $0 }
             // Only Show/Hide Sidebar slides it. A new tab of a folder window
             // gets the folder as it opens, and must not slide it in again.
             .onChange(of: tabs.folder?.sidebarVisible, initial: true) { old, new in
@@ -48,7 +63,7 @@ struct EditorScreen: View {
         .padding(.horizontal, Honey.gap)
         .padding(.bottom, Honey.gap)
         .ignoresSafeArea(.container, edges: .top)
-        .frame(minWidth: 480, minHeight: 280)
+        .frame(minWidth: SidebarLayout.narrowestWindow, minHeight: 280)
         .honeyCanvas()
         .background(WindowReader {
             tabs.attach($0)

@@ -649,6 +649,17 @@ import os
 
     private static var stopSources: [DispatchSourceSignal] = []
 
+    /// Sets (or with nil takes away) a setting among this launch's
+    /// arguments, which is where one given on the command line lives:
+    /// `UserDefaults.standard` answers with it, and nothing is saved.
+    static func setArgument(_ key: String, _ value: String?) {
+        let domain = UserDefaults.argumentDomain
+        var arguments = UserDefaults.standard.volatileDomain(forName: domain)
+        arguments[key] = value
+        UserDefaults.standard.removeVolatileDomain(forName: domain)
+        UserDefaults.standard.setVolatileDomain(arguments, forName: domain)
+    }
+
     /// This launch has a Debug flag (`-Kiri…`): it is a test or a picture.
     static let isTestLaunch = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-Kiri") }
     /// This is Kiri under its own bundle identifier, sharing the person's
@@ -2551,6 +2562,11 @@ import os
             _ = object.perform(NSSelectorFromString("accessibilityPerformPress"))
         }
 
+        /// What VoiceOver's "increment" does to an adjustable element.
+        @MainActor func increment() {
+            _ = object.perform(NSSelectorFromString("accessibilityPerformIncrement"))
+        }
+
         /// The names of its custom actions (VoiceOver's Actions menu).
         @MainActor var actions: [String] {
             let selector = NSSelectorFromString("accessibilityCustomActions")
@@ -2592,7 +2608,9 @@ import os
             let focused = o.responds(to: NSSelectorFromString("isAccessibilityFocused"))
                 && o.value(forKey: "accessibilityFocused") as? Bool == true
             list.append(AccessibilityElement(role: ask("accessibilityRole") as? String ?? "", name: name,
-                                             value: ask("accessibilityValue") as? String ?? "", frame: frame,
+                                             // (An adjustable element says its value in words apart.)
+                                             value: ask("accessibilityValue") as? String ?? ask("accessibilityValueDescription") as? String ?? "",
+                                             frame: frame,
                                              selected: selected, focused: focused, object: o))
         }
         guard depth < 16 else { return list }

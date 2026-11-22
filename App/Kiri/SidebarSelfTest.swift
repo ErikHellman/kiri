@@ -41,6 +41,7 @@ extension SelfTest {
         defer { WindowTabs.safetyNetEnabled = true }
 
         await previewChecks(first, f)
+        await edgeChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
         for w in f.group(first) { w.performClose(nil) }
@@ -200,6 +201,99 @@ extension SelfTest {
                "a double-click on a file that isn't open shows it once, to stay, in the preview's tab (\(f.strip(first)); \(iDocuments.count) document, watching its file: \(watching), first click answered \(answeredAtOnce ? "at once" : "later"))")
     }
 
+    /// The edge between the sidebar and the editor: what a drag, a
+    /// double-click and VoiceOver's steps do to the width (by what the
+    /// gestures call: no pointer is moved), that every tab has it, that it
+    /// is remembered without the person's preferences being written, and
+    /// that a narrow window keeps the editor its minimum.
+    private static func edgeChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        let store = SidebarWidth.shared
+        guard let shown = first.tabGroup?.selectedWindow, let other = f.group(first).first(where: { $0 !== shown }) else {
+            report(false, "two tabs for the sidebar's edge checks"); return
+        }
+        let saved = { UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?[Prefs.sidebarWidthKey] as? NSObject }
+        let savedBefore = saved(), given = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)[Prefs.sidebarWidthKey] as? String
+        defer {
+            // As the launch found it.
+            setArgument(Prefs.sidebarWidthKey, given)
+            store.set(SidebarWidth.remembered)
+        }
+        let drawn = shown.occlusionState.contains(.visible)
+        let row = Double(shown.frame.width) - 2 * Honey.gap
+        func widest(_ w: NSWindow) -> Double { SidebarLayout.widest(in: Double(w.frame.width) - 2 * Honey.gap, gap: Honey.gap) }
+        /// The sidebar's width as `w` lays it out: what is left of the editor's panel.
+        func laidOut(_ w: NSWindow) -> Double? {
+            guard let panel = findTextView(in: w.contentView)?.enclosingScrollView?.superview else { return nil }
+            return Double(panel.convert(panel.bounds, to: nil).minX) - 2 * Honey.gap
+        }
+        func shows(_ width: Double, in w: NSWindow) async -> Bool {
+            await f.wait(drawn ? 2 : 0) { laidOut(w).map { abs($0 - width) < 0.6 } ?? false }
+        }
+
+        store.reset()
+        let atDefault = store.preferred == SidebarLayout.defaultWidth
+        let defaultShown = await shows(SidebarLayout.defaultWidth, in: shown)
+        // A drag of 70 pt to the right, then let go.
+        store.set(SidebarLayout.dragged(from: store.preferred, by: 70, widest: widest(shown)))
+        let dragged = store.preferred == 300
+        let draggedShown = await shows(300, in: shown)
+        let unsavedYet = SidebarWidth.remembered == SidebarLayout.defaultWidth
+        store.save()
+        report(atDefault && dragged && unsavedYet, "the sidebar's edge dragged 70 pt makes it 300 pt wide, from the default 230 (\(store.preferred))")
+        if drawn {
+            report(defaultShown && draggedShown, "the window lays the sidebar out at that width, and the editor takes the rest (\(laidOut(shown) ?? -1) pt)")
+        } else {
+            print("SELFTEST SKIP the window lays the sidebar out at the dragged width (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // Remembered: what the next launch, and the next window, begin with.
+        report(SidebarWidth.remembered == 300 && SidebarWidth().preferred == 300 && saved() == savedBefore,
+               "the width is remembered for the next window and launch, and a test launch leaves the saved preferences as they were (remembered \(SidebarWidth.remembered), saved \(saved().map { "\($0)" } ?? "none"))")
+        // The limits, and the narrow window.
+        store.set(SidebarLayout.dragged(from: store.preferred, by: -1000, widest: widest(shown)))
+        let narrowest = store.preferred
+        store.set(SidebarLayout.dragged(from: store.preferred, by: 1000, widest: widest(shown)))
+        report(narrowest == 180 && store.preferred == 400 && row >= 630, "the edge stops at 180 pt and at 400 pt (\(narrowest), \(store.preferred))")
+        if drawn {
+            let frame = shown.frame, minimum = shown.contentMinSize.width
+            shown.setFrame(NSRect(x: frame.minX, y: frame.minY, width: minimum, height: frame.height), display: true)
+            let squeezed = await shows(230, in: shown)
+            let editor = findTextView(in: shown.contentView)?.enclosingScrollView?.superview?.frame.width ?? 0
+            shown.setFrame(frame, display: true)
+            let back = await shows(400, in: shown)
+            report(minimum == SidebarLayout.narrowestWindow && squeezed && editor >= SidebarLayout.editorMinimum && back && store.preferred == 400,
+                   "a window at its narrowest (\(minimum) pt) shows less of a 400 pt sidebar so the editor keeps its minimum, and all of it again when widened (editor \(editor) pt)")
+        } else {
+            print("SELFTEST SKIP a window at its narrowest keeps the editor its minimum beside a wide sidebar (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // Every tab is a window with a sidebar of its own: all have the width.
+        store.set(320)
+        f.select(other)
+        let otherShows = await shows(320, in: other)
+        f.select(shown)
+        if drawn && other.occlusionState.contains(.visible) || otherShows {
+            report(otherShows, "another tab of the window has the same width (\(laidOut(other) ?? -1) pt)")
+        } else {
+            print("SELFTEST SKIP another tab of the window has the same width (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // What VoiceOver is given: a slider, which it can step.
+        if drawn {
+            _ = await shows(320, in: shown)
+            await wakeAccessibility()
+            let edge = accessibilityElements(of: shown).first { $0.name == "Sidebar width" }
+            let value = edge?.value ?? ""
+            edge?.increment()
+            let stepped = await f.wait(1) { store.preferred == 330 }
+            report(edge?.role == NSAccessibility.Role.slider.rawValue && value == "320 points" && stepped && edge?.actions.contains("Default Width") == true
+                   && (edge?.frame.width ?? 0) == Honey.gap,
+                   "VoiceOver has the edge as a slider, “Sidebar width, \(value)”, 10 pt wide between the panels, and a step makes it \(store.preferred) (role \(edge?.role ?? "none"), actions \(edge?.actions ?? []))")
+        } else {
+            print("SELFTEST SKIP what VoiceOver is given for the sidebar's edge (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        // A double-click on the edge: the default, and nothing remembered.
+        store.reset()
+        report(store.preferred == SidebarLayout.defaultWidth && SidebarWidth.remembered == SidebarLayout.defaultWidth && saved() == savedBefore,
+               "a double-click on the edge gives the default width back (\(store.preferred))")
+    }
 }
 
 /// The folder `sidebarStage` works in, and what it asks of its windows.
@@ -229,6 +323,12 @@ extension SelfTest {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return done()
+    }
+
+    /// Brings a tab forward, as a click on it in the strip does.
+    func select(_ w: NSWindow) {
+        w.tabGroup?.selectedWindow = w
+        w.makeKeyAndOrderFront(nil)
     }
 
     func document(_ w: NSWindow) -> KiriDocument? { NSDocumentController.shared.document(for: w) as? KiriDocument }

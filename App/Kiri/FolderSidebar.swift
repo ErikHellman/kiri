@@ -106,6 +106,119 @@ import SwiftUI
     }
 }
 
+/// How wide the folder sidebar is: one width for every folder window and
+/// every tab (each tab is a window with a sidebar of its own), remembered
+/// from launch to launch (`Prefs.sidebarWidthKey`). The edge between the
+/// sidebar and the editor sets it (`SidebarEdge`).
+@MainActor @Observable final class SidebarWidth {
+    static let shared = SidebarWidth()
+
+    /// The width asked for, within `SidebarLayout.widths`. A window too
+    /// narrow for it shows less (`SidebarLayout.shown`).
+    private(set) var preferred: Double
+
+    init() { preferred = Self.remembered }
+
+    /// The width in the preferences (or among the launch's arguments,
+    /// `-sidebarWidth 300`), the default without one.
+    static var remembered: Double {
+        // (`double(forKey:)` reads an argument, which is a string, too.)
+        let saved = UserDefaults.standard.double(forKey: Prefs.sidebarWidthKey)
+        return saved > 0 ? SidebarLayout.clamped(saved) : SidebarLayout.defaultWidth
+    }
+
+    /// While the edge is dragged: every sidebar follows at once, and
+    /// nothing is written until `save`.
+    func set(_ width: Double) {
+        let width = SidebarLayout.clamped(width)
+        if width != preferred { preferred = width }
+    }
+
+    /// The edge was let go: the width is remembered.
+    func save() {
+        #if DEBUG || KIRI_SELFTEST
+        // A test launch leaves the person's preferences as they are: its
+        // width is kept among the launch's arguments, where a setting
+        // given on the command line lives.
+        if SelfTest.isTestLaunch { SelfTest.setArgument(Prefs.sidebarWidthKey, String(preferred)); return }
+        #endif
+        UserDefaults.standard.set(preferred, forKey: Prefs.sidebarWidthKey)
+    }
+
+    /// A double-click on the edge: the default again, and no preference.
+    func reset() {
+        set(SidebarLayout.defaultWidth)
+        #if DEBUG || KIRI_SELFTEST
+        if SelfTest.isTestLaunch { SelfTest.setArgument(Prefs.sidebarWidthKey, nil); return }
+        #endif
+        UserDefaults.standard.removeObject(forKey: Prefs.sidebarWidthKey)
+    }
+}
+
+/// The edge between the folder sidebar and the editor: the 10 pt of
+/// canvas between the two panels. Dragging it makes the sidebar narrower
+/// or wider, a double-click gives it its default width back, and the
+/// pointer over it is the resize cursor. A small grip shows while the
+/// pointer is on it or it is dragged.
+struct SidebarEdge: View {
+    /// The width the sidebar shows now, and the widest this window has room for.
+    let width: Double
+    let widest: Double
+    let store: SidebarWidth
+    #if DEBUG || KIRI_SELFTEST
+    /// -KiriSidebarEdgeHover YES: the edge as under the pointer, for a picture.
+    @State private var hovering = UserDefaults.standard.bool(forKey: "KiriSidebarEdgeHover")
+    #else
+    @State private var hovering = false
+    #endif
+    /// The width when the drag began: the edge then follows the pointer.
+    @State private var dragStart: Double?
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduce
+
+    var body: some View {
+        let motion = HoneyMotion(appearance, systemReduced: reduce)
+        Color.clear
+            .frame(width: Honey.gap)
+            .frame(maxHeight: .infinity)
+            .overlay {
+                Capsule().fill(Color.honeyMuted)
+                    .frame(width: 4, height: 36)
+                    .opacity(hovering || dragStart != nil ? 0.7 : 0)
+                    .animation(motion.quick, value: hovering || dragStart != nil)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .onHover { hovering = $0 }
+            // In the window's coordinates: the edge moves under the pointer.
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { drag in
+                    let start = dragStart ?? width
+                    dragStart = start
+                    store.set(SidebarLayout.dragged(from: start, by: drag.translation.width, widest: widest))
+                }
+                .onEnded { _ in
+                    dragStart = nil
+                    store.save()
+                })
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                withAnimation(motion.shape) { store.reset() }
+            })
+            // VoiceOver and Voice Control: a slider, which they can step
+            // (SwiftUI has no splitter to say it is).
+            .accessibilityRepresentation {
+                Slider(value: Binding(get: { width }, set: { new in
+                    store.set(SidebarLayout.dragged(from: new, by: 0, widest: widest))
+                    store.save()
+                }), in: SidebarLayout.widths.lowerBound...max(widest, SidebarLayout.widths.lowerBound + SidebarLayout.step),
+                       step: SidebarLayout.step) { Text("Sidebar width") }
+                    .accessibilityValue("\(Int(width.rounded())) points")
+                    .accessibilityAction(named: "Default Width") { store.reset() }
+            }
+    }
+}
+
 /// A file or folder in the sidebar. Folders read their contents when first
 /// expanded.
 @MainActor final class FileNode: Identifiable {
@@ -159,6 +272,8 @@ struct FolderSidebar: View {
     /// This window's tabs: where a file picked here opens.
     let tabs: WindowTabs
     let currentFile: URL?
+    /// What shows of `SidebarWidth`'s width in this window.
+    let width: Double
     @FocusState private var focused: Bool
     @State private var typed = ""
     @State private var typedAt = Date.distantPast
@@ -211,7 +326,7 @@ struct FolderSidebar: View {
                 }
             }
         }
-        .frame(width: 230)
+        .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
         .honeyGlass(.chrome, radius: .panel)
         .overlay {

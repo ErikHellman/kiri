@@ -11,6 +11,9 @@ enum Prefs {
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
     static let typingAnimationsKey = "typingAnimations"
+    /// How wide the folder sidebar is, in points (`SidebarWidth`): set by
+    /// dragging its edge, absent until then.
+    static let sidebarWidthKey = "sidebarWidth"
 
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
