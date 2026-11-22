@@ -26,10 +26,16 @@ struct HoneyContrastTests {
 
     @Test(arguments: Honey.Theme.all) func editorMarks(_ t: Honey.Theme) {
         for m in Self.modes {
-            // Line numbers are incidental, but stay ≥ 3:1 (4.5:1 with more contrast).
-            let gutter = m.hc ? 4.5 : 3.0
-            #expect(ratio(Honey.gutter, on: Honey.surface, m, t) >= gutter, "\(t.id) gutter in \(m)")
-            #expect(ratio(Honey.gutter, on: Honey.currentLine, m, t) >= gutter, "\(t.id) gutter on current line in \(m)")
+            // Line numbers are small text people read: ≥ 4.5:1 on the paper
+            // and on the current line, in every mode.
+            for paper in [Honey.surface, Honey.currentLine] {
+                let numbers = ratio(Honey.gutter, on: paper, m, t)
+                #expect(numbers >= 4.5, "\(t.id) gutter on \(paper.name) in \(m): \(numbers)")
+                // The current line's number is drawn in `fg`, and stays
+                // clearly the stronger of the two.
+                let current = ratio(Honey.fg, on: paper, m, t)
+                #expect(current >= numbers * 1.3, "\(t.id) fg \(current) against gutter \(numbers) on \(paper.name) in \(m)")
+            }
             // The caret and focus ring are UI graphics: ≥ 3:1.
             #expect(ratio(Honey.caret, on: Honey.surface, m, t) >= 3, "\(t.id) caret in \(m)")
             #expect(ratio(Honey.focus, on: Honey.surface2, m, t) >= 3, "\(t.id) focus in \(m)")

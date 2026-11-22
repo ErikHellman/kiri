@@ -153,8 +153,8 @@ def enforce(tokens):
             rules += [("fg-muted", "surface", 4.5, "fg-muted"), ("accent-ink", "surface", 4.5, "accent-ink"),
                       ("accent-fg", "accent", 7.0, "accent-fg"), ("ok", "surface", 4.5, "ok"),
                       ("danger", "surface", 4.5, "danger")]
-            g = 4.5 if hc else 3.0
-            rules += [("gutter", "surface", g, "gutter"), ("gutter", "current-line", g, "gutter"),
+            # Line numbers are text people read: 4.5:1 in every mode.
+            rules += [("gutter", "surface", 4.5, "gutter"), ("gutter", "current-line", 4.5, "gutter"),
                       ("focus", "surface", 3.0, "focus"), ("focus", "surface-2", 3.0, "focus")]
             for name in SYNTAX_NAMES:
                 for bg in ["surface", "current-line"]:

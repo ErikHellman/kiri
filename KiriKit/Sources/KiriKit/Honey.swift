@@ -57,9 +57,11 @@ public enum Honey {
     public static let selection = Token("selection", light: 0xF6D9A0, dark: 0x5C4220, hcLight: 0xF2C97A, hcDark: 0x6B4A1C)
     /// The line with the caret, a step between `surface` and `surface-2`.
     public static let currentLine = Token("current-line", light: 0xFAF3E6, dark: 0x2C251D, hcLight: 0xF7F0E2, hcDark: 0x16120E)
-    /// Line numbers: incidental text, ≥ 3:1 on `surface` and `currentLine`;
-    /// with more contrast they use the `fg-muted` values.
-    public static let gutter = Token("gutter", light: 0x9A8478, dark: 0x7E6E60, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
+    /// Line numbers: small text people read, so ≥ 4.5:1 on `surface` and
+    /// `currentLine`, and still a clear step quieter than `fg`, which the
+    /// current line's number is drawn in. With more contrast they use the
+    /// `fg-muted` values.
+    public static let gutter = Token("gutter", light: 0x7F6A5F, dark: 0x9C8B7C, hcLight: 0x3F302B, hcDark: 0xE5D8C8)
     /// The caret is the `focus` color (≥ 3:1 on `surface`).
     public static let caret = focus
 
