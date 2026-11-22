@@ -2257,10 +2257,26 @@ import os
         func shortcutsWindow() -> NSWindow? {
             NSApp.windows.first { $0.identifier?.rawValue == ShortcutsView.windowID && $0.isVisible }
         }
-        func slash(_ modifiers: NSEvent.ModifierFlags) {
-            // As the keyboard sends it: with Shift, the character is "?".
-            let character = modifiers.contains(.shift) ? "?" : "/"
-            pressKey(character, unmodified: character, code: 44, modifiers, in: window)
+        /// Presses a menu item's key as this keyboard has it. macOS moves
+        /// some keys for the layout in use (⌘/ is ⌘´ on a Swedish one),
+        /// so the key is read from the item, and the key code and Shift
+        /// that give its character are looked up in the layout.
+        func press(_ item: NSMenuItem?) -> String {
+            guard let item, !item.keyEquivalent.isEmpty else { return "no key" }
+            let key = item.keyEquivalent
+            var flags = item.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask)
+            var code: UInt16?
+            for shift in [false, true] where code == nil {
+                // (Not the keypad's keys, from 65 on.)
+                code = (0..<65 as Range<UInt16>).first { c in
+                    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: c)?
+                        .characters(byApplyingModifiers: shift ? .shift : []) == key
+                }
+                if code != nil, shift { flags.insert(.shift) }
+            }
+            pressKey(key, unmodified: key, code: code ?? 44, flags, in: window)
+            return "\(flags.contains(.shift) ? "⇧" : "")⌘\(key), key code \(code.map(String.init) ?? "not in this layout")"
         }
         FrontEditor.shared.selfTestMain(window)
         window.makeFirstResponder(ktv)
@@ -2268,9 +2284,15 @@ import os
         updateMenu(main)
         func mask(_ item: NSMenuItem?) -> NSEvent.ModifierFlags { item?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) ?? [] }
         let toggle = format.item(withTitle: "Toggle Comment"), shortcuts = help.item(withTitle: "Keyboard Shortcuts")
-        report(toggle?.keyEquivalent == "/" && mask(toggle) == .command && toggle?.isEnabled == true
-               && shortcuts?.keyEquivalent == "?" && mask(shortcuts) == .command,
-               "Format ▸ Toggle Comment is on ⌘/ and Help ▸ Keyboard Shortcuts on ⌘? (\(toggle?.keyEquivalent ?? "none"), \(shortcuts?.keyEquivalent ?? "none"))")
+        // On a U.S. keyboard they are "/" and "?"; another layout may have
+        // them elsewhere, and the menu then says where.
+        let us = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "",
+                                  charactersIgnoringModifiers: "", isARepeat: false, keyCode: 44)?.characters(byApplyingModifiers: []) == "/"
+        report(Keys.toggleComment.key == "/" && Keys.toggleComment.modifiers == .command && Keys.shortcuts.key == "?"
+               && Keys.shortcuts.modifiers == .command && toggle?.isEnabled == true && mask(toggle) == .command
+               && mask(shortcuts) == .command && (!us || toggle?.keyEquivalent == "/" && shortcuts?.keyEquivalent == "?")
+               && toggle?.keyEquivalent.isEmpty == false && shortcuts?.keyEquivalent.isEmpty == false,
+               "Format ▸ Toggle Comment is on ⌘/ and Help ▸ Keyboard Shortcuts on ⌘? (in the menus of this keyboard: ⌘\(toggle?.keyEquivalent ?? "none"), ⌘\(shortcuts?.keyEquivalent ?? "none"))")
 
         // Two lines, from inside the first to inside the second.
         let original = ktv.string, ns = original as NSString
@@ -2288,7 +2310,7 @@ import os
         ktv.setSelectedRange(selection)
         let editedBefore = NSDocumentController.shared.document(for: window)?.isDocumentEdited
 
-        slash(.command)
+        let pressed = press(toggle)
         let commented = await wait { ktv.string != original }
         let after = ktv.string as NSString
         let commentedBlock = after.length >= block.location + (expected as NSString).length
@@ -2296,7 +2318,7 @@ import os
         report(commented && commentedBlock == expected && after.length == ns.length + 3 * lines.count
                && after.substring(with: ktv.selectedRange()) == selected.replacingOccurrences(of: "\n    ", with: "\n    // ")
                && shortcutsWindow() == nil,
-               "⌘/ comments the lines the selection touches, the marker at their least indentation, the selection on the same text, and doesn't open Keyboard Shortcuts (“\(commentedBlock.replacingOccurrences(of: "\n", with: "⏎"))”, selected “\(after.substring(with: ktv.selectedRange()).replacingOccurrences(of: "\n", with: "⏎"))”)")
+               "⌘/ comments the lines the selection touches, the marker at their least indentation, the selection on the same text, and doesn't open Keyboard Shortcuts (pressed \(pressed); “\(commentedBlock.replacingOccurrences(of: "\n", with: "⏎"))”, selected “\(after.substring(with: ktv.selectedRange()).replacingOccurrences(of: "\n", with: "⏎"))”)")
         await settle()
         let actionName = ktv.undoManager?.undoActionName
         ktv.undoManager?.undo()
@@ -2307,7 +2329,7 @@ import os
 
         // Again: every line is commented now, so the markers come off.
         ktv.setSelectedRange(NSRange(location: selection.location + 3, length: selection.length + 3 * (lines.count - 1)))
-        slash(.command)
+        _ = press(format.item(withTitle: "Toggle Comment"))
         let uncommented = await wait { ktv.string == original }
         report(uncommented && ktv.selectedRange() == selection,
                "⌘/ again uncomments them, the selection back where it was (\(ktv.selectedRange()) of \(selection))")
@@ -2325,7 +2347,7 @@ import os
         updateMenu(main)
         let offForPlainText = format.item(withTitle: "Toggle Comment")?.isEnabled == false
         ktv.setSelectedRange(selection)
-        slash(.command)
+        _ = press(format.item(withTitle: "Toggle Comment"))
         await settle(300)
         report(offForPlainText && ktv.string == original && shortcutsWindow() == nil,
                "in plain text Toggle Comment is off and ⌘/ changes nothing")
@@ -2337,7 +2359,7 @@ import os
         // Command, as AppKit's own Help items have it: an item on "/" with
         // Shift and Command is never matched by a pressed ⇧⌘/, whose
         // character is "?", and the press falls through to ⌘/.)
-        slash([.shift, .command])
+        _ = press(help.item(withTitle: "Keyboard Shortcuts"))
         let opened = await wait { shortcutsWindow() != nil }
         report(opened && ktv.string == original, "⌘? (⇧⌘/ as the keyboard sends it) opens Keyboard Shortcuts and leaves the text alone")
         shortcutsWindow()?.close()
