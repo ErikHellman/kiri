@@ -501,10 +501,13 @@ private struct FileRow: View {
                         }
                     }
                     .frame(width: 10)
-                    Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
+                    // A folder is amber; a file has its kind's shape in its
+                    // language's syntax color (`FileIcon`), from its name alone.
+                    let icon = node.isDirectory ? nil : FileIcon.forFile(named: node.name)
+                    Image(systemName: icon?.symbol ?? "folder.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(node.isDirectory ? Color.honeyAccentInk : Color.honeyMuted)
-                        .frame(width: 14)
+                        .foregroundStyle(node.isDirectory ? Color.honeyAccentInk : icon?.tint.map { Color.honey($0.token) } ?? Color.honeyMuted)
+                        .frame(width: 16)
                     Text(node.name)
                         .font(mark?.preview == true ? .honeyOblique(.subheadline, weight: .bold)
                               : .honey(.subheadline, weight: isOpen ? .bold : .semibold))

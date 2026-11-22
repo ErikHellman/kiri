@@ -41,6 +41,14 @@ extension SelfTest {
         defer { WindowTabs.safetyNetEnabled = true }
 
         await previewChecks(first, f)
+        // The rows' icons: a symbol this macOS has for every language, and
+        // the fixture's files told apart (the mapping and the tints'
+        // contrast are KiriKit's `FileIconTests`).
+        let icons = Language.all.map { FileIcon.of($0) } + [.document]
+        let missing = Set(icons.map(\.symbol)).filter { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil }
+        let told = Set(["a.swift", "b.md", "c.json", "d.txt", "e.py", "f.rs"].map { FileIcon.forFile(named: $0) })
+        report(missing.isEmpty && told.count == 6,
+               "every file icon is a symbol this macOS has, and the folder's files differ by shape or tint (\(Set(icons.map(\.symbol)).count) symbols, missing \(missing.sorted()); \(told.count) of 6 differ)")
         await markChecks(first, f)
         await edgeChecks(first, f)
 
