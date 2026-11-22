@@ -1901,6 +1901,7 @@ import os
                     Task { @MainActor in
                         await tabState(window)
                         await frontWindow(window)
+                        await toggleCommentStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
@@ -2217,6 +2218,132 @@ import os
         second.window.performClose(nil)
         _ = await wait { (original.tabbedWindows?.count ?? 1) == 1 }
         await front(original)
+    }
+
+    // MARK: Toggle Comment
+
+    /// A key pressed with the keyboard in `window`, through the app's own
+    /// event queue, as a pressed key comes (it reaches only this instance).
+    private static func pressKey(_ characters: String, unmodified: String, code: UInt16, _ modifiers: NSEvent.ModifierFlags,
+                                 in window: NSWindow) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
+                                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                        context: nil, characters: characters, charactersIgnoringModifiers: unmodified,
+                                        isARepeat: false, keyCode: code) {
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+    }
+
+    /// ⌘/ as a key: comments the lines the selection touches and
+    /// uncomments them again, as one undo step each, with the selection on
+    /// the same text; off in a format without comments. And ⌘? (⇧⌘/),
+    /// where Keyboard Shortcuts went to make room.
+    private static func toggleCommentStage(_ window: NSWindow) async {
+        guard let main = NSApp.mainMenu, let format = main.item(withTitle: "Format")?.submenu,
+              let help = main.items.last?.submenu,
+              let ktv = findTextView(in: window.contentView) as? KiriTextView,
+              let controller = ktv.delegate as? EditorController else { report(false, "the Format and Help menus"); return }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 2, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        func shortcutsWindow() -> NSWindow? {
+            NSApp.windows.first { $0.identifier?.rawValue == ShortcutsView.windowID && $0.isVisible }
+        }
+        func slash(_ modifiers: NSEvent.ModifierFlags) {
+            // As the keyboard sends it: with Shift, the character is "?".
+            let character = modifiers.contains(.shift) ? "?" : "/"
+            pressKey(character, unmodified: character, code: 44, modifiers, in: window)
+        }
+        FrontEditor.shared.selfTestMain(window)
+        window.makeFirstResponder(ktv)
+        await settle(250)
+        updateMenu(main)
+        func mask(_ item: NSMenuItem?) -> NSEvent.ModifierFlags { item?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) ?? [] }
+        let toggle = format.item(withTitle: "Toggle Comment"), shortcuts = help.item(withTitle: "Keyboard Shortcuts")
+        report(toggle?.keyEquivalent == "/" && mask(toggle) == .command && toggle?.isEnabled == true
+               && shortcuts?.keyEquivalent == "?" && mask(shortcuts) == .command,
+               "Format ▸ Toggle Comment is on ⌘/ and Help ▸ Keyboard Shortcuts on ⌘? (\(toggle?.keyEquivalent ?? "none"), \(shortcuts?.keyEquivalent ?? "none"))")
+
+        // Two lines, from inside the first to inside the second.
+        let original = ktv.string, ns = original as NSString
+        let name = ns.range(of: "let name: String"), count = ns.range(of: "var count")
+        guard controller.model.language == .swift, name.location != NSNotFound, count.location != NSNotFound,
+              count.location > name.location else {
+            report(false, "the Swift sample has the lines the comment test selects"); return
+        }
+        let selection = NSRange(location: name.location + 4, length: count.location + 3 - name.location - 4)
+        let selected = ns.substring(with: selection)
+        let block = ns.lineRange(for: selection)
+        let lines = ns.substring(with: block).components(separatedBy: "\n").dropLast()
+        let indent = lines.map { $0.prefix { $0 == " " }.count }.min() ?? 0
+        let expected = lines.map { String($0.prefix(indent)) + "// " + $0.dropFirst(indent) }.joined(separator: "\n") + "\n"
+        ktv.setSelectedRange(selection)
+        let editedBefore = NSDocumentController.shared.document(for: window)?.isDocumentEdited
+
+        slash(.command)
+        let commented = await wait { ktv.string != original }
+        let after = ktv.string as NSString
+        let commentedBlock = after.length >= block.location + (expected as NSString).length
+            ? after.substring(with: NSRange(location: block.location, length: (expected as NSString).length)) : ""
+        report(commented && commentedBlock == expected && after.length == ns.length + 3 * lines.count
+               && after.substring(with: ktv.selectedRange()) == selected.replacingOccurrences(of: "\n    ", with: "\n    // ")
+               && shortcutsWindow() == nil,
+               "⌘/ comments the lines the selection touches, the marker at their least indentation, the selection on the same text, and doesn't open Keyboard Shortcuts (“\(commentedBlock.replacingOccurrences(of: "\n", with: "⏎"))”, selected “\(after.substring(with: ktv.selectedRange()).replacingOccurrences(of: "\n", with: "⏎"))”)")
+        await settle()
+        let actionName = ktv.undoManager?.undoActionName
+        ktv.undoManager?.undo()
+        let undone = ktv.string == original
+        ktv.undoManager?.redo()
+        report(actionName == "Toggle Comment" && undone && (ktv.string as NSString).substring(with: NSRange(location: block.location, length: (expected as NSString).length)) == expected,
+               "it is one undo step called Toggle Comment (“\(actionName ?? "")”), and redo brings it back")
+
+        // Again: every line is commented now, so the markers come off.
+        ktv.setSelectedRange(NSRange(location: selection.location + 3, length: selection.length + 3 * (lines.count - 1)))
+        slash(.command)
+        let uncommented = await wait { ktv.string == original }
+        report(uncommented && ktv.selectedRange() == selection,
+               "⌘/ again uncomments them, the selection back where it was (\(ktv.selectedRange()) of \(selection))")
+        await settle()
+        // Back to the text and the undo state the stage started with.
+        ktv.undoManager?.undo()
+        ktv.undoManager?.undo()
+        await settle()
+        report(ktv.string == original && NSDocumentController.shared.document(for: window)?.isDocumentEdited == editedBefore,
+               "undone twice, the document is as it was")
+
+        // A format without comments: the item is off and the key does nothing.
+        controller.model.language = .plainText
+        await settle(250)
+        updateMenu(main)
+        let offForPlainText = format.item(withTitle: "Toggle Comment")?.isEnabled == false
+        ktv.setSelectedRange(selection)
+        slash(.command)
+        await settle(300)
+        report(offForPlainText && ktv.string == original && shortcutsWindow() == nil,
+               "in plain text Toggle Comment is off and ⌘/ changes nothing")
+        controller.model.language = .swift
+        await settle(250)
+        updateMenu(main)
+
+        // ⌘?: the Keyboard Shortcuts window. (The item's key is "?" with
+        // Command, as AppKit's own Help items have it: an item on "/" with
+        // Shift and Command is never matched by a pressed ⇧⌘/, whose
+        // character is "?", and the press falls through to ⌘/.)
+        slash([.shift, .command])
+        let opened = await wait { shortcutsWindow() != nil }
+        report(opened && ktv.string == original, "⌘? (⇧⌘/ as the keyboard sends it) opens Keyboard Shortcuts and leaves the text alone")
+        shortcutsWindow()?.close()
+        _ = await wait { shortcutsWindow() == nil }
+        ktv.setSelectedRange(NSRange(location: 0, length: 0))
+        window.makeFirstResponder(ktv)
     }
 
     // MARK: Several files at once

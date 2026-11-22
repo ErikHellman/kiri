@@ -26,7 +26,14 @@ enum Keys {
     static let wrapLines = KeyboardShortcut("w", modifiers: [.control, .command])
     static let nextTab = KeyboardShortcut("]", modifiers: [.shift, .command])
     static let previousTab = KeyboardShortcut("[", modifiers: [.shift, .command])
-    static let shortcuts = KeyboardShortcut("/", modifiers: .command)
+    static let toggleComment = KeyboardShortcut("/", modifiers: .command)
+    /// ⌘?, the Help key (⇧⌘/ on the keyboard). Written as "?" with
+    /// Command, as AppKit's own Help items are: an item on "/" with Shift
+    /// and Command is not matched by the key press, whose character is
+    /// "?". (macOS has a shortcut of its own on this key, "Show Help
+    /// menu": where that is on, the key opens the Help menu, whose one
+    /// item this is.)
+    static let shortcuts = KeyboardShortcut("?", modifiers: .command)
     static let openFolder = KeyboardShortcut("o", modifiers: [.shift, .command])
     static let toggleSidebar = KeyboardShortcut("s", modifiers: [.control, .command])
     static let focusSidebar = KeyboardShortcut("e", modifiers: [.shift, .command])
@@ -89,6 +96,7 @@ extension KeyEquivalent {
         default:
             switch character {
             case "/": "Slash"
+            case "?": "Question Mark"
             case ",": "Comma"
             case ".": "Period"
             case "[": "Left Bracket"
@@ -151,6 +159,7 @@ struct ShortcutGroup: Identifiable {
             Item("Select all", "⌘A"),
             Item("Shift lines right", Keys.shiftRight),
             Item("Shift lines left", Keys.shiftLeft),
+            Item("Comment / uncomment lines", Keys.toggleComment),
             Item("Emoji & symbols", "⌃⌘Space"),
         ]),
         ShortcutGroup(title: "Folder sidebar", systemImage: "sidebar.left", items: [
@@ -198,7 +207,7 @@ struct ShortcutGroup: Identifiable {
             Item("Language, encoding, line endings", "Format menu"),
             Item("Theme, appearance, motion, typing animations", "View menu"),
             Item("Open the menu bar", "⌃F2"),
-            Item("Search all menus", "⇧⌘/"),
+            Item("Search all menus", "Help menu"),
         ]),
     ]
 }

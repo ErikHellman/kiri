@@ -193,6 +193,10 @@ struct KiriCommands: Commands {
             Button("Shift Left") { editor?.controller?.shiftLines(right: false) }
                 .keyboardShortcut(Keys.shiftLeft)
                 .disabled(editor == nil)
+            // Off in a format that has no comments (plain text, JSON, CSV).
+            Button("Toggle Comment") { editor?.controller?.toggleComment() }
+                .keyboardShortcut(Keys.toggleComment)
+                .disabled(editor?.language.comment == nil)
         }
 
         // Window: Kiri draws its own tab strip, so it gets Safari's keys

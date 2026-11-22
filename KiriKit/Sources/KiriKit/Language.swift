@@ -12,26 +12,41 @@ public struct Language: Hashable, Sendable, Identifiable {
     public let interpreters: Set<String>
     /// Line comment prefix, used by the fallback highlighter.
     public let lineComment: String?
+    /// How Toggle Comment (⌘/) comments a line out, or nil for a format
+    /// that has no comments (plain text, JSON, CSV).
+    public let comment: CommentSyntax?
 
+    /// - Parameters:
+    ///   - blockComment: for a language that only has block comments, the
+    ///     pair Toggle Comment puts around each line.
+    ///   - togglesComments: false for a format whose `lineComment` is only
+    ///     there for the highlighter.
     public init(id: String, name: String, extensions: Set<String> = [], fileNames: Set<String> = [],
-                interpreters: Set<String> = [], lineComment: String? = nil) {
+                interpreters: Set<String> = [], lineComment: String? = nil,
+                blockComment: (open: String, close: String)? = nil, togglesComments: Bool = true) {
         self.id = id
         self.name = name
         self.extensions = extensions
         self.fileNames = fileNames
         self.interpreters = interpreters
         self.lineComment = lineComment
+        comment = blockComment.map { .block(open: $0.open, close: $0.close) }
+            ?? (togglesComments ? lineComment.map { .line($0) } : nil)
     }
 
     public static let plainText = Language(id: "text", name: "Plain Text", extensions: ["txt", "text", "log"])
     public static let swift = Language(id: "swift", name: "Swift", extensions: ["swift", "swiftinterface"], lineComment: "//")
+    // JSON has no comments. (The `//` is for the highlighter, which meets
+    // them in .jsonc and .json5 files.)
     public static let json = Language(id: "json", name: "JSON",
                                       extensions: ["json", "jsonc", "json5", "geojson", "webmanifest", "jsonl"],
-                                      fileNames: [".prettierrc", ".eslintrc", ".babelrc"], lineComment: "//")
+                                      fileNames: [".prettierrc", ".eslintrc", ".babelrc"], lineComment: "//",
+                                      togglesComments: false)
     public static let yaml = Language(id: "yaml", name: "YAML", extensions: ["yaml", "yml"],
                                       fileNames: [".clang-format", ".clang-tidy"], lineComment: "#")
     public static let markdown = Language(id: "markdown", name: "Markdown",
-                                          extensions: ["md", "markdown", "mdown", "mkd", "mdx"])
+                                          extensions: ["md", "markdown", "mdown", "mkd", "mdx"],
+                                          blockComment: ("<!--", "-->"))
     public static let javascript = Language(id: "javascript", name: "JavaScript",
                                             extensions: ["js", "mjs", "cjs", "jsx"], interpreters: ["node"],
                                             lineComment: "//")
@@ -45,14 +60,16 @@ public struct Language: Hashable, Sendable, Identifiable {
                                        fileNames: [".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile",
                                                    ".zshenv", "PKGBUILD"],
                                        interpreters: ["sh", "bash", "zsh", "ksh", "dash"], lineComment: "#")
-    public static let html = Language(id: "html", name: "HTML", extensions: ["html", "htm", "xhtml"])
-    public static let css = Language(id: "css", name: "CSS", extensions: ["css"])
+    public static let html = Language(id: "html", name: "HTML", extensions: ["html", "htm", "xhtml"],
+                                      blockComment: ("<!--", "-->"))
+    public static let css = Language(id: "css", name: "CSS", extensions: ["css"], blockComment: ("/*", "*/"))
     // Formats without a bundled grammar use the fallback highlighter.
     public static let toml = Language(id: "toml", name: "TOML", extensions: ["toml"],
                                       fileNames: ["Cargo.lock", "Pipfile"], lineComment: "#")
     public static let xml = Language(id: "xml", name: "XML",
                                      extensions: ["xml", "plist", "svg", "xsd", "xsl", "xslt", "storyboard", "xib",
-                                                  "entitlements", "csproj"])
+                                                  "entitlements", "csproj"],
+                                     blockComment: ("<!--", "-->"))
     public static let csv = Language(id: "csv", name: "CSV", extensions: ["csv", "tsv"])
     public static let ini = Language(id: "ini", name: "INI", extensions: ["ini", "cfg", "conf", "properties", "env"],
                                      fileNames: [".env", ".gitconfig", ".editorconfig", ".npmrc"], lineComment: "#")

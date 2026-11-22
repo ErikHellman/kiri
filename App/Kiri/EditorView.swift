@@ -446,6 +446,31 @@ struct EditorView: NSViewRepresentable {
         textView.scrollRangeToVisible(textView.selectedRange())
     }
 
+    /// ⌘/: comments the lines the selection touches (or the caret's), or
+    /// uncomments them if every one that isn't blank is commented
+    /// (`CommentToggle`), in the language's own way. One undoable edit;
+    /// the selection stays on the text it was on.
+    func toggleComment() {
+        guard let textView, let storage = textView.textStorage, let syntax = model.language.comment else { return }
+        let ns = storage.string as NSString
+        let sel = textView.selectedRange()
+        // A selection that ends at a line start doesn't take that line along.
+        var probe = sel
+        if probe.length > 0, ns.character(at: NSMaxRange(probe) - 1) == 0x0A { probe.length -= 1 }
+        let block = ns.lineRange(for: probe)
+        let old = ns.substring(with: block)
+        let inBlock = (sel.location - block.location)..<(NSMaxRange(sel) - block.location)
+        guard let result = CommentToggle.toggle(old, syntax: syntax, selection: inBlock), result.text != old,
+              textView.shouldChangeText(in: block, replacementString: result.text) else { return }
+        // Its own undo step, not part of the typing before it.
+        textView.breakUndoCoalescing()
+        storage.replaceCharacters(in: block, with: NSAttributedString(string: result.text, attributes: textAttributes))
+        textView.didChangeText()
+        textView.undoManager?.setActionName("Toggle Comment")
+        textView.setSelectedRange(NSRange(location: block.location + result.selection.lowerBound, length: result.selection.count))
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
+
     func focus() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)

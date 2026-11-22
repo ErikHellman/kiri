@@ -1,7 +1,7 @@
 import KiriKit
 import SwiftUI
 
-/// Help ▸ Keyboard Shortcuts (⌘/): every feature and its keys, on Honey
+/// Help ▸ Keyboard Shortcuts (⌘?): every feature and its keys, on Honey
 /// cards over the canvas. Typing filters the list; Escape closes it.
 struct ShortcutsView: View {
     static let windowID = "keyboard-shortcuts"
@@ -35,7 +35,7 @@ struct ShortcutsView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Keyboard Shortcuts").font(.honey(.largeTitle, weight: .heavy))
-                    Text("Everything else is in the menu bar: ⌃F2 opens it, ⇧⌘/ searches it.")
+                    Text("Everything else is in the menu bar: ⌃F2 opens it, and the Help menu searches it.")
                         .font(.honey(.subheadline)).foregroundStyle(Color.honeyMuted)
                 }
                 Spacer(minLength: 16)
