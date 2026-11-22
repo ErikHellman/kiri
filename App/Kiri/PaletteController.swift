@@ -158,6 +158,134 @@ struct PaletteRow: Equatable, Identifiable {
 
     private var controller: EditorController? { model?.controller }
 
+    // MARK: Previews
+
+    /// What a row shows while the selection is on it: "Theme: Tide" shows
+    /// Tide, "Appearance: Dark" the dark look, "Language: Rust" this
+    /// document highlighted as Rust. Moving off the row or Escape puts
+    /// back what was there, and Return keeps it.
+    enum Preview: Equatable {
+        /// In every window, held in memory (`ThemePreview`): the setting
+        /// is written only when it is kept.
+        case look(ThemePreview.Look)
+        /// This document's language (which is no setting: it is the
+        /// editor's, until the file is opened again).
+        case language(Language)
+    }
+
+    /// A text longer than this (UTF-16 units) is not highlighted anew for
+    /// every language the selection passes: its row applies on Return.
+    static var languagePreviewLimit = 1_000_000
+
+    /// What `command` would show: one of the choices of View ▸ Theme,
+    /// View ▸ Appearance or Format ▸ Language, found by where it is in
+    /// the menu bar and what it is called there.
+    static func preview(for command: MenuCommand) -> Preview? {
+        guard command.path.count == 3, let name = command.path.last else { return nil }
+        switch Array(command.path.dropLast()) {
+        case KiriCommands.themeMenu: return Honey.Theme.all.first { $0.name == name }.map { .look(.theme($0)) }
+        case KiriCommands.appearanceMenu: return HoneyTheme.allCases.first { $0.label == name }.map { .look(.appearance($0)) }
+        case KiriCommands.languageMenu: return Language.all.first { $0.name == name }.map { .language($0) }
+        default: return nil
+        }
+    }
+
+    /// What this palette has put up, to take down again.
+    @ObservationIgnored private var previewing: Preview?
+    /// The document's language before one was previewed.
+    @ObservationIgnored private var languageBefore: Language?
+    @ObservationIgnored private var languageWork: DispatchWorkItem?
+    @ObservationIgnored private var mainObservers: [NSObjectProtocol] = []
+
+    /// The selected row's preview shows, and one the selection has left
+    /// is taken down. (While the window is not the one in front, nothing
+    /// is previewed: a theme is every window's.)
+    private func updatePreview() {
+        var wanted: Preview?
+        if isOpen, !inBackground, case .command(let command)? = selectedRow?.action { wanted = Self.preview(for: command) }
+        if case .language = wanted, (controller?.textView?.textStorage?.length ?? 0) > Self.languagePreviewLimit { wanted = nil }
+        show(wanted)
+    }
+
+    private func show(_ wanted: Preview?) {
+        guard wanted != previewing else { return }
+        // What is up comes down, unless one of its own kind takes its place.
+        switch (previewing, wanted) {
+        case (.look, .look), (.language, .language), (nil, _): break
+        case (.look, _): ThemePreview.shared.end()
+        case (.language, _): restoreLanguage()
+        }
+        previewing = wanted
+        switch wanted {
+        case .look(let look):
+            ThemePreview.shared.show(look)
+        case .language(let language):
+            if languageBefore == nil { languageBefore = model?.language }
+            // Not at every row an arrow key passes on its way: the text
+            // is highlighted anew for the row it stops on.
+            languageWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.setLanguage(language) } }
+            languageWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.languagePause, execute: work)
+        case nil:
+            break
+        }
+    }
+
+    static let languagePause = 0.12
+
+    private func setLanguage(_ language: Language) {
+        languageWork?.cancel()
+        languageWork = nil
+        guard let model, model.language != language else { return }
+        model.language = language
+        // (At once, also in a window SwiftUI is not drawing just now.)
+        controller?.setLanguage(language)
+    }
+
+    private func restoreLanguage() {
+        languageWork?.cancel()
+        languageWork = nil
+        if let languageBefore { setLanguage(languageBefore) }
+        languageBefore = nil
+    }
+
+    /// Return on a row with a preview: what it shows is kept. A theme or
+    /// an appearance becomes the setting (`ThemePreview.keep`, which is
+    /// what writes it: the menu item is not chosen as well).
+    private func keep(_ preview: Preview) {
+        switch preview {
+        case .look(let look):
+            if case .language = previewing { restoreLanguage() }
+            ThemePreview.shared.show(look)
+            ThemePreview.shared.keep()
+        case .language(let language):
+            if case .look = previewing { ThemePreview.shared.end() }
+            setLanguage(language)
+            languageBefore = nil
+        }
+        previewing = nil
+    }
+
+    /// The palette's window is not the one in front (another tab, another
+    /// app): what it previews is every window's, so it comes down until
+    /// the window is in front again.
+    @ObservationIgnored private var inBackground = false
+
+    private func watchWindow() {
+        guard let window = controller?.textView?.window else { return }
+        let center = NotificationCenter.default
+        for (name, away) in [(NSWindow.didResignMainNotification, true), (NSWindow.didBecomeMainNotification, false)] {
+            mainObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.inBackground = away
+                    self.updatePreview()
+                }
+            })
+        }
+    }
+
     // MARK: Opening and closing
 
     /// ⌘K: opens the palette with the keyboard in its field, or closes it.
@@ -179,6 +307,8 @@ struct PaletteRow: Equatable, Identifiable {
             commands = MenuCommands.all()
             commandCandidates = commands.map { FuzzyCandidate($0.title) }
             gatherFiles()
+            inBackground = false
+            watchWindow()
             isOpen = true
             model.overlayChanged()
         }
@@ -219,9 +349,13 @@ struct PaletteRow: Equatable, Identifiable {
 
     func close(focusEditor: Bool = true) {
         guard isOpen else { return }
-        // A line that was only being looked at is gone back from.
+        // A line that was only being looked at is gone back from, and a
+        // theme or a language that was only being looked at comes down.
         model?.goToLine.cancel(focusEditor: false)
         isOpen = false
+        show(nil)
+        mainObservers.forEach(NotificationCenter.default.removeObserver)
+        mainObservers = []
         rows = []
         selection = 0
         commands = []
@@ -295,6 +429,7 @@ struct PaletteRow: Equatable, Identifiable {
     func select(_ index: Int) {
         guard rows.indices.contains(index), index != selection else { return }
         selection = index
+        updatePreview()
         announce(rowsChanged: false)
     }
 
@@ -320,6 +455,12 @@ struct PaletteRow: Equatable, Identifiable {
     /// act on the field.
     func run(_ row: PaletteRow) {
         guard isOpen else { return }
+        // A theme, an appearance or a language: what the row shows stays.
+        if case .command(let command) = row.action, let preview = Self.preview(for: command) {
+            keep(preview)
+            close()
+            return
+        }
         #if DEBUG || KIRI_SELFTEST
         if Self.selfTestRunsFirst { perform(row); close(); return }
         #endif
@@ -363,6 +504,7 @@ struct PaletteRow: Equatable, Identifiable {
             goToLine.text = String(text.dropFirst())
             rows = []
             selection = 0
+            updatePreview()
             announce(rowsChanged: true)
         } else {
             // The colon was taken away: back to where the editor was.
@@ -427,6 +569,7 @@ struct PaletteRow: Equatable, Identifiable {
         // A reading of the folder that comes in while the list shows
         // leaves the selection on the row it was on, if that is still there.
         selection = selected.flatMap { id in found.firstIndex { $0.id == id } } ?? 0
+        updatePreview()
         if !keepingSelection { announce(rowsChanged: true) }
     }
 

@@ -20,6 +20,12 @@ struct KiriCommands: Commands {
     /// The palette's own menu items, which it leaves out of its list.
     static let paletteTitle = "Command Palette…"
     static let goToFileTitle = "Go to File…"
+    /// The menus whose choices the palette shows while the selection is
+    /// on one of them (`PaletteController.preview`): where they are in
+    /// the menu bar, said once for the menus and for the palette.
+    static let themeMenu = ["View", "Theme"]
+    static let appearanceMenu = ["View", "Appearance"]
+    static let languageMenu = ["Format", "Language"]
 
     private var editor: EditorModel? { FrontEditor.shared.editor }
     private var folder: FolderSession? { FrontEditor.shared.folder }
@@ -171,10 +177,10 @@ struct KiriCommands: Commands {
             Toggle("Wrap Lines", isOn: $wrapLines)
                 .keyboardShortcut(Keys.wrapLines)
             Divider()
-            Picker("Theme", selection: $colorTheme) {
+            Picker(Self.themeMenu[1], selection: $colorTheme) {
                 ForEach(Honey.Theme.all) { Text($0.name).tag($0.id) }
             }
-            Picker("Appearance", selection: $theme) {
+            Picker(Self.appearanceMenu[1], selection: $theme) {
                 ForEach(HoneyTheme.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             Picker("Motion", selection: $motion) {
@@ -185,8 +191,8 @@ struct KiriCommands: Commands {
             Divider()
         }
 
-        CommandMenu("Format") {
-            Picker("Language", selection: languageBinding) {
+        CommandMenu(Self.languageMenu[0]) {
+            Picker(Self.languageMenu[1], selection: languageBinding) {
                 ForEach(Language.all) { Text($0.name).tag($0) }
             }
             .disabled(editor == nil)

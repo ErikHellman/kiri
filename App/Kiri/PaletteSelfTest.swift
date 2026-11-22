@@ -315,6 +315,8 @@ extension SelfTest {
         report(off && view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == true,
                "with no document window in front, Command Palette… is off")
 
+        await palettePreviews(window, model)
+
         // ⌘P, the key other editors find a file with, opens it too.
         let file = main.item(withTitle: "File")?.submenu?.item(withTitle: KiriCommands.goToFileTitle)
         paletteKey("p", code: 35, .command, in: window)
@@ -341,6 +343,124 @@ extension SelfTest {
         palette.cancel()
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         window.makeFirstResponder(ktv)
+    }
+
+    /// The selection on "Theme: Tide" shows Tide, on "Appearance: Dark"
+    /// the dark look, on "Language: Rust" the document as Rust; moving
+    /// off or Escape puts back what was there, Return keeps it, and
+    /// nothing is written to the saved preferences on the way.
+    private static func palettePreviews(_ window: NSWindow, _ model: EditorModel) async {
+        let palette = model.palette, preview = ThemePreview.shared
+        let domain = Bundle.main.bundleIdentifier ?? ""
+        let saved = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
+        func given(_ key: String) -> String? { UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)[key] as? String }
+        let givenTheme = given(Prefs.colorThemeKey), setting = UserDefaults.standard.string(forKey: Prefs.colorThemeKey)
+        let chosen = Honey.theme, language = model.language
+        let others = Honey.Theme.all.filter { $0 != chosen }
+        func pause(_ seconds: Double) async { try? await Task.sleep(for: .milliseconds(Int(seconds * 1000))) }
+        /// Moves the selection to the row of that title, as the arrows do.
+        func go(to title: String) -> Bool {
+            guard let index = palette.rows.firstIndex(where: { $0.title == title }) else { return false }
+            palette.move(by: index - palette.selection)
+            return palette.selectedRow?.title == title
+        }
+        // (Without the crossfade a change shows at once; `themePreviewStage` has the fades.)
+        ThemeFade.selfTestMotion = (.off, false)
+        defer { ThemeFade.selfTestMotion = nil }
+
+        // Every choice of the three menus has its preview: a menu that is
+        // renamed must not lose it without a word.
+        palette.open(with: ">")
+        var kinds = (themes: 0, appearances: 0, languages: 0, lost: [String]())
+        for row in palette.rows {
+            guard case .command(let command) = row.action, [KiriCommands.themeMenu, KiriCommands.appearanceMenu, KiriCommands.languageMenu].contains(Array(command.path.dropLast())) else { continue }
+            switch PaletteController.preview(for: command) {
+            case .look(.theme): kinds.themes += 1
+            case .look(.appearance): kinds.appearances += 1
+            case .language: kinds.languages += 1
+            case nil: kinds.lost.append(row.title)
+            }
+        }
+        report(kinds.lost.isEmpty && kinds.themes == Honey.Theme.all.count && kinds.appearances == HoneyTheme.allCases.count && kinds.languages == Language.all.count,
+               "every Theme, Appearance and Language row has a preview (\(kinds.themes) themes, \(kinds.appearances) appearances, \(kinds.languages) languages; without one: \(kinds.lost))")
+
+        // The selection moving over the theme rows.
+        palette.text = ">theme:"
+        let listed = Honey.Theme.all.allSatisfy { theme in palette.rows.contains { $0.title == "Theme: \(theme.name)" } }
+        let onFirst = go(to: "Theme: \(others[0].name)") && Honey.theme == others[0]
+        let onSecond = go(to: "Theme: \(others[1].name)") && Honey.theme == others[1]
+        let unsaved = UserDefaults.standard.string(forKey: Prefs.colorThemeKey) == setting
+        palette.text = ">save"
+        let movedOff = Honey.theme == chosen && preview.theme == nil
+        palette.text = ">theme: \(others[2].name)"
+        let typedOnto = palette.selectedRow?.title == "Theme: \(others[2].name)" && Honey.theme == others[2]
+        palette.cancel()
+        report(listed && onFirst && onSecond && unsaved && movedOff && typedOnto && Honey.theme == chosen && preview.theme == nil,
+               "the selection on a theme's row shows that theme, moving off shows the chosen one again, and so does Escape (\(listed), \(onFirst), \(onSecond), \(unsaved), \(movedOff), \(typedOnto); now \(Honey.theme.name))")
+
+        // In a window that is not in front nothing is previewed.
+        palette.open(with: ">theme: \(others[0].name)")
+        let up = Honey.theme == others[0]
+        NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: window)
+        await pause(0.05)
+        let down = Honey.theme == chosen
+        NotificationCenter.default.post(name: NSWindow.didBecomeMainNotification, object: window)
+        await pause(0.05)
+        let upAgain = Honey.theme == others[0]
+        // And the find bar opening over the palette takes the preview down with it.
+        model.find.show()
+        report(up && down && upAgain && Honey.theme == chosen && !palette.isOpen,
+               "a preview comes down while the window is not in front, and when the find bar takes the palette's place (\(up), \(down), \(upAgain), \(Honey.theme.name))")
+        model.find.close()
+        FrontEditor.shared.selfTestMain(window)
+
+        // Light and dark, the same way.
+        let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        palette.open(with: ">appearance: \(dark ? "light" : "dark")")
+        let look = preview.appearance
+        palette.cancel()
+        report(look == (dark ? .light : .dark) && preview.appearance == nil,
+               "the selection on Appearance: \(dark ? "Light" : "Dark") shows it, and Escape puts the appearance back")
+
+        // Return keeps it: the setting, which a test launch keeps among
+        // its arguments. No menu item is chosen for it (that would write
+        // the saved preference).
+        palette.open(with: ">theme: \(others[1].name)")
+        palette.commit()
+        await settle(120)
+        let kept = Honey.theme == others[1] && given(Prefs.colorThemeKey) == others[1].id && !palette.isOpen
+        setArgument(Prefs.colorThemeKey, givenTheme)
+        preview.end()
+        ThemeController.apply()
+        report(kept && Honey.theme == chosen, "Return on a theme's row keeps the theme, as the setting (\(kept))")
+
+        // A language: this document, highlighted as that one, once the
+        // selection rests on the row.
+        palette.open(with: ">language: rust")
+        let rested = palette.selectedRow?.title == "Language: Rust" && model.language == language
+        await pause(PaletteController.languagePause + 0.1)
+        let shown = model.language == .rust
+        palette.cancel()
+        let restored = model.language == language
+        palette.open(with: ">language: rust")
+        palette.commit()
+        let keptLanguage = model.language == .rust && !palette.isOpen
+        await pause(PaletteController.languagePause + 0.1)
+        report(language == .swift && rested && shown && restored && keptLanguage && model.language == .rust,
+               "the selection resting on Language: Rust shows the document as Rust, Escape puts \(language.name) back, and Return keeps Rust (\(rested), \(shown), \(restored), \(keptLanguage))")
+        // A big file is not highlighted anew for a row passed: Return applies it.
+        PaletteController.languagePreviewLimit = 10
+        palette.open(with: ">language: \(language.name)")
+        await pause(PaletteController.languagePause + 0.1)
+        let notShown = palette.selectedRow?.title == "Language: \(language.name)" && model.language == .rust
+        palette.commit()
+        PaletteController.languagePreviewLimit = 1_000_000
+        report(notShown && model.language == language, "in a file over the limit a language is not previewed, and Return applies it (\(notShown), \(model.language.name))")
+        model.language = language
+
+        let after = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
+        report(NSDictionary(dictionary: saved).isEqual(to: after) && UserDefaults.standard.string(forKey: Prefs.colorThemeKey) == setting,
+               "the previews wrote no saved preference")
     }
 
     /// Files, tabs and recent files in the palette, in a folder window of
