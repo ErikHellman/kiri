@@ -149,6 +149,13 @@ extension SelfTest {
         report(followed && UserDefaults.standard.string(forKey: Prefs.editorFontKey) == other,
                "choosing \(other) changes the open window's text and line numbers to it at once, at the size they had (\(text.font?.fontName ?? "-") \(text.font?.pointSize ?? 0), gutter \(gutter.font.fontName))")
 
+        // Bold headings and strong text in the family's own bold.
+        let bold = EditorFont.font(other, size: 13, weight: .bold)
+        let systemBold = EditorFont.font("", size: 13, weight: .bold)
+        report(bold.familyName == other && NSFontManager.shared.traits(of: bold).contains(.boldFontMask)
+               && NSFontManager.shared.traits(of: systemBold).contains(.boldFontMask),
+               "bold text is in \(other)'s bold face, and in SF Mono's with SF Mono (\(bold.fontName), \(systemBold.fontName))")
+
         // A family that isn't installed (uninstalled since it was chosen).
         let missing = "Kiri Missing Mono \(getpid())"
         store.choose(missing)
