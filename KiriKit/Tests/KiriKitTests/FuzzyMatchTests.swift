@@ -110,6 +110,22 @@ import Testing
         #expect(FuzzyQuery("e").rank(candidates, limit: 10, isCancelled: { true }) != nil) // too few to be asked
     }
 
+    @Test func lettersPickedUpAcrossALongPathAreNotListed() {
+        // Every letter of "greeter" is in this path, in order, and none of them was meant.
+        let noise = FuzzyCandidate("/var/folders/zb/zp7xgnk57qg_z5jqct814fh00000gn/T/kiri-palette-test-96439/elsewhere.txt", isPath: true)
+        let meant = FuzzyCandidate("Sources/App/Greeter.swift", isPath: true)
+        let query = FuzzyQuery("greeter")
+        #expect(query.match(noise) != nil)
+        #expect(query.score(noise)! < query.weakest, "\(query.score(noise)!) of \(query.weakest)")
+        #expect(query.rank([noise, meant], limit: 10)!.map(\.index) == [1])
+        // What was meant stays, also when it is spread out: first letters, a path's parts.
+        for (typed, text) in [("tc", "Toggle Comment"), ("grsw", "Greeter.swift"), ("sa", "Close All"), ("srcmain", "src/very/long/path/of/many/folders/main.swift"),
+                              ("fnr", "Find and Replace…"), ("s", "Makefile.swift"), ("mkfl", "Makefile"), ("idx", "lib/index.js"), ("edscr", "App/Kiri/EditorScreen.swift")] {
+            let q = FuzzyQuery(typed)
+            #expect(q.rank([FuzzyCandidate(text, isPath: text.contains("/"))], limit: 1)!.count == 1, "\(typed) in \(text): \(q.score(FuzzyCandidate(text)) ?? -1) of \(q.weakest)")
+        }
+    }
+
     @Test func aScoreIsTheSameWithAndWithoutTheRanges() {
         let texts = ["App/Kiri/EditorScreen.swift", "Toggle Comment", "a/b/c/d/e/f/g.swift", "aaaaaaaaaaaaaaaa", "Sources/Tidepool/Greeter.swift"]
         for query in ["a", "es", "swift", "aaa", "gre", "abcdefg", "tc"] {

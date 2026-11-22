@@ -100,6 +100,13 @@ public struct FuzzyQuery: Sendable {
     /// Nothing to look for: everything matches, with nothing marked.
     public var isEmpty: Bool { units.isEmpty }
 
+    /// The least a match must score to be listed (`rank`): what its
+    /// letters alone are worth. Under that, the letters were picked up
+    /// one here and one there across a long path, with more lost to the
+    /// gaps than any start of a word gave back, and the row would only
+    /// be noise among the ones that were meant.
+    public var weakest: Int { Fuzzy.letter * units.count }
+
     /// The best way the query is found in `candidate`, or nil if its
     /// letters are not all there in order.
     public func match(_ candidate: FuzzyCandidate) -> FuzzyMatch? {
@@ -117,8 +124,9 @@ public struct FuzzyQuery: Sendable {
     }
 
     /// The candidates the query is found in, best first, at most `limit`
-    /// of them. Equal scores keep the shorter text first and then the
-    /// order they came in. With nothing typed: the first `limit`, as they came.
+    /// of them, without the matches too weak to mean anything (`weakest`).
+    /// Equal scores keep the shorter text first and then the order they
+    /// came in. With nothing typed: the first `limit`, as they came.
     ///
     /// - Parameter isCancelled: asked now and then; true gives up (nil).
     public func rank(_ candidates: [FuzzyCandidate], limit: Int,
@@ -134,10 +142,11 @@ public struct FuzzyQuery: Sendable {
         // matches are never sorted, only held against the last of these.
         var top: [(key: Int, index: Int)] = []
         top.reserveCapacity(limit + 1)
+        let floor = weakest
         for index in candidates.indices {
             if index & 0x3FF == 0x3FF, isCancelled() { return nil }
             guard mask & ~candidates[index].mask == 0,
-                  let score = work.score(self, in: candidates[index], tracing: false) else { continue }
+                  let score = work.score(self, in: candidates[index], tracing: false), score >= floor else { continue }
             // Score first, then the shorter text; earlier ones stay ahead of equals.
             let key = score << 16 | (0xFFFF - min(candidates[index].units.count, 0xFFFF))
             if top.count == limit {
