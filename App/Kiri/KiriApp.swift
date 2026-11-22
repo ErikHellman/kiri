@@ -152,8 +152,39 @@ final class KiriDocumentController: NSDocumentController {
     /// How long after an edit its recovery copy is written.
     static let recoveryDelay: TimeInterval = 5
 
+    /// Files that are open only to be looked at: shown in the folder
+    /// sidebar's preview tab and not kept (`SidebarOpen`). AppKit notes a
+    /// document as recent when it is added and again when it closes, and
+    /// neither is told whether a window was wanted; Open Recent (and the
+    /// command palette's recent files) would otherwise be a log of every
+    /// file glanced at. Such a file becomes recent when it is kept
+    /// (`PreviewTabs.keep`).
+    private var glanced: Set<URL> = []
+
+    /// `url` is about to open in the preview tab.
+    func glance(at url: URL) { glanced.insert(url.standardizedFileURL) }
+
+    /// The file at `url` is here to stay (kept, or opened by name): if it
+    /// was only being looked at, it is a recent document from now on.
+    func kept(_ url: URL?) {
+        guard !glanced.isEmpty, let url, glanced.remove(url.standardizedFileURL) != nil else { return }
+        noteNewRecentDocumentURL(url)
+    }
+
+    /// The same, for the document `window` shows. (Asked at every edit:
+    /// nothing is looked up while no file is only being looked at.)
+    func kept(in window: NSWindow) {
+        guard !glanced.isEmpty else { return }
+        kept(document(for: window)?.fileURL)
+    }
+
+    /// The file at `url` did not open after all.
+    func forgetGlance(at url: URL) { glanced.remove(url.standardizedFileURL) }
+
     override func noteNewRecentDocumentURL(_ url: URL) {
+        if glanced.contains(url.standardizedFileURL) { return }
         #if DEBUG || KIRI_SELFTEST
+        selfTestNoted.append(url.standardizedFileURL)
         // A test launch opens temporary files by the dozen: they stay out
         // of the person's Open Recent, which every copy of Kiri shares.
         if SelfTest.isTestLaunch { return }
@@ -162,13 +193,33 @@ final class KiriDocumentController: NSDocumentController {
         RecentDocuments.shared.refresh()
     }
 
+    #if DEBUG || KIRI_SELFTEST
+    /// What would have gone into Open Recent, in order: a test launch
+    /// leaves the real list alone and reads this instead.
+    private(set) var selfTestNoted: [URL] = []
+    #endif
+
+    /// A document that closes is noted once more (by AppKit, as it goes),
+    /// and one that was only looked at is forgotten after that.
+    override func removeDocument(_ document: NSDocument) {
+        let url = document.fileURL
+        super.removeDocument(document)
+        if let url, !glanced.isEmpty { glanced.remove(url.standardizedFileURL) }
+    }
+
     /// A file opened by name (⌘O, Open Recent, `kiri`, a drop) that is
     /// showing in a preview tab is there to stay. (The sidebar opens its
     /// files without a window first, and says itself what is kept.)
     override func openDocument(withContentsOf url: URL, display displayDocument: Bool,
                                completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
         super.openDocument(withContentsOf: url, display: displayDocument) { document, alreadyOpen, error in
-            if displayDocument, alreadyOpen, let document { MainActor.assumeIsolated { PreviewTabs.keep(document) } }
+            // (Asked for by name while it is still opening for the preview
+            // tab, it is no longer only being looked at.)
+            if displayDocument, let document {
+                MainActor.assumeIsolated {
+                    if alreadyOpen { PreviewTabs.keep(document) } else { (NSDocumentController.shared as? KiriDocumentController)?.kept(document.fileURL) }
+                }
+            }
             completionHandler(document, alreadyOpen, error)
         }
     }

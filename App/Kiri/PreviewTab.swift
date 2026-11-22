@@ -24,9 +24,18 @@ import KiriKit
         NotificationCenter.default.post(name: didChange, object: window)
     }
 
-    /// The preview stays: it is a tab like any other from here on.
+    /// The preview stays: it is a tab like any other from here on, and
+    /// its file a recent document (`KiriDocumentController.kept`).
     static func keep(_ window: NSWindow?) {
-        guard let window, windows.contains(window) else { return }
+        guard let window else { return }
+        unmark(window)
+        (NSDocumentController.shared as? KiriDocumentController)?.kept(in: window)
+    }
+
+    /// `window` is not the preview tab any more, whatever becomes of the
+    /// document it shows (another may be about to take its place).
+    static func unmark(_ window: NSWindow) {
+        guard windows.contains(window) else { return }
         windows.remove(window)
         NotificationCenter.default.post(name: didChange, object: window)
     }
@@ -103,15 +112,19 @@ import KiriKit
             finish(shown)
             return
         }
+        // A file that is only looked at is not a recent document yet.
+        let recents = NSDocumentController.shared as? KiriDocumentController
+        if !keep { recents?.glance(at: url) }
         // Without a window: where it shows is decided once it is read.
         NSDocumentController.shared.openDocument(withContentsOf: url, display: false) { document, alreadyOpen, error in
             MainActor.assumeIsolated {
                 if let error {
+                    recents?.forgetGlance(at: url)
                     _ = NSApp.presentError(error)
                     done?(nil)
                     return
                 }
-                guard let document = document as? KiriDocument else { done?(nil); return }
+                guard let document = document as? KiriDocument else { recents?.forgetGlance(at: url); done?(nil); return }
                 if let shown = Editors.window(for: document) {
                     finish(shown)
                     return
@@ -131,13 +144,15 @@ import KiriKit
                 if let tab = reusableTab(for: window) {
                     // Said first, so the strip shows the new title and
                     // whether it slants in one step.
+                    // (The document that is there now is on its way out:
+                    // the mark alone changes, and nothing is kept.)
                     let was = PreviewTabs.isPreview(tab)
-                    if keep { PreviewTabs.keep(tab) } else { PreviewTabs.mark(tab) }
+                    if keep { PreviewTabs.unmark(tab) } else { PreviewTabs.mark(tab) }
                     if DocumentWindow.show(document, in: tab) {
                         finish(tab)
                         return
                     }
-                    if was { PreviewTabs.mark(tab) } else { PreviewTabs.keep(tab) }
+                    if was { PreviewTabs.mark(tab) } else { PreviewTabs.unmark(tab) }
                 }
                 // A tab of its own, after the one it was picked in
                 // (`WindowTabs.attach` puts it there and brings it forward).
@@ -150,7 +165,7 @@ import KiriKit
                     done?(nil)
                     return
                 }
-                if !keep { PreviewTabs.mark(shown) }
+                if keep { recents?.kept(url) } else { PreviewTabs.mark(shown) }
                 document.showWindows()
                 forgetPlacement()
                 place(in: shown)

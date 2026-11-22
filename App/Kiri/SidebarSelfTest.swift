@@ -113,6 +113,13 @@ extension SelfTest {
         }
         guard let tabs = WindowTabs.model(for: first), let ktv = findTextView(in: first.contentView) as? KiriTextView,
               let controller = ktv.delegate as? EditorController else { report(false, "the folder window's editor and tabs"); return }
+        /// The folder's files that would be in Open Recent by now (a test
+        /// launch leaves the real list alone and keeps its own record).
+        let notedBefore = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.count ?? 0
+        func recent() -> Set<String> {
+            Set(((NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.dropFirst(notedBefore) ?? [])
+                .filter { $0.path.hasPrefix(f.root.path) }.map(\.lastPathComponent))
+        }
         let untitled = f.document(first)
         let shownBefore = tabs.shown.count
 
@@ -141,6 +148,8 @@ extension SelfTest {
         let again = await f.open("a.swift", from: first)
         report(again === first && ktv.string == f.onDisk("a.swift") && f.openDocuments().count == 1 && isPreview(first),
                "a file clicked a second time shows again (\(f.strip(first)))")
+        // Looking is not opening: Open Recent is not a log of every file glanced at.
+        report(recent().isEmpty, "files only looked at in the preview tab, and the ones it left behind, are not in Open Recent (\(recent().sorted()))")
 
         // The window's bars outlive the file: find searches the file that
         // shows now, and Go to Line, which was a line of the other, closes.
@@ -172,6 +181,7 @@ extension SelfTest {
         await settle()
         let dirty = await f.wait { tabs.items.first?.dirty == true && tabs.items.first?.preview == false }
         report(keptAtOnce && dirty, "typing into a preview keeps it: a tab like any other, with its dot (\(f.strip(first)))")
+        report(recent() == ["a.swift"], "and a recent document from then on, the only one so far (\(recent().sorted()))")
         FrontEditor.shared.selfTestMain(first)
         if let main = NSApp.mainMenu, let menu = main.item(withTitle: "File")?.submenu {
             updateMenu(main)
@@ -227,6 +237,10 @@ extension SelfTest {
         // (here in the sidebar of the new tab the preview is).
         let seventh = await f.open("g.txt", from: first, keyboard: .sidebar)
         let inSidebar = await f.wait { seventh.flatMap { FrontEditor.shared.editor(in: $0) }?.sidebarHasFocus == true }
+        // Kept one way or another, each is in Open Recent; the files
+        // that were only looked at on the way (b.md, g.txt) are not.
+        report(recent() == ["a.swift", "c.json", "d.txt", "e.py", "f.rs"],
+               "a file is a recent document once it is kept: by an edit, a save, a double-click on its tab or its row, or Return (\(recent().sorted()))")
         report(seventh != nil && isPreview(seventh) && inSidebar && f.group(first).count == 6,
                "Space on a row shows the file in a preview tab and leaves the keyboard in the sidebar (\(f.strip(first)))")
         report(f.openDocuments().count == f.group(first).count, "every open document of the folder has its tab (\(f.openDocuments().count) documents, \(f.group(first).count) tabs)")
@@ -266,6 +280,8 @@ extension SelfTest {
         let keptByName = await f.wait { byName.map { !PreviewTabs.isPreview($0) && WindowTabs.model(for: $0)?.tabs.contains { $0.title == "h.txt" && !$0.preview } == true } ?? false }
         report(wasPreviewed && keptByName && f.group(first).count == tabsThen && byName?.tabGroup?.selectedWindow === byName,
                "a file in the preview tab that is opened by name stays: the same tab, no longer a preview (\(f.strip(first)))")
+        report(recent().contains("h.txt") && recent().contains("i.txt") && !recent().contains("g.txt") && !recent().contains("b.md"),
+               "and is a recent document, as the file a double-click opened is; g.txt and b.md, only looked at, are not (\(recent().sorted()))")
     }
 
     /// The marks on rows: which files are open in a tab, which is the
