@@ -168,6 +168,10 @@ struct PaletteRow: Equatable, Identifiable {
     /// Tide, "Appearance: Dark" the dark look, "Language: Rust" this
     /// document highlighted as Rust. Moving off the row or Escape puts
     /// back what was there, and Return keeps it.
+    ///
+    /// Only a selection the person has moved there with the arrows shows
+    /// anything: the first result of what is being typed does not, or
+    /// "gr" on its way to "greeter" would turn every window Graphite.
     enum Preview: Equatable {
         /// In every window, held in memory (`ThemePreview`): the setting
         /// is written only when it is kept.
@@ -201,12 +205,15 @@ struct PaletteRow: Equatable, Identifiable {
     @ObservationIgnored private var languageWork: DispatchWorkItem?
     @ObservationIgnored private var mainObservers: [NSObjectProtocol] = []
 
+    /// The arrows have moved through this list (since it was last typed).
+    @ObservationIgnored private var moved = false
+
     /// The selected row's preview shows, and one the selection has left
     /// is taken down. (While the window is not the one in front, nothing
     /// is previewed: a theme is every window's.)
     private func updatePreview() {
         var wanted: Preview?
-        if isOpen, !inBackground, case .command(let command)? = selectedRow?.action { wanted = Self.preview(for: command) }
+        if isOpen, moved, !inBackground, case .command(let command)? = selectedRow?.action { wanted = Self.preview(for: command) }
         if case .language = wanted, (controller?.textView?.textStorage?.length ?? 0) > Self.languagePreviewLimit { wanted = nil }
         show(wanted)
     }
@@ -357,6 +364,7 @@ struct PaletteRow: Equatable, Identifiable {
         // theme or a language that was only being looked at comes down.
         model?.goToLine.cancel(focusEditor: false)
         isOpen = false
+        moved = false
         show(nil)
         mainObservers.forEach(NotificationCenter.default.removeObserver)
         mainObservers = []
@@ -424,17 +432,18 @@ struct PaletteRow: Equatable, Identifiable {
 
     // MARK: The list
 
-    /// ↑ and ↓: the selection moves and stops at the ends.
+    /// ↑ and ↓: the selection moves and stops at the ends. (From here
+    /// on the selected row shows what it would do, if it has a preview:
+    /// also the first row, with ↑ pressed on it.)
     func move(by step: Int) {
         guard !rows.isEmpty else { return }
-        select(min(max(selection + step, 0), rows.count - 1))
-    }
-
-    func select(_ index: Int) {
-        guard rows.indices.contains(index), index != selection else { return }
-        selection = index
+        moved = true
+        let index = min(max(selection + step, 0), rows.count - 1)
+        if index != selection {
+            selection = index
+            announce(rowsChanged: false)
+        }
         updatePreview()
-        announce(rowsChanged: false)
     }
 
     var selectedRow: PaletteRow? { rows.indices.contains(selection) ? rows[selection] : nil }
@@ -502,6 +511,7 @@ struct PaletteRow: Equatable, Identifiable {
     /// The field's text changed: a line is shown (`:`), or the list filled.
     private func textChanged() {
         guard isOpen, let goToLine = model?.goToLine else { return }
+        moved = false
         if mode == .line {
             // From the first colon on, where the editor was is kept to go back to.
             goToLine.begin()
@@ -522,7 +532,8 @@ struct PaletteRow: Equatable, Identifiable {
     /// best first, a file or a tab ahead of a command that matches as well.
     private func search(keepingSelection: Bool = false) {
         guard isOpen else { return }
-        let selected = keepingSelection ? selectedRow?.id : nil
+        // (A selection nobody moved stays on the first row, which may be a new one.)
+        let selected = keepingSelection && moved ? selectedRow?.id : nil
         let fuzzy = FuzzyQuery(query)
         var found: [PaletteRow] = []
         if fuzzy.isEmpty {

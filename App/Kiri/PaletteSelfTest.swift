@@ -384,22 +384,28 @@ extension SelfTest {
         report(kinds.lost.isEmpty && kinds.themes == Honey.Theme.all.count && kinds.appearances == HoneyTheme.allCases.count && kinds.languages == Language.all.count,
                "every Theme, Appearance and Language row has a preview (\(kinds.themes) themes, \(kinds.appearances) appearances, \(kinds.languages) languages; without one: \(kinds.lost))")
 
-        // The selection moving over the theme rows.
+        // The selection moving over the theme rows. What is only typed
+        // shows nothing: the first result is not somewhere the person went.
         palette.text = ">theme:"
         let listed = Honey.Theme.all.allSatisfy { theme in palette.rows.contains { $0.title == "Theme: \(theme.name)" } }
+        let typedOnly = Honey.theme == chosen && preview.theme == nil
         let onFirst = go(to: "Theme: \(others[0].name)") && Honey.theme == others[0]
         let onSecond = go(to: "Theme: \(others[1].name)") && Honey.theme == others[1]
         let unsaved = UserDefaults.standard.string(forKey: Prefs.colorThemeKey) == setting
         palette.text = ">save"
         let movedOff = Honey.theme == chosen && preview.theme == nil
         palette.text = ">theme: \(others[2].name)"
-        let typedOnto = palette.selectedRow?.title == "Theme: \(others[2].name)" && Honey.theme == others[2]
+        let typedOnto = palette.selectedRow?.title == "Theme: \(others[2].name)" && Honey.theme == chosen
+        // ↑ on the first row: the arrows are in use, and it shows.
+        palette.move(by: -1)
+        let arrowed = palette.selection == 0 && Honey.theme == others[2]
         palette.cancel()
-        report(listed && onFirst && onSecond && unsaved && movedOff && typedOnto && Honey.theme == chosen && preview.theme == nil,
-               "the selection on a theme's row shows that theme, moving off shows the chosen one again, and so does Escape (\(listed), \(onFirst), \(onSecond), \(unsaved), \(movedOff), \(typedOnto); now \(Honey.theme.name))")
+        report(listed && typedOnly && onFirst && onSecond && unsaved && movedOff && typedOnto && arrowed && Honey.theme == chosen && preview.theme == nil,
+               "the arrows on a theme's row show that theme (typing alone shows none), moving off shows the chosen one again, and so does Escape (\(listed), \(typedOnly), \(onFirst), \(onSecond), \(unsaved), \(movedOff), \(typedOnto), \(arrowed); now \(Honey.theme.name))")
 
         // In a window that is not in front nothing is previewed.
         palette.open(with: ">theme: \(others[0].name)")
+        palette.move(by: -1)
         let up = Honey.theme == others[0]
         NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: window)
         await pause(0.05)
@@ -417,6 +423,7 @@ extension SelfTest {
         // Light and dark, the same way.
         let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         palette.open(with: ">appearance: \(dark ? "light" : "dark")")
+        palette.move(by: -1)
         let look = preview.appearance
         palette.cancel()
         report(look == (dark ? .light : .dark) && preview.appearance == nil,
@@ -437,6 +444,7 @@ extension SelfTest {
         // A language: this document, highlighted as that one, once the
         // selection rests on the row.
         palette.open(with: ">language: rust")
+        palette.move(by: -1)
         let rested = palette.selectedRow?.title == "Language: Rust" && model.language == language
         await pause(PaletteController.languagePause + 0.1)
         let shown = model.language == .rust
@@ -451,6 +459,7 @@ extension SelfTest {
         // A big file is not highlighted anew for a row passed: Return applies it.
         PaletteController.languagePreviewLimit = 10
         palette.open(with: ">language: \(language.name)")
+        palette.move(by: -1)
         await pause(PaletteController.languagePause + 0.1)
         let notShown = palette.selectedRow?.title == "Language: \(language.name)" && model.language == .rust
         palette.commit()
@@ -527,12 +536,15 @@ extension SelfTest {
         func isFile(_ row: PaletteRow, _ path: String) -> Bool { row.action == .file(url(path)) }
 
         // Typing never waits for the folder: the list is there at once,
-        // and the files join it when they have been read.
-        palette.open()
-        let atOnce = (palette.isReadingFolder, palette.rows.count, session.index.paths.count)
+        // and the files join it when they have been read. A selection
+        // nobody moved is then on the first row, the best match.
+        palette.open(with: "e")
+        let atOnce = (palette.isReadingFolder, palette.rows.count, session.index.paths.count, palette.selectedRow?.id)
         let indexed = await wait { session.index.paths.count == wanted.count && !palette.isReadingFolder }
-        report(atOnce.0 && atOnce.1 > 40 && atOnce.2 == 0 && indexed,
-               "the palette opens at once, the folder's files still being read (\(atOnce.1) rows, \(atOnce.2) files), and they are in soon after (\(session.index.paths.count))")
+        let best = palette.selectedRow
+        report(atOnce.0 && atOnce.1 > 5 && atOnce.2 == 0 && indexed && palette.selection == 0 && best?.id != atOnce.3
+               && best.map { row in if case .file = row.action { true } else { false } } == true,
+               "the palette lists at once, the folder's files still being read (\(atOnce.1) rows, \(atOnce.2) files); they are in soon after (\(session.index.paths.count)), the selection on the new first row (\(best?.title ?? "none"))")
 
         // A file anywhere under the folder, by a few letters.
         palette.text = "hon"
