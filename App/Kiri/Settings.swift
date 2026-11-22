@@ -11,11 +11,6 @@ enum Prefs {
     static let textScaleKey = "textScale"
     static let wrapLinesKey = "wrapLines"
     static let typingAnimationsKey = "typingAnimations"
-    /// Letter fade-in: off, and not in Settings yet. TextKit 2 doesn't redraw
-    /// the fading letter's fragment every frame (the behaviour self-test
-    /// fails), so a letter could stay faint. `defaults write se.hellsoft.kiri
-    /// letterFade -bool YES` turns it on for development.
-    static let letterFadeKey = "letterFade"
 
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
@@ -34,7 +29,6 @@ struct SettingsView: View {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
-    @AppStorage(Prefs.letterFadeKey) private var letterFade = false
     @State private var commandLineTool = CommandLineTool.shared
 
     var body: some View {

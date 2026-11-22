@@ -680,7 +680,6 @@ import os
         let untouched = FileState(url)
         let expected = String(decoding: before, as: UTF8.self).contains("\r\n") ? "// added\r\n" : "// added\n"
         tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
-        let fadingDrawsBefore = FadingLayoutFragment.animatedDraws
         // Type like a person: key events through the window.
         tv.window?.makeFirstResponder(tv)
         for ch in "// added\r" {
@@ -695,15 +694,6 @@ import os
         }
         print("SELFTEST info undo=\(String(describing: tv.undoManager)) docUndo=\(String(describing: doc.undoManager)) canUndo=\(tv.undoManager?.canUndo ?? false)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        do {
-            // Typing animations on: each letter's fragment redraws through its fade.
-            if CGDisplayIsAsleep(CGMainDisplayID()) != 0 {
-                print("SELFTEST SKIP typed letters animate (display asleep: no display-link frames)")
-            } else if (tv as? KiriTextView)?.typingFade.mode ?? .none != .none {
-                report(FadingLayoutFragment.animatedDraws - fadingDrawsBefore >= 3,
-                       "typed letters animate (\(FadingLayoutFragment.animatedDraws - fadingDrawsBefore) fading draws)")
-            }
-        }
         report(doc.isDocumentEdited && tv.window?.isDocumentEdited == true, "dirty after typing (edited=\(doc.isDocumentEdited) unautosaved=\(doc.hasUnautosavedChanges) windowEdited=\(tv.window?.isDocumentEdited ?? false) level=\(tv.undoManager?.groupingLevel ?? -1))")
         noWriteBeforeSave(doc, url, untouched: untouched, saved: before + Data(expected.utf8)) {
         doc.save(nil)
@@ -970,7 +960,7 @@ import os
     }
 
     /// Step 4/5 behaviour that otherwise was only looked at: focus at launch,
-    /// the letter fade's redraw, Go to Line, wrapping, Save, tabs.
+    /// Go to Line, wrapping, Save, tabs.
     private static func behavior(_ initial: NSTextView) {
         let tv = (NSApp.windows.filter(\.isVisible).compactMap { findTextView(in: $0.contentView) }.first ?? initial)
         guard let ktv = tv as? KiriTextView, let controller = ktv.delegate as? EditorController,
@@ -994,30 +984,13 @@ import os
             report(abs(topGap - 52) <= 1, "editor panel starts 52 pt from the top (\(topGap))")
         }
 
-        // Letter fade: each tick must redraw the letter's fragment.
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
-        ktv.insertText("z", replacementRange: ktv.selectedRange())
-        ktv.displayIfNeeded()
-        let d0 = FadingLayoutFragment.animatedDraws
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            ktv.typingFade.tick(); ktv.layoutSubtreeIfNeeded(); ktv.textLayoutManager?.textViewportLayoutController.layoutViewport(); ktv.displayIfNeeded(); CATransaction.flush()
-            let d1 = FadingLayoutFragment.animatedDraws
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                ktv.typingFade.tick(); ktv.layoutSubtreeIfNeeded(); ktv.textLayoutManager?.textViewportLayoutController.layoutViewport(); ktv.displayIfNeeded(); CATransaction.flush()
-                let d2 = FadingLayoutFragment.animatedDraws
-                if ktv.typingFade.mode == .none { print("SELFTEST SKIP letter fade (off; -letterFade YES to test)") } else {
-                report(d1 > d0 && d2 > d1, "letter fade redraws on each tick (\(d0) → \(d1) → \(d2)), mode \(ktv.typingFade.mode), items \(ktv.typingFade.items.map(\.range))")
-                }
-                ktv.undoManager?.undo()
-
-                Task { @MainActor in
-                    await findStage(ktv, controller)
-                    await goToLineStage(ktv, controller)
-                    await statusBarStage(ktv, controller)
-                    transformations(ktv)
-                    afterBars(ktv, controller, window)
-                }
-            }
+        Task { @MainActor in
+            await findStage(ktv, controller)
+            await goToLineStage(ktv, controller)
+            await statusBarStage(ktv, controller)
+            transformations(ktv)
+            afterBars(ktv, controller, window)
         }
     }
 

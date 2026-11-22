@@ -55,7 +55,6 @@ struct EditorView: NSViewRepresentable {
     let isUntitled: Bool
     let wrapLines: Bool
     let animation: EditorAnimation
-    let letterFade: Bool
 
     func makeCoordinator() -> EditorController { EditorController(model: model) }
 
@@ -69,7 +68,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.setUntitled(isUntitled)
         context.coordinator.load(document)
         context.coordinator.setLanguage(language)
-        view.textView.setAnimation(animation, letterFade: letterFade)
+        view.textView.setAnimation(animation)
         LaunchTimer.editorShown()
         #if DEBUG || KIRI_SELFTEST
         SelfTest.run(textView: view.textView)
@@ -85,15 +84,14 @@ struct EditorView: NSViewRepresentable {
         c.setFontScale(fontScale)
         c.setLanguage(language)
         c.setWrap(wrapLines)
-        view.textView.setAnimation(animation, letterFade: letterFade)
+        view.textView.setAnimation(animation)
         c.setCrossfade(animation != .none)
     }
 }
 
 /// Owns the text view's behaviour: loading text, tracking lines, the caret
 /// position and the font.
-@MainActor final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate,
-    NSTextLayoutManagerDelegate {
+@MainActor final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     let model: EditorModel
     private(set) weak var document: KiriDocument?
     private weak var container: EditorContainerView?
@@ -126,8 +124,6 @@ struct EditorView: NSViewRepresentable {
         container = view
         view.textView.delegate = self
         view.textView.textStorage?.delegate = self
-        assert(view.textView.textLayoutManager?.delegate == nil, "the text view already has a layout delegate")
-        view.textView.textLayoutManager?.delegate = self
         highlighter = SyntaxHighlighter(textView: view.textView)
         view.onScroll = { [weak self, weak view] in
             self?.highlighter?.visibleRangeChanged()
@@ -229,35 +225,9 @@ struct EditorView: NSViewRepresentable {
             container?.gutter.lineIndex = lineIndex
             container?.updateGutterWidth()
             if !loading { documentEdited(editedRange) }
-            textView?.typingFade.textEdited(range: editedRange, delta: delta)
             highlighter?.lastEdit = editedRange
             model.find.textEdited(old: old, newLength: editedRange.length)
         }
-    }
-
-    // MARK: Layout fragments
-
-    nonisolated func textLayoutManager(_ textLayoutManager: NSTextLayoutManager,
-                                       textLayoutFragmentFor location: any NSTextLocation,
-                                       in textElement: NSTextElement) -> NSTextLayoutFragment {
-        nonisolated(unsafe) let fragment = FadingLayoutFragment(textElement: textElement, range: textElement.elementRange)
-        nonisolated(unsafe) let tlm = textLayoutManager
-        nonisolated(unsafe) let element = textElement
-        MainActor.assumeIsolated {
-            fragment.fade = textView?.typingFade.store
-            if let start = element.elementRange?.location {
-                // Measured from the caret (animating letters are next to it),
-                // not from the start of a possibly huge document.
-                fragment.offsetProvider = { [weak tlm, weak textView] in
-                    MainActor.assumeIsolated {
-                        guard let tlm, let textView,
-                              let caret = tlm.textSelections.first?.textRanges.first?.location else { return 0 }
-                        return textView.selectedRange().location + tlm.offset(from: caret, to: start)
-                    }
-                }
-            }
-        }
-        return fragment
     }
 
     func textDidChange(_ notification: Notification) {

@@ -249,8 +249,8 @@ public enum HoneyTaskState: Sendable, Equatable {
     }
 }
 
-/// How the editor animates typing (caret glide, glyph fade-in, line and
-/// bracket highlights), resolved from the motion setting, the OS Reduce
+/// How the editor animates typing (caret glide, line and bracket
+/// highlights, the syntax crossfade), resolved from the motion setting, the OS Reduce
 /// Motion switch and the Typing animations toggle.
 public enum EditorAnimation: Sendable, Equatable {
     /// Movement and fades.

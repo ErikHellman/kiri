@@ -16,7 +16,6 @@ struct EditorScreen: View {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
-    @AppStorage(Prefs.letterFadeKey) private var letterFade = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -76,8 +75,7 @@ struct EditorScreen: View {
         return EditorView(document: document, model: model, fontScale: textScale, language: model.language,
                    isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                      typingAnimations: typingAnimations),
-                   letterFade: letterFade)
+                                                      typingAnimations: typingAnimations))
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it.
             .overlay {

@@ -112,13 +112,12 @@ Signature components in Kiri:
 
 Typing animations in the editor (Settings ▸ Typing animations, on by default), all outside text layout so typing and scrolling stay as fast as without them:
 
-- **Letters** fade in over 160 ms and settle 3 pt up into place (custom `NSTextLayoutFragment` drawing, state keyed by offset).
 - **Caret**: a 2 pt honey (`caret`) bar with a soft `focus` glow glides 90 ms between positions and breathes (opacity 1 → 0.25, 1.1 s cycle) instead of blinking.
 - **Current line** eases 160 ms to the caret's new line.
 - **Matching bracket** pulses once (`accent-soft` fill, `accent` outline, 0.5 s) when the caret lands next to a bracket.
 - **Syntax colors** crossfade for 120 ms when a recolor changes visible colors, so they don't flicker.
 
-`EditorAnimation.resolve` maps the settings to `full`, `fades` (Reduce Motion / Motion: Reduced: fades only, nothing glides, settles or scales) or `none` (Motion: Off or the toggle off: the system caret, no layers).
+`EditorAnimation.resolve` maps the settings to `full`, `fades` (Reduce Motion / Motion: Reduced: fades only, nothing glides or scales) or `none` (Motion: Off or the toggle off: the system caret, no layers).
 
 Motion levels (`HoneyMotionLevel`): `system` (default, follows reduce motion), `full`, `reduced` (no movement or overshoot, quick cross-fades), `off` (no animation, set at the root by `honeyRoot`).
 
