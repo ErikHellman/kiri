@@ -65,7 +65,7 @@ struct SettingsView: View {
                     Text("Colors for the window, the text and the Dock icon.")
                         .font(.honey(.caption)).foregroundStyle(Color.honeyMuted)
                 }
-                ThemePicker(selection: $colorTheme)
+                ThemePicker(chosen: colorTheme)
             }
             row("Appearance", detail: "Follow macOS, or always light or dark.") {
                 HoneySegmentedPicker(selection: $theme).accessibilityLabel("Appearance")
@@ -136,15 +136,112 @@ struct SettingsView: View {
     }
 }
 
-/// The color themes as small previews of the editor, in their own colors.
+
+/// The color themes as swatches, each in its own colors (`ThemeSwatchArt`).
+/// The pointer on a swatch, or the keyboard moved onto one, shows that
+/// theme in every window (`SwatchPreview`); a click, or Space, chooses it.
 struct ThemePicker: View {
-    @Binding var selection: String
+    /// The theme in the settings.
+    let chosen: String
+    /// The theme just clicked. A test launch keeps its choice among the
+    /// launch's arguments, which nothing announces, so the ring follows
+    /// the click from here until the setting says something else.
+    @State private var clicked: String?
+    @FocusState private var focus: String?
+
+    private var selection: String { clicked ?? chosen }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             ForEach(Honey.Theme.all) { theme in
-                ThemeSwatch(theme: theme, selected: theme.id == selection) { selection = theme.id }
+                ThemeSwatch(theme: theme, selected: theme.id == selection, focused: focus == theme.id) {
+                    SwatchPreview.choose(theme)
+                    clicked = theme.id
+                } hover: { inside in
+                    SwatchPreview.pointer(inside ? theme : nil, leaving: theme)
+                }
+                .focused($focus, equals: theme.id)
             }
+        }
+        // ← and → go from swatch to swatch (with keyboard navigation on,
+        // Tab reaches the first one).
+        .onMoveCommand { direction in
+            guard let focus, let i = Honey.Theme.all.firstIndex(where: { $0.id == focus }) else { return }
+            let step = direction == .left ? -1 : direction == .right ? 1 : 0
+            let j = min(max(i + step, 0), Honey.Theme.all.count - 1)
+            if j != i { self.focus = Honey.Theme.all[j].id }
+        }
+        .onChange(of: focus) { _, id in
+            SwatchPreview.keyboard(id.map(Honey.Theme.named), byKey: SwatchPreview.keyMovedFocus)
+        }
+        .onChange(of: chosen) { clicked = nil }
+        // The window going to the back, or closing, puts the chosen theme
+        // back (a pointer that was on a swatch never says it left).
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            if (note.object as? NSWindow)?.identifier?.rawValue == SettingsView.windowID { SwatchPreview.keyboard(nil, byKey: false) }
+        }
+        .onDisappear { SwatchPreview.reset() }
+    }
+}
+
+/// What the theme swatches show in the windows: the theme under the
+/// pointer, or else the one the keyboard is on, through `ThemePreview`
+/// (held in memory: nothing is written); with neither, the chosen theme
+/// again. Choosing goes through `ThemePreview.keep`, as Return in the
+/// command palette does, so a test launch writes no saved preference.
+@MainActor enum SwatchPreview {
+    private(set) static var pointer: Honey.Theme?
+    private(set) static var keyboard: Honey.Theme?
+    /// A preview of the swatches' is up: ending it must not end one that
+    /// the command palette began.
+    private static var showing = false
+
+    /// The pointer came onto a swatch (`theme`), or left `leaving`. (The
+    /// next swatch can say it was entered before the last says it was left.)
+    static func pointer(_ theme: Honey.Theme?, leaving: Honey.Theme? = nil) {
+        if theme == nil, let leaving, pointer != leaving { return }
+        pointer = theme
+        update()
+    }
+
+    /// The keyboard came onto a swatch, or left them. Only a key that moved
+    /// it there shows the theme: a window that opens with the keyboard on
+    /// a swatch, or a click that leaves it there, shows nothing.
+    static func keyboard(_ theme: Honey.Theme?, byKey: Bool) {
+        if theme != nil, !byKey { return }
+        keyboard = theme
+        update()
+    }
+
+    /// The event being handled is a key pressed in the Settings window (Tab,
+    /// an arrow): not the ⌘, that opened it, which another window got.
+    static var keyMovedFocus: Bool {
+        guard let event = NSApp.currentEvent, event.type == .keyDown else { return false }
+        return event.window?.identifier?.rawValue == SettingsView.windowID
+    }
+
+    /// A click (or Space, or VoiceOver's press) on a swatch: that theme is
+    /// the setting from now on.
+    static func choose(_ theme: Honey.Theme) {
+        ThemePreview.shared.show(.theme(theme))
+        ThemePreview.shared.keep()
+        showing = false
+    }
+
+    /// Nothing is on a swatch any more.
+    static func reset() {
+        pointer = nil
+        keyboard = nil
+        update()
+    }
+
+    private static func update() {
+        if let theme = pointer ?? keyboard {
+            ThemePreview.shared.show(.theme(theme))
+            showing = true
+        } else if showing {
+            ThemePreview.shared.end()
+            showing = false
         }
     }
 }
@@ -152,22 +249,27 @@ struct ThemePicker: View {
 private struct ThemeSwatch: View {
     let theme: Honey.Theme
     let selected: Bool
+    /// The keyboard is on it.
+    let focused: Bool
     let action: () -> Void
+    let hover: (Bool) -> Void
+    @State private var hovering = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
 
-    private func c(_ t: Honey.Token) -> Color { Color(nsColor: .honeyFixed(theme[t])) }
-
     var body: some View {
+        let lifted = hovering || focused
         Button(action: action) {
-            VStack(spacing: 6) {
-                preview
-                    .frame(width: 80, height: 58)
+            VStack(spacing: 7) {
+                ThemeSwatchArt(theme: theme)
+                    .frame(height: 60)
                     .overlay {
-                        RoundedRectangle(cornerRadius: Honey.Radius.control.value + 3, style: .continuous)
-                            .strokeBorder(selected ? Color.honeyFocus : Color.clear, lineWidth: 2.5)
+                        RoundedRectangle(cornerRadius: Honey.Radius.control.value + 4, style: .continuous)
+                            .strokeBorder(selected ? Color.honeyFocus : lifted ? Color.honeyMuted.opacity(0.6) : .clear,
+                                          lineWidth: selected ? 2.5 : 2)
                             .padding(-4)
                     }
+                    .scaleEffect(lifted ? 1.04 : 1)
                 Text(theme.name)
                     .font(.honey(.caption, weight: selected ? .heavy : .semibold))
                     .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
@@ -175,37 +277,74 @@ private struct ThemeSwatch: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Its own rings say where the keyboard is (the system's would sit
+        // on top of the selected one).
+        .focusEffectDisabled()
+        .onHover { inside in
+            hovering = inside
+            hover(inside)
+        }
         .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: selected)
+        .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: lifted)
         .accessibilityLabel(theme.name)
         .accessibilityHint(theme.blurb)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .help(theme.blurb)
     }
+}
 
-    /// A tiny window: canvas, the accent Save pill and a page of code.
-    private var preview: some View {
+/// A theme at a glance, in its own colors: its accent at full strength
+/// over its canvas, and a corner of the editor's paper with a few lines of
+/// code in its syntax colors. The light version is above the diagonal and
+/// the dark one below it, so one swatch shows both.
+struct ThemeSwatchArt: View {
+    let theme: Honey.Theme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
         let shape = RoundedRectangle(cornerRadius: Honey.Radius.control.value, style: .continuous)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 3) {
-                Capsule().fill(c(Honey.accentSoft)).frame(width: 22, height: 7)
-                Spacer(minLength: 0)
-                Capsule().fill(c(Honey.accent)).frame(width: 14, height: 7)
-            }
-            VStack(alignment: .leading, spacing: 3.5) {
-                HStack(spacing: 3) { bar(Honey.synKeyword, 12); bar(Honey.synType, 18) }
-                HStack(spacing: 3) { bar(Honey.synFunction, 16); bar(Honey.synString, 20) }
-                HStack(spacing: 3) { bar(Honey.synComment, 26) }
-            }
-            .padding(6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(c(Honey.surface), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        ZStack {
+            version(dark: false)
+            version(dark: true).clipShape(BelowDiagonal())
         }
-        .padding(5)
-        .background(c(Honey.canvas), in: shape)
-        .overlay(shape.strokeBorder(c(Honey.line), lineWidth: 1))
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Color.honeyFg.opacity(0.12), lineWidth: 1))
+        .accessibilityHidden(true)
     }
 
-    private func bar(_ t: Honey.Token, _ w: CGFloat) -> some View {
-        Capsule().fill(c(t)).frame(width: w, height: 4)
+    private func version(dark: Bool) -> some View {
+        let high = contrast == .increased
+        func c(_ t: Honey.Token) -> Color { Color(nsColor: NSColor(honeyRGB: theme[t].value(dark: dark, highContrast: high))) }
+        func bar(_ t: Honey.Token, _ width: CGFloat) -> some View { Capsule().fill(c(t)).frame(width: width, height: 4) }
+        return GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            ZStack(alignment: .topLeading) {
+                c(Honey.canvas)
+                c(Honey.accent).frame(height: h * 0.5)
+                VStack(alignment: .leading, spacing: 4.5) {
+                    HStack(spacing: 3) { bar(Honey.synKeyword, 10); bar(Honey.synType, 17) }
+                    HStack(spacing: 3) { bar(Honey.synFunction, 15); bar(Honey.synString, 20) }
+                    HStack(spacing: 3) { bar(Honey.synComment, 24) }
+                }
+                .padding(.leading, 7)
+                .padding(.top, 7)
+                .frame(width: w * 0.82, height: h * 0.64, alignment: .topLeading)
+                .background(c(Honey.surface), in: UnevenRoundedRectangle(topLeadingRadius: 6, style: .continuous))
+                .offset(x: w * 0.18, y: h * 0.36)
+            }
+        }
+    }
+}
+
+/// The half of a rectangle below the line from its bottom-left corner to
+/// its top-right one.
+private struct BelowDiagonal: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { p in
+            p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.closeSubpath()
+        }
     }
 }

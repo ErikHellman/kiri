@@ -17,6 +17,7 @@ import os
     private static var renderedFind = false
     private static var renderedChrome = false
     private static var renderedSave = false
+    private static var renderedSettings = false
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "KiriSelfTest") }
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
@@ -39,6 +40,23 @@ import os
                     await sidebarStage(window)
                     reportStayedInTheBackground()
                     print("SELFTEST DONE sidebar")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
+        // -KiriSettingsTest YES: Settings' checks alone (part of
+        // -KiriBehaviorTest too).
+        if UserDefaults.standard.bool(forKey: "KiriSettingsTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for Settings' checks"); quit(); return }
+                FrontEditor.shared.selfTestMain(window)
+                Task { @MainActor in
+                    await settingsStage(window)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE settings")
                     fflush(stdout)
                     quit()
                 }
@@ -282,15 +300,47 @@ import os
                 quit()
             }
         }
-        if let path = UserDefaults.standard.string(forKey: "KiriRenderSettings") {
-            // Settings laid out offscreen (no glass), to check nothing truncates.
-            let renderer = ImageRenderer(content: SettingsView().honeyRoot(HoneyAppearance()))
-            renderer.scale = 2
-            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-               let rep = NSBitmapImageRep(data: tiff) {
+        // -KiriRenderSettings <folder>: Settings laid out offscreen (no
+        // glass, and switches and menus as AppKit's placeholders), to check
+        // nothing truncates, in every color theme, light and dark, and the
+        // swatches alone at their size and at half of it. (A path ending in
+        // .png: the window as it is, once.)
+        if let path = UserDefaults.standard.string(forKey: "KiriRenderSettings"), !renderedSettings {
+            renderedSettings = true
+            func write(_ image: NSImage?, _ path: String) {
+                guard let image, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                 print("SELFTEST rendered settings \(path)")
             }
+            if path.hasSuffix(".png") {
+                let renderer = ImageRenderer(content: SettingsView().honeyRoot(HoneyAppearance()))
+                renderer.scale = 2
+                write(renderer.nsImage, path)
+            } else {
+                let chosen = Honey.theme
+                ThemeController.selfTestHoldsTheme = true
+                for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+                    for theme in Honey.Theme.all {
+                        // For this picture only; the saved theme comes back below.
+                        Honey.theme = theme
+                        let renderer = ImageRenderer(content: SettingsView()
+                            .environment(\.honeyOffscreen, true).environment(\.colorScheme, scheme).honeyRoot(HoneyAppearance()))
+                        renderer.scale = 2
+                        write(renderer.nsImage, "\(path)/settings-\(theme.id)-\(mode).png")
+                    }
+                    Honey.theme = chosen
+                    for scale in [1.0, 0.5] {
+                        let renderer = ImageRenderer(content: ThemePicker(chosen: chosen.id).frame(width: 552)
+                            .padding(24).background(Color.honeySurface)
+                            .environment(\.honeyOffscreen, true).environment(\.colorScheme, scheme).honeyRoot(HoneyAppearance()))
+                        renderer.scale = 2 * scale
+                        write(renderer.nsImage, "\(path)/swatches-\(mode)-\(scale == 1 ? "full" : "half").png")
+                    }
+                }
+                ThemeController.selfTestHoldsTheme = false
+                Honey.theme = chosen
+            }
+            fflush(stdout)
         }
         // -KiriRenderTabs <folder>: the tab strip in the top bar's row, drawn
         // offscreen at 900 and 480 pt with 1 to 20 tabs, long names, a dirty
@@ -2036,6 +2086,7 @@ import os
                         await sidebarStage(window)
                         await themeFadeStage(window)
                         await themePreviewStage(window)
+                        await settingsStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
