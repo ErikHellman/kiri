@@ -153,7 +153,7 @@ An untitled document that opened empty shows `StartHint` centred on its paper, a
 
 ### Bars over the editor: find and Go to Line
 
-Find (`FindBar`, ⌘F) and Go to Line (`GoToLine`, ⌘L) are `chrome` glass with the `control` radius, floating 12 pt below the top of the editor panel, one at a time. They never push the text down: the editor scrolls what they point at into the part nothing floats over (a line of air below the bar, above the status capsule), and may scroll the first lines out from under the bar.
+Find (`FindBar`, ⌘F) and Go to Line (`GoToLine`, ⌘L) are `chrome` glass with the `control` radius, floating 12 pt below the top of the editor panel, one at a time. They never push the text down: the editor scrolls what they point at into the part nothing floats over (a line of air below the bar, above the status capsule), and may scroll the first lines out from under the bar. When that brings the head of the file into view it shows from line 1, whole and 8 pt below the bar, and stays so when the replace row opens or closes: a first line cut by the bar's edge is never left.
 
 - **Find bar:** the find field with the count inside it ("3 of 12", "12 matches", "No matches", "Invalid pattern"; a width that doesn't change as the count does), match case and regular expression, previous and next, close; a chevron at the leading edge opens the replace row (its field, Replace, Replace All). Fields are paper-colored wells with a `line` hairline, and the `focus` ring (2 pt) on the one the keyboard is in.
 - **Buttons in a bar** have no glass of their own (never glass on glass): 26 pt, `small` radius, a faint `fg` fill on hover and press. A toggle that is on is an `accent-soft` pill with an `accent` outline and `accent-ink` text, so the shape says it too.

@@ -1202,6 +1202,40 @@ import os
         let top = occurrences("import")[0]
         report(ktv.selectedRange() == top && find.label.hasPrefix("1 of ") && isClear(top, in: ktv) && origin().y < 0,
                "a query finds as it is typed, and a match on line 1 is shown below the bar (scrolled to \(origin().y), selection \(ktv.selectedRange()))")
+        // A match a few lines down, found with the file's first lines
+        // under the bar: line 1 comes out whole, not with its top under
+        // the bar's edge, in both of the bar's heights.
+        func headClear() -> Bool { isClear(NSRange(location: 0, length: 1), in: ktv) }
+        func headTop() -> String {
+            guard let visible = ktv.visibleCharacters(), let r = ktv.rects(for: 0..<1, near: visible).first else { return "out of sight" }
+            return "line 1 starts \(r.minY - origin().y) pt down, the bar's room is \(scroll.contentInsets.top)"
+        }
+        if !occurrences("warmly").isEmpty, !occurrences("keeps").isEmpty {
+            controller.scrollOrigin = .zero
+            ktv.setSelectedRange(NSRange(location: 0, length: 0))
+            find.query = "keeps"
+            report(isClear(ktv.selectedRange(), in: ktv) && headClear(),
+                   "a match on line 3 found from the top brings line 1 out whole from under the bar (\(headTop()))")
+            find.showsReplace = true
+            await settle()
+            report(scroll.contentInsets.top == FindBar.obstruction(replace: true) && headClear(),
+                   "opening the replace row at the top of the file keeps line 1 clear of the taller bar (\(headTop()))")
+            controller.scrollOrigin = .zero
+            ktv.setSelectedRange(NSRange(location: 0, length: 0))
+            find.query = "warmly"
+            report(isClear(ktv.selectedRange(), in: ktv) && headClear(),
+                   "and so does a match on line 3 found with the replace row showing (\(headTop()))")
+            find.showsReplace = false
+            await settle()
+            report(scroll.contentInsets.top == FindBar.obstruction(replace: false) && headClear(),
+                   "closing the replace row leaves line 1 clear (\(headTop()))")
+            // (The bar took the keyboard in the meantime; the checks after
+            // this one have it in the editor.)
+            window.makeFirstResponder(ktv)
+            ktv.setSelectedRange(top)
+        } else {
+            report(false, "the test file has “keeps” and “warmly” on its third line")
+        }
         let selected = ktv.selectedRange()
         find.query = "zzzz-not-here"
         ktv.marks.update()

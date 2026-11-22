@@ -232,8 +232,10 @@ extension EditorController {
         let clip = scroll.contentView
         var origin = clip.bounds.origin
         scroll.contentInsets.top = height
-        // Setting the inset scrolls by it; go back.
-        origin.y = max(origin.y, -height)
+        // Setting the inset scrolls by it; go back. But a file whose head
+        // is out from under the bar stays out from under it when the bar
+        // grows (the replace row opens): its first line whole, below it.
+        origin.y = origin.y < 0 ? -height : max(origin.y, -height)
         if clip.bounds.origin != origin {
             clip.scroll(to: origin)
             scroll.reflectScrolledClipView(clip)
@@ -291,6 +293,9 @@ extension EditorController {
         guard let r = rect() else { return }
         let lowest = max(-insets.top, textView.frame.height - clip.bounds.height + insets.bottom)
         origin.y = min(max(origin.y, -insets.top), lowest)
+        // So near the top that the head of the file shows: all of it then,
+        // the first line whole below the bar rather than cut by its edge.
+        if origin.y < 0 { origin.y = -insets.top }
         if !wraps, r.minX < origin.x || r.maxX > origin.x + clip.bounds.width - 24 {
             origin.x = min(max(0, r.minX - clip.bounds.width / 3), max(0, textView.frame.width - clip.bounds.width))
         }
