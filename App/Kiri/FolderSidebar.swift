@@ -22,8 +22,12 @@ import SwiftUI
     /// Why the name typed can't be used, shown under the field until it changes.
     var editProblem: String?
 
+    /// Every file under the folder, for the command palette.
+    @ObservationIgnored let index: FolderIndex
+
     init(root url: URL) {
         root = FileNode(url: url.standardizedFileURL, isDirectory: true)
+        index = FolderIndex(root: url)
     }
 
     var name: String { root.name }
@@ -40,6 +44,7 @@ import SwiftUI
     func refresh() {
         root.reload()
         generation += 1
+        index.refreshIfInUse()
     }
 
     // MARK: Names typed in place

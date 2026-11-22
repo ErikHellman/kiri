@@ -73,6 +73,11 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.open)
             Button("Open Folder…") { FolderSessions.openFolderPanel() }
                 .keyboardShortcut(Keys.openFolder)
+            // The command palette, which finds a file anywhere in the
+            // window's folder, a tab or a recent file by a few letters.
+            Button(Self.goToFileTitle) { editor?.palette.open() }
+                .keyboardShortcut(Keys.goToFile)
+                .disabled(editor == nil)
             Menu("Open Recent", systemImage: "clock") {
                 let recent = RecentDocuments.shared.urls
                 let folders = TabNames.details(titles: recent.map(\.lastPathComponent), paths: recent.map(\.path))

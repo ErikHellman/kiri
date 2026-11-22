@@ -28,13 +28,18 @@ extension SelfTest {
         }
         if defaults.string(forKey: "KiriPalette") != nil || defaults.bool(forKey: "KiriDumpPalette"), !shownPalette {
             shownPalette = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                guard let palette = (textView.delegate as? EditorController)?.model.palette, let window = textView.window else { return }
+            // (In the folder window, with -KiriOpenFolder: that one opens a little later.)
+            let folder = defaults.string(forKey: "KiriOpenFolder") != nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + (folder ? 2.6 : 1.2)) {
+                let front = folder ? NSApp.orderedWindows.first { $0.isVisible && FolderSessions.session(for: $0) != nil } : nil
+                guard let window = front?.tabGroup?.selectedWindow ?? front ?? textView.window,
+                      let palette = FrontEditor.shared.editor(in: window)?.palette else { return }
                 // The menus are the front window's once SwiftUI has heard which that is.
                 FrontEditor.shared.selfTestMain(window)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     palette.open(with: defaults.string(forKey: "KiriPalette") ?? "")
-                    palette.move(by: defaults.integer(forKey: "KiriPaletteDown"))
+                    // (Once a folder's files are in.)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { palette.move(by: defaults.integer(forKey: "KiriPaletteDown")) }
                     guard defaults.bool(forKey: "KiriDumpPalette") else { return }
                     for row in palette.rows {
                         print("PALETTE \(row.symbol.padding(toLength: 10, withPad: " ", startingAt: 0)) \(row.title)  ·  \(row.detail)  ·  \(row.shortcut?.glyphs ?? "")  ·  “\(row.spoken)”")
@@ -290,12 +295,172 @@ extension SelfTest {
         report(off && view.item(withTitle: KiriCommands.paletteTitle)?.isEnabled == true,
                "with no document window in front, Command Palette… is off")
 
+        // ⌘P, the key other editors find a file with, opens it too.
+        let file = main.item(withTitle: "File")?.submenu?.item(withTitle: KiriCommands.goToFileTitle)
+        paletteKey("p", code: 35, .command, in: window)
+        let byP = await wait { palette.isOpen }
+        report(byP && file?.keyEquivalent == "p" && file?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == .command,
+               "File ▸ Go to File… is on ⌘P and opens the palette")
+        // A window without a folder lists no folder's files.
+        RecentDocuments.shared.selfTestShow([])
+        palette.open()
+        func isFile(_ row: PaletteRow) -> Bool { if case .file = row.action { true } else { false } }
+        let noneListed = !palette.rows.contains(where: isFile) && !palette.isReadingFolder
+        palette.text = "swift"
+        report(noneListed && !palette.rows.contains(where: isFile) && !palette.rows.isEmpty,
+               "in a window without a folder there are no folder's files, only tabs, recent files and commands (\(palette.rows.prefix(2).map(\.title)))")
+        palette.cancel()
+
+        await paletteFiles(window)
+        RecentDocuments.shared.refresh()
+        FrontEditor.shared.selfTestMain(window)
+
         // Nothing here wrote a preference.
         let after = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
         report(NSDictionary(dictionary: preferences).isEqual(to: after), "the palette's checks wrote no preference")
         palette.cancel()
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         window.makeFirstResponder(ktv)
+    }
+
+    /// Files, tabs and recent files in the palette, in a folder window of
+    /// the test's own on a folder it makes in the temporary directory.
+    private static func paletteFiles(_ original: NSWindow) async {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-palette-test-\(getpid())").standardizedFileURL
+        let root = dir.appendingPathComponent("project")
+        let files = ["README.md": "# Project\n", "Makefile": "all:\n", "Sources/App/EditorScreen.swift": "struct EditorScreen {}\n",
+                     "Sources/App/Greeter.swift": "struct Greeter {}\n", "Sources/Kit/Honey.swift": "enum Honey {}\n",
+                     "Tests/GreeterTests.swift": "import Testing\n", "docs/notes/deep/idea.md": "An idea.\n",
+                     ".git/config": "[core]\n", "node_modules/pkg/index.js": "x\n", "build/out.txt": "x\n", "DerivedData/x.txt": "x\n",
+                     ".build/y.txt": "y\n"]
+        try? FileManager.default.removeItem(at: dir)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func url(_ path: String) -> URL { root.appendingPathComponent(path).standardizedFileURL }
+        for (path, text) in files {
+            try? FileManager.default.createDirectory(at: url(path).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? text.write(to: url(path), atomically: true, encoding: .utf8)
+        }
+        let outside = dir.appendingPathComponent("elsewhere.txt")
+        try? "elsewhere\n".write(to: outside, atomically: true, encoding: .utf8)
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        func document(_ w: NSWindow) -> URL? { NSDocumentController.shared.document(for: w)?.fileURL?.standardizedFileURL }
+
+        // What is read of the folder: every file under it from the top
+        // down, without what version control, package managers and
+        // builds keep there; and no more than the limit.
+        let read = FolderIndex.read(root)
+        let wanted = ["Makefile", "README.md", "Tests/GreeterTests.swift", "Sources/App/EditorScreen.swift", "Sources/App/Greeter.swift",
+                      "Sources/Kit/Honey.swift", "docs/notes/deep/idea.md"]
+        report(read.map { Set($0.paths) } == Set(wanted) && read?.cut == false && read?.paths.prefix(2) == ["Makefile", "README.md"]
+               && read?.paths.last == "docs/notes/deep/idea.md",
+               "the folder's files are read from the top down, without .git, node_modules, .build, build and DerivedData (\(read?.paths ?? []))")
+        let few = FolderIndex.read(root, limit: 3)
+        report(few?.paths.count == 3 && few?.cut == true && FolderIndex.limit == 20_000 && FolderIndex.read(root, isCancelled: { true }) == nil,
+               "no more than the limit is kept (3 of 3 asked for; \(FolderIndex.limit.formatted()) in use), and a reading can be given up")
+
+        // The folder window, as `kiri <folder> <file>` opens it.
+        let before = Set(NSApp.windows.map { ObjectIdentifier($0) })
+        KiriCLI.open(KiriCLI.Request(entries: [.folder(root), .file(url("Sources/App/Greeter.swift"), line: 0, column: 0)]))
+        var found: NSWindow?
+        _ = await wait(4) {
+            found = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible && document($0) == url("Sources/App/Greeter.swift") }
+            return found.flatMap { FrontEditor.shared.editor(in: $0) }?.controller?.textView != nil && found.flatMap { FolderSessions.session(for: $0) } != nil
+        }
+        guard let first = found, let session = FolderSessions.session(for: first), let model = FrontEditor.shared.editor(in: first) else {
+            report(false, "a folder window opens for the palette's file checks"); return
+        }
+        defer {
+            for w in first.tabbedWindows ?? [first] { NSDocumentController.shared.document(for: w)?.close() }
+            original.orderFront(nil)
+        }
+        await settle(300)
+        FrontEditor.shared.selfTestMain(first)
+        let palette = model.palette
+        func isFile(_ row: PaletteRow, _ path: String) -> Bool { row.action == .file(url(path)) }
+
+        // Typing never waits for the folder: the list is there at once,
+        // and the files join it when they have been read.
+        palette.open()
+        let atOnce = (palette.isReadingFolder, palette.rows.count, session.index.paths.count)
+        let indexed = await wait { session.index.paths.count == wanted.count && !palette.isReadingFolder }
+        report(atOnce.0 && atOnce.1 > 40 && atOnce.2 == 0 && indexed,
+               "the palette opens at once, the folder's files still being read (\(atOnce.1) rows, \(atOnce.2) files), and they are in soon after (\(session.index.paths.count))")
+
+        // A file anywhere under the folder, by a few letters.
+        palette.text = "hon"
+        let honey = palette.rows.first
+        report(honey.map { isFile($0, "Sources/Kit/Honey.swift") } == true && honey?.title == "Honey.swift" && honey?.detail == "Sources/Kit"
+               && honey?.titleMarks == [0..<3] && honey?.symbol == FileIcon.forFile(named: "a.swift").symbol && honey?.tint == FileIcon.forFile(named: "a.swift").tint
+               && honey?.spoken == "Honey.swift, Sources/Kit",
+               "“hon” finds Sources/Kit/Honey.swift: its name with the letters marked, its folder after it, its kind's icon (\(honey.map { "\($0.title) · \($0.detail) \($0.titleMarks)" } ?? "nothing"))")
+        palette.text = "kithon"
+        let both = palette.rows.first
+        report(both?.title == "Honey.swift" && both?.detailMarks == [8..<11] && both?.titleMarks == [0..<3],
+               "letters of the folder and of the name are marked where they are (“kithon”: \(both?.detailMarks ?? []) in “\(both?.detail ?? "")”, \(both?.titleMarks ?? []) in “\(both?.title ?? "")”)")
+        palette.text = "idea"
+        report(palette.rows.first.map { isFile($0, "docs/notes/deep/idea.md") } == true && !palette.rows.contains { $0.title.contains("config") || $0.title == "index.js" },
+               "a file three folders down is found, and nothing of .git or node_modules (\(palette.rows.prefix(2).map(\.title)))")
+
+        // Return on a file opens it as a tab of this window, to stay.
+        let noted = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.count ?? 0
+        palette.commit()
+        var ideaTab: NSWindow?
+        let openedIdea = await wait {
+            ideaTab = (first.tabbedWindows ?? []).first { document($0) == url("docs/notes/deep/idea.md") }
+            return ideaTab.map { $0.tabGroup?.selectedWindow === $0 && $0.firstResponder is KiriTextView } ?? false
+        }
+        let recentNow = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.dropFirst(noted).map(\.lastPathComponent) ?? []
+        report(openedIdea && !palette.isOpen && ideaTab.map { !PreviewTabs.isPreview($0) } == true && (first.tabbedWindows?.count ?? 1) == 2
+               && recentNow.contains("idea.md"),
+               "Return on a file opens it in a tab of this window, to stay, with the keyboard in its editor, and it is a recent document (\(first.tabbedWindows?.count ?? 1) tabs, recent: \(recentNow))")
+        guard let ideaTab, let ideaModel = FrontEditor.shared.editor(in: ideaTab) else { return }
+        await settle(300)
+        FrontEditor.shared.selfTestMain(ideaTab)
+
+        // With nothing typed: the other tabs, the recent files, then the
+        // commands. A recent file that is in a tab is listed as the tab.
+        RecentDocuments.shared.selfTestShow([outside, url("Sources/App/Greeter.swift"), url("README.md"), url("docs/notes/deep/idea.md")])
+        let second = ideaModel.palette
+        second.open()
+        let top = second.rows.prefix(4)
+        report(top.count == 4 && top[0].action == .tab(first.windowNumber) && top[0].title == "Greeter.swift" && top[0].detail == "Sources/App"
+               && top[0].spoken == "Greeter.swift, tab, Sources/App" && top[1].action == .file(outside.standardizedFileURL)
+               && top[2].action == .file(url("README.md")) && top[2].detail.isEmpty && { if case .command = top[3].action { true } else { false } }(),
+               "with nothing typed: the other open tab, then the recent files (not the one in a tab, nor this window's own), then the commands (\(top.map { "\($0.title) · \($0.detail)" }))")
+        // A file that is open in a tab and in the folder shows once, as the tab.
+        second.text = "greeter"
+        let greeters = second.rows.filter { $0.title == "Greeter.swift" }
+        report(greeters.count == 1 && greeters.first?.action == .tab(first.windowNumber) && second.rows.contains { isFile($0, "Tests/GreeterTests.swift") }
+               && second.rows.first?.title == "Greeter.swift",
+               "a file that is open in a tab and in the folder shows once, as the tab, ahead of the files (\(second.rows.prefix(3).map { "\($0.title) · \($0.spoken)" }))")
+        second.text = "readme"
+        report(second.rows.filter { $0.title == "README.md" }.count == 1, "and a recent file that is in the folder shows once")
+        // Return on a tab brings it forward.
+        second.text = "greeter"
+        second.commit()
+        let selected = await wait { first.tabGroup?.selectedWindow === first }
+        report(selected && !second.isOpen && (first.tabbedWindows?.count ?? 1) == 2, "Return on a tab brings that tab forward (\(first.tabbedWindows?.count ?? 1) tabs)")
+        await settle(300)
+        FrontEditor.shared.selfTestMain(first)
+
+        // The folder is read again when the session refreshes, and an
+        // open palette follows.
+        palette.open(with: "zebra")
+        _ = await wait(1) { !palette.isReadingFolder }
+        let noZebra = !palette.rows.contains { $0.title == "Zebra.swift" }
+        try? "enum Zebra {}\n".write(to: url("Sources/Kit/Zebra.swift"), atomically: true, encoding: .utf8)
+        session.refresh()
+        let zebra = await wait { palette.rows.first.map { isFile($0, "Sources/Kit/Zebra.swift") } == true }
+        report(noZebra && zebra && palette.isOpen, "a file made since is found once the folder session has refreshed, in the palette that is open (\(palette.rows.prefix(1).map(\.title)))")
+        palette.cancel()
     }
 }
 
@@ -310,6 +475,10 @@ enum PaletteSample {
                    symbol: on ? "checkmark" : choice ? "circle" : "command", title: title, titleMarks: marks, detail: detail, shortcut: key)
     }
 
+    private static func file(_ path: String, marks: [Range<Int>] = [], tab: Int? = nil) -> PaletteRow {
+        .file(tab.map { .tab($0) } ?? .file(URL(fileURLWithPath: "/" + path)), path: path, marks: marks, tab: tab != nil)
+    }
+
     @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
         let commands = [
             command("Save", "File", Keys.save, marks: [0..<1]),
@@ -322,9 +491,27 @@ enum PaletteSample {
             command("Use Selection for Find", "Edit ▸ Find", Keys.useSelectionForFind, marks: [0..<1]),
             command("Make Upper Case", "Edit ▸ Transformations", marks: [12..<13]),
         ]
+        // Nothing typed: the other tabs, the recent files, then the commands.
+        let resting = [
+            file("Sources/Tidepool/Greeter.swift", tab: 1), file("README.md", tab: 2),
+            PaletteRow(action: .tab(3), symbol: "rectangle.stack", title: "Untitled", detail: ""),
+            file("~/Sources/kiri/docs/DESIGN.md"), file("~/Sources/tidepool/Package.swift"), file("~/.zshrc"),
+            command("About Kiri", "Kiri"), command("Settings…", "Kiri", Keys.settings), command("New", "File", Keys.new),
+        ]
+        // "gre" typed in a folder window: files, a tab and commands, mixed.
+        let mixed = [
+            file("Sources/Tidepool/Greeter.swift", marks: [17..<20], tab: 1),
+            file("Tests/TidepoolTests/GreeterTests.swift", marks: [20..<23]),
+            file("Sources/Tidepool/Resources/greetings.json", marks: [26..<29]),
+            file("docs/a/very/long/way/down/in/the/folders/of/this/project/agreement.md", marks: [57..<60]),
+            command("Go to Line…", "Edit", Keys.goToLine, marks: [0..<1, 9..<10, 6..<7].sorted { $0.lowerBound < $1.lowerBound }),
+            file("scripts/regenerate.sh", marks: [8..<9, 10..<11, 11..<12]),
+            command("Find and Replace…", "Edit ▸ Find", Keys.findAndReplace, marks: [9..<10, 10..<11, 11..<12]),
+        ]
         let states: [(String, PaletteController, Int)] = [
-            ("> and a letter: commands with their keys, more than fit", .sample(text: ">s", rows: commands, selection: 1), 8),
-            ("the selection further down", .sample(text: ">s", rows: commands, selection: 5), 8),
+            ("nothing typed: tabs, recent files, commands", .sample(text: "", rows: resting), 8),
+            ("“gre” in a folder window: a tab, files and commands, the letters marked", .sample(text: "gre", rows: mixed, selection: 1), 8),
+            ("> and a letter: commands with their keys, more than fit", .sample(text: ">s", rows: commands, selection: 5), 8),
             ("no match", .sample(text: "zzqq", rows: []), 8),
             ("a short window: three rows", .sample(text: ">s", rows: commands), 3),
         ]

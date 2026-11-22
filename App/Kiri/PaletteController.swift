@@ -6,6 +6,10 @@ import SwiftUI
 /// One row of the command palette.
 struct PaletteRow: Equatable, Identifiable {
     enum Action: Equatable {
+        /// A tab of this window comes forward (its window's number).
+        case tab(Int)
+        /// A file opens in a tab of this window, to stay.
+        case file(URL)
         /// A menu item is chosen.
         case command(MenuCommand)
     }
@@ -26,23 +30,46 @@ struct PaletteRow: Equatable, Identifiable {
 
     var id: String {
         switch action {
+        case .tab(let id): "tab:\(id)"
+        case .file(let url): "file:" + url.path
         case .command(let command): "command:" + command.id
         }
     }
 
-    /// What VoiceOver hears: "Save, Command S".
+    /// What VoiceOver hears: "Save, Command S", "Greeter.swift, tab,
+    /// Sources/Tidepool".
     var spoken: String {
         var parts = [title]
-        if case .command(let command) = action, command.isOn { parts.append("checked") }
+        switch action {
+        case .tab: parts.append("tab")
+        case .file: break
+        case .command(let command): if command.isOn { parts.append("checked") }
+        }
         if !detail.isEmpty, shortcut == nil { parts.append(detail) }
         if let shortcut { parts.append(shortcut.spoken) }
         return parts.joined(separator: ", ")
     }
+
+    /// A row for a file or a tab at `path` (as it is matched and shown:
+    /// from the folder, or from the home folder): the name is the title
+    /// and the folders the detail, each with its share of the marks.
+    static func file(_ action: Action, path: String, marks: [Range<Int>] = [], tab: Bool = false) -> PaletteRow {
+        let units = path.utf16
+        let nameStart = (units.lastIndex(of: 0x2F).map { units.distance(from: units.startIndex, to: $0) + 1 }) ?? 0
+        let name = String(path[String.Index(utf16Offset: nameStart, in: path)...])
+        let folder = nameStart > 1 ? String(path[..<String.Index(utf16Offset: nameStart - 1, in: path)]) : nameStart == 1 ? "/" : ""
+        let match = FuzzyMatch(score: 0, ranges: marks)
+        let icon = FileIcon.forFile(named: name)
+        return PaletteRow(action: action, symbol: tab ? "rectangle.stack" : icon.symbol, tint: tab ? nil : icon.tint, title: name,
+                          titleMarks: match.ranges(in: nameStart..<units.count), detail: folder,
+                          detailMarks: nameStart > 1 ? match.ranges(in: 0..<(nameStart - 1)) : [])
+    }
 }
 
 /// The command palette (⌘K) of one window: what `CommandPalette` shows.
-/// One field over the editor finds a command by a few of its letters, and
-/// shows the key it has, so the menus need not be searched for it.
+/// One field over the editor finds a file anywhere in the folder, a tab,
+/// a recent file or a command by a few of its letters, and shows the key
+/// a command has, so neither the tree nor the menus need be searched.
 ///
 /// The view is only a view of this, as the find bar is of
 /// `FindController`: everything works (and is tested) whether or not
@@ -81,8 +108,12 @@ struct PaletteRow: Equatable, Identifiable {
         guard rows.isEmpty, isOpen else { return nil }
         if query.isEmpty { return "Nothing to show yet." }
         return mode == .commands ? "No command matches “\(query)”. Fewer letters may find it."
-            : "Nothing matches “\(query)”. Fewer letters may find it."
+            : "No file, tab or command matches “\(query)”. Fewer letters may find it."
     }
+
+    /// The folder is being read for the first time: its files are not
+    /// in the list yet.
+    var isReadingFolder: Bool { isOpen && folder?.isReading == true }
 
     /// The most rows that are matched and shown for a query.
     static let rowLimit = 60
@@ -90,6 +121,15 @@ struct PaletteRow: Equatable, Identifiable {
     /// The commands the menus had when the palette opened.
     @ObservationIgnored private var commands: [MenuCommand] = []
     @ObservationIgnored private var commandCandidates: [FuzzyCandidate] = []
+    /// The window's other tabs and the recent files, as they were then:
+    /// each with the path it is matched and shown by.
+    @ObservationIgnored private var tabs: [(id: Int, path: String, url: URL?)] = []
+    @ObservationIgnored private var tabCandidates: [FuzzyCandidate] = []
+    @ObservationIgnored private var recents: [(url: URL, path: String)] = []
+    @ObservationIgnored private var recentCandidates: [FuzzyCandidate] = []
+    /// The folder's files (`FolderIndex`), if this is a folder window.
+    @ObservationIgnored private var folder: FolderIndex?
+    @ObservationIgnored private var folderObserver: NSObjectProtocol?
 
     private var controller: EditorController? { model?.controller }
 
@@ -114,6 +154,7 @@ struct PaletteRow: Equatable, Identifiable {
             controller.focus()
             commands = MenuCommands.all()
             commandCandidates = commands.map { FuzzyCandidate($0.title) }
+            gatherFiles()
             isOpen = true
             model.overlayChanged()
         }
@@ -158,6 +199,13 @@ struct PaletteRow: Equatable, Identifiable {
         selection = 0
         commands = []
         commandCandidates = []
+        tabs = []
+        tabCandidates = []
+        recents = []
+        recentCandidates = []
+        folder = nil
+        if let folderObserver { NotificationCenter.default.removeObserver(folderObserver) }
+        folderObserver = nil
         model?.overlayChanged()
         if focusEditor { controller?.focus() }
     }
@@ -169,6 +217,41 @@ struct PaletteRow: Equatable, Identifiable {
         let window = controller?.textView?.window
         let inField = (window?.firstResponder as? NSTextView)?.isFieldEditor == true
         close(focusEditor: inField)
+    }
+
+    /// The tabs, the recent files and the folder, as the palette opens.
+    private func gatherFiles() {
+        guard let window = controller?.textView?.window else { return }
+        let home = NSHomeDirectory()
+        let session = FolderSessions.session(for: window)
+        let root = session?.root.url.path
+        /// A file's path as it is shown: from the folder for a file in
+        /// it, from the home folder (~) otherwise.
+        func shown(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path
+            if let root, path.hasPrefix(root + "/") { return String(path.dropFirst(root.count + 1)) }
+            return TabNames.abbreviatingHome(path, home: home)
+        }
+        tabs = (FrontEditor.shared.tabs(in: window)?.items ?? []).filter { $0.id != window.windowNumber }.map { item in
+            let url = item.path.map { URL(fileURLWithPath: $0).standardizedFileURL }
+            return (item.id, url.map(shown) ?? item.title, url)
+        }
+        tabCandidates = tabs.map { FuzzyCandidate($0.path, isPath: $0.url != nil) }
+        // A recent file that is in a tab already is listed as the tab,
+        // and the file this window shows is not somewhere to go.
+        let current = (NSDocumentController.shared.document(for: window)?.fileURL).map { $0.standardizedFileURL }
+        let open = Set(tabs.compactMap(\.url) + [current].compactMap { $0 })
+        recents = RecentDocuments.shared.urls.map(\.standardizedFileURL).filter { !open.contains($0) }.map { ($0, shown($0)) }
+        recentCandidates = recents.map { FuzzyCandidate($0.path, isPath: true) }
+        // The folder is read again for what has changed in it; until
+        // that is in, the reading before it is searched.
+        folder = session?.index
+        if let folder {
+            folderObserver = NotificationCenter.default.addObserver(forName: FolderIndex.didChange, object: folder, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.search(keepingSelection: true) }
+            }
+            folder.refresh()
+        }
     }
 
     // MARK: The list
@@ -207,10 +290,17 @@ struct PaletteRow: Equatable, Identifiable {
     }
 
     private func perform(_ row: PaletteRow) {
+        let window = controller?.textView?.window
         #if DEBUG || KIRI_SELFTEST
-        selfTestRan = (row.id, controller?.textView?.window?.firstResponder)
+        selfTestRan = (row.id, window?.firstResponder)
         #endif
         switch row.action {
+        case .tab(let id):
+            if let window { FrontEditor.shared.tabs(in: window)?.select(id) }
+        case .file(let url):
+            // As a file opened by name: a tab of this window, to stay,
+            // with the keyboard in its editor.
+            if let window { SidebarOpen.open(url, keep: true, from: window, keyboard: .editor) }
         case .command(let command):
             MenuCommands.perform(command)
         }
@@ -226,22 +316,71 @@ struct PaletteRow: Equatable, Identifiable {
     static var selfTestRunsFirst = UserDefaults.standard.bool(forKey: "KiriPaletteRunsFirst")
     #endif
 
-    private func search() {
+    /// Fills the list for what is typed. With nothing typed: the other
+    /// tabs, the recent files, then every command. Otherwise what matches,
+    /// best first, a file or a tab ahead of a command that matches as well.
+    private func search(keepingSelection: Bool = false) {
         guard isOpen else { return }
+        let selected = keepingSelection ? selectedRow?.id : nil
         let fuzzy = FuzzyQuery(query)
         var found: [PaletteRow] = []
         if fuzzy.isEmpty {
-            found = commands.map { Self.row(for: $0) }
+            if mode == .everything {
+                found += tabs.map { tabRow($0) }
+                found += recents.map { .file(.file($0.url), path: $0.path) }
+            }
+            found += commands.map { Self.row(for: $0) }
         } else {
-            for entry in fuzzy.rank(commandCandidates, limit: Self.rowLimit) ?? [] {
+            // Each kind's best, then all of them in one order.
+            var ranked: [(score: Int, kind: Int, row: PaletteRow)] = []
+            let limit = Self.rowLimit
+            if mode == .everything {
+                // A file shows once: as its tab if it has one, else as
+                // the folder's file, else as a recent one.
+                var listed = Set(tabs.compactMap(\.url))
+                for entry in fuzzy.rank(tabCandidates, limit: limit) ?? [] {
+                    ranked.append((entry.match.score, 0, tabRow(tabs[entry.index], marks: entry.match.ranges)))
+                }
+                if let folder {
+                    let paths = folder.paths
+                    for entry in fuzzy.rank(folder.candidates, limit: limit + listed.count) ?? [] where entry.index < paths.count {
+                        let url = folder.url(for: paths[entry.index])
+                        guard listed.insert(url).inserted else { continue }
+                        ranked.append((entry.match.score, 1, .file(.file(url), path: paths[entry.index], marks: entry.match.ranges)))
+                    }
+                }
+                for entry in fuzzy.rank(recentCandidates, limit: limit) ?? [] {
+                    let recent = recents[entry.index]
+                    guard listed.insert(recent.url).inserted else { continue }
+                    ranked.append((entry.match.score, 1, .file(.file(recent.url), path: recent.path, marks: entry.match.ranges)))
+                }
+            }
+            for entry in fuzzy.rank(commandCandidates, limit: limit) ?? [] {
                 var row = Self.row(for: commands[entry.index])
                 row.titleMarks = entry.match.ranges
-                found.append(row)
+                ranked.append((entry.match.score, 2, row))
             }
+            // (A stable order: equal scores of a kind stay as they were ranked.)
+            let order = ranked.enumerated().sorted { a, b in
+                if a.element.score != b.element.score { return a.element.score > b.element.score }
+                if a.element.kind != b.element.kind { return a.element.kind < b.element.kind }
+                return a.offset < b.offset
+            }
+            found = order.prefix(limit).map(\.element.row)
         }
         rows = found
-        selection = 0
-        announce(rowsChanged: true)
+        // A reading of the folder that comes in while the list shows
+        // leaves the selection on the row it was on, if that is still there.
+        selection = selected.flatMap { id in found.firstIndex { $0.id == id } } ?? 0
+        if !keepingSelection { announce(rowsChanged: true) }
+    }
+
+    private func tabRow(_ tab: (id: Int, path: String, url: URL?), marks: [Range<Int>] = []) -> PaletteRow {
+        guard tab.url != nil else {
+            // A document that has no file yet: its title is all it has.
+            return PaletteRow(action: .tab(tab.id), symbol: "rectangle.stack", title: tab.path, titleMarks: marks, detail: "")
+        }
+        return .file(.tab(tab.id), path: tab.path, marks: marks, tab: true)
     }
 
     private static func row(for command: MenuCommand) -> PaletteRow {

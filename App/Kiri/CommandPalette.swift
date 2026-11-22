@@ -71,7 +71,7 @@ struct CommandPalette: View {
             Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.honeyAccentInk)
                 .accessibilityHidden(true)
-            BarTextField(prompt: "Search commands", text: $palette.text)
+            BarTextField(prompt: "Search files, tabs and commands", text: $palette.text)
                 .focused($focused)
                 // The arrows move through the rows while the keyboard
                 // stays in the field.
@@ -82,6 +82,14 @@ struct CommandPalette: View {
                 .onSubmit { palette.commit() }
                 .accessibilityLabel("Command palette")
                 .accessibilityHint("Type to search. Up and Down Arrow choose a result, Return runs it.")
+            // A big folder's first reading: its files are on their way.
+            if palette.isReadingFolder {
+                Text("Reading the folder…")
+                    .font(.honey(.caption, weight: .semibold))
+                    .foregroundStyle(Color.honeyMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
         .padding(.horizontal, 14)
         .frame(height: Self.fieldHeight)
@@ -109,17 +117,23 @@ struct CommandPalette: View {
                                 .id(row.id)
                         }
                     }
-                    .padding(.vertical, Self.listInset)
                     .padding(.horizontal, 6)
                 }
+                // The air above the first row and below the last is the
+                // scroll view's own, so a row scrolled to keeps it.
+                .contentMargins(.vertical, Self.listInset, for: .scrollContent)
                 .scrollIndicators(.automatic)
                 .frame(height: height)
                 // The selected row is kept in sight; nothing glides there.
-                .onChange(of: palette.selection) { _, now in
-                    if palette.rows.indices.contains(now) { proxy.scrollTo(palette.rows[now].id) }
-                }
-                .onChange(of: palette.rows.first?.id) { _, first in
-                    if let first { proxy.scrollTo(first, anchor: .top) }
+                // A new list starts at its top.
+                .onChange(of: [palette.rows.first?.id ?? "", String(palette.rows.count), String(palette.selection)]) {
+                    let selection = palette.selection
+                    guard palette.rows.indices.contains(selection) else { return }
+                    if selection == 0 {
+                        proxy.scrollTo(palette.rows[0].id, anchor: .top)
+                    } else {
+                        proxy.scrollTo(palette.rows[selection].id)
+                    }
                 }
             }
         }

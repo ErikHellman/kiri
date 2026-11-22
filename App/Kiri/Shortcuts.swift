@@ -19,6 +19,8 @@ enum Keys {
     static let jumpToSelection = KeyboardShortcut("j", modifiers: .command)
     static let goToLine = KeyboardShortcut("l", modifiers: .command)
     static let palette = KeyboardShortcut("k", modifiers: .command)
+    /// The palette too, by the key other editors find a file with.
+    static let goToFile = KeyboardShortcut("p", modifiers: .command)
     static let shiftRight = KeyboardShortcut("]", modifiers: .command)
     static let shiftLeft = KeyboardShortcut("[", modifiers: .command)
     static let bigger = KeyboardShortcut("+", modifiers: .command)
@@ -190,6 +192,7 @@ struct ShortcutGroup: Identifiable {
         ]),
         ShortcutGroup(title: "Command palette", systemImage: "command", items: [
             Item("Open / close the palette", Keys.palette),
+            Item("Go to a file (the palette)", Keys.goToFile),
             Item("Choose a result", "↑  ↓"),
             Item("Run the chosen result", "↩"),
             Item("Commands only", "Type >"),
