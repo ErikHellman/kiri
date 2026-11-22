@@ -102,18 +102,26 @@ import SwiftUI
         window.tabbingMode = .preferred
         window.tabbingIdentifier = "se.hellsoft.kiri.document"
         Self.useTallTitleBar(window)
-        // `kiri -n` and folders get a window of their own.
-        if let placement = WindowPlacement.take() {
+        // `kiri -n` and folders get a window of their own; files dropped
+        // on a window join that one's tabs, whichever window is in front.
+        let placement = WindowPlacement.take()
+        if let placement, placement.host == nil {
             if let folder = placement.folder { FolderSessions.set(folder, for: window) }
             resume()
             return
+        }
+        weak let wanted = placement?.host, after = placement?.after
+        /// The window whose tabs this one joins.
+        func host() -> NSWindow? {
+            if let wanted, wanted !== window, wanted.isVisible || wanted.tabGroup?.selectedWindow?.isVisible == true { return wanted }
+            return Self.host(for: window)
         }
         // Each document has a window of its own; join the frontmost
         // document window's tab group instead. A folder window's
         // folder comes along now, so the new tab opens with the sidebar
         // already there instead of sliding it in a moment later.
         Self.joining.insert(ObjectIdentifier(window))
-        if let host = Self.host(for: window) {
+        if let host = host() {
             if let f = FolderSessions.session(for: host) {
                 FolderSessions.set(f, for: window)
                 folder = f
@@ -126,8 +134,13 @@ import SwiftUI
             selected = (host.tabGroup?.selectedWindow ?? host).windowNumber
         }
         DispatchQueue.main.async {
-            if let host = Self.host(for: window), !(host.tabbedWindows?.contains(window) ?? false) {
-                host.addTabbedWindow(window, ordered: .above)
+            if let host = host(), !(host.tabbedWindows?.contains(window) ?? false) {
+                // After the tab it was asked to follow, or after the host.
+                if let after, let group = host.tabGroup, let index = group.windows.firstIndex(of: after) {
+                    group.insertWindow(window, at: index + 1)
+                } else {
+                    host.addTabbedWindow(window, ordered: .above)
+                }
                 window.makeKeyAndOrderFront(nil)
             }
             Self.joining.remove(ObjectIdentifier(window))

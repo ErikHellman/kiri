@@ -68,6 +68,42 @@ final class KiriTextView: NSTextView {
         }
     }
 
+    // MARK: Drops
+
+    // Files and folders dropped on the text open (`FileDrop`), as they do
+    // anywhere else on the window; left to the text view, their paths
+    // would be typed into the document. Anything else that is dragged
+    // here (text) drops into the text as it always did.
+
+    private func carriesFiles(_ sender: any NSDraggingInfo) -> Bool { !FileDrop.urls(sender.draggingPasteboard).isEmpty }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        carriesFiles(sender) ? FileDrop.operation(sender) : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        carriesFiles(sender) ? FileDrop.operation(sender) : super.draggingUpdated(sender)
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        if let sender, carriesFiles(sender) { return }
+        super.draggingExited(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        carriesFiles(sender) ? !FileDrop.operation(sender).isEmpty : super.prepareForDragOperation(sender)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard carriesFiles(sender), let window else { return super.performDragOperation(sender) }
+        return FileDrop.perform(sender, in: window)
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        if let sender, carriesFiles(sender) { return }
+        super.concludeDragOperation(sender)
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""

@@ -94,9 +94,16 @@ import KiriKit
         open(request)
     }
 
-    static func open(_ request: Request) {
+    /// - Parameters:
+    ///   - window: the document window whose tabs the files join (one
+    ///     they were dropped on); nil for the front one.
+    ///   - completion: called when every entry has been opened.
+    static func open(_ request: Request, in window: NSWindow? = nil, then completion: (() -> Void)? = nil) {
         hasOpenedSomething = true
-        Opener(request).run()
+        let opener = Opener(request)
+        opener.target = window
+        opener.completion = completion
+        opener.run()
     }
 
     /// A request has arrived: one that launched Kiri opens what it asks
@@ -115,6 +122,11 @@ import KiriKit
         var standalone: Bool
         /// The folder of the window being filled, for its sidebar.
         var folder: FolderSession?
+        /// The window whose tabs the documents join, when it isn't
+        /// simply the front one, and the tab the next one goes after.
+        weak var target: NSWindow?
+        private weak var last: NSWindow?
+        var completion: (() -> Void)?
 
         init(_ request: Request) {
             self.request = request
@@ -152,7 +164,11 @@ import KiriKit
         }
 
         private func placeNext() {
-            if standalone { WindowPlacement.next = .init(folder: folder) }
+            if standalone {
+                WindowPlacement.next = .init(folder: folder)
+            } else if let target {
+                WindowPlacement.next = .init(host: target, after: last ?? target)
+            }
             standalone = false
         }
 
@@ -192,6 +208,9 @@ import KiriKit
                         if alreadyOpen, let w = Editors.window(for: doc) {
                             w.tabGroup?.selectedWindow = w
                             w.makeKeyAndOrderFront(nil)
+                        } else if self.target != nil {
+                            // The next one goes after this one.
+                            self.last = Editors.window(for: doc)
                         }
                         if line > 0 { Editors.whenReady(doc) { $0.goTo(line: line, column: max(column, 1)) } }
                     }
@@ -215,15 +234,22 @@ import KiriKit
             if let marker = request.waitMarker {
                 Waits.shared.add(marker: marker, documents: opened)
             }
+            completion?()
+            completion = nil
         }
     }
 }
 
-/// Where the next document window goes: on its own (with a folder sidebar
-/// or not) instead of joining the front window's tabs. `WindowTabs.attach`
-/// takes it.
+/// Where the next document window goes when that isn't the front
+/// window's tabs: on its own (with a folder sidebar or not), or among the
+/// tabs of `host` (a window files were dropped on), after the tab `after`.
+/// `WindowTabs.attach` takes it.
 @MainActor enum WindowPlacement {
-    struct Placement { var folder: FolderSession? }
+    struct Placement {
+        var folder: FolderSession?
+        weak var host: NSWindow?
+        weak var after: NSWindow?
+    }
     static var next: Placement?
 
     static func take() -> Placement? {

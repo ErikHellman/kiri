@@ -1902,6 +1902,7 @@ import os
                         await tabState(window)
                         await frontWindow(window)
                         await toggleCommentStage(window)
+                        await dropStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
