@@ -725,6 +725,25 @@ extension SelfTest {
             case "frame-check": frameCheck(textView)
             case "restore-check": await restoreCheck()
             case "tabs-check": await tabsCheck()
+            case "untitled-quit":
+                // Three file tabs and a new empty one after them, showing.
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+                NSDocumentController.shared.newDocument(nil)
+                _ = await pause(3) { documents(in: DocumentWindow.all.first).count == 4 }
+                await settle(500)
+                let docs = documents(in: DocumentWindow.all.first)
+                report(DocumentWindow.all.count == 1 && docs.count == 4 && docs.last?.fileURL == nil && isShowing(docs.last),
+                       "quitting with three file tabs and an empty untitled one showing")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
+            case "untitled-check":
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count >= 3 }
+                await settle(500)
+                let names = documents(in: DocumentWindow.all.first).map { $0.fileURL?.lastPathComponent ?? "untitled" }
+                report(DocumentWindow.all.count == 1 && Array(names.prefix(3)) == ["crash.swift", "second.txt", "third.md"],
+                       "a window whose empty untitled tab showed at the quit comes back with its file tabs (\(DocumentWindow.all.count) windows, \(names))")
             case "tabs-quit":
                 // Three tabs of one window, the middle one showing.
                 _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
