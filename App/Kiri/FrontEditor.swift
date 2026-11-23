@@ -2,8 +2,9 @@ import AppKit
 import KiriKit
 import SwiftUI
 
-/// The front document window, for the menus: its editor (Find, Go to Line,
-/// the Format menu), its tabs, its folder and its document (Save, Revert).
+/// The front document window, for the menus: the editor of its selected
+/// tab (Find, Go to Line, the Format menu), its tabs, its folder and the
+/// selected tab's document (Save, Revert).
 ///
 /// The document windows are AppKit's, each hosting an `EditorScreen` of its
 /// own, so the menus are told which is in front by the window that is main
@@ -20,39 +21,22 @@ import SwiftUI
     var folder: FolderSession? { tabs?.folder }
 
     @ObservationIgnored private weak var window: NSWindow?
-    @ObservationIgnored private let screens = NSMapTable<NSWindow, Screen>.weakToStrongObjects()
     @ObservationIgnored private var started = false
 
-    /// What a document window holds. The screen owns the three (as SwiftUI
-    /// state, and the document as AppKit's); this only points at them.
-    private final class Screen {
-        weak var editor: EditorModel?
-        weak var tabs: WindowTabs?
-        weak var document: KiriDocument?
-
-        init(editor: EditorModel, tabs: WindowTabs, document: KiriDocument) {
-            self.editor = editor
-            self.tabs = tabs
-            self.document = document
-        }
-    }
-
-    /// `EditorScreen` says what is in its window, once it has one.
-    func register(_ window: NSWindow, editor: EditorModel, tabs: WindowTabs, document: KiriDocument) {
-        screens.setObject(Screen(editor: editor, tabs: tabs, document: document), forKey: window)
+    /// `EditorScreen` says its window is up.
+    func register(_ window: DocumentNSWindow) {
         if window.isMainWindow || window === self.window { windowBecameMain(window) }
     }
 
-    /// The editor of a document window, in front or not.
-    func editor(in window: NSWindow) -> EditorModel? { screens.object(forKey: window)?.editor }
+    /// The editor of a document window's selected tab, in front or not.
+    func editor(in window: NSWindow) -> EditorModel? { (window as? DocumentNSWindow)?.tabs.selectedTab?.model }
 
     /// The tabs model of a document window, in front or not.
-    func tabs(in window: NSWindow) -> WindowTabs? { screens.object(forKey: window)?.tabs }
+    func tabs(in window: NSWindow) -> WindowTabs? { (window as? DocumentNSWindow)?.tabs }
 
-    /// `window` shows another document now (`DocumentWindow.show`).
-    func documentChanged(to document: KiriDocument, in window: NSWindow) {
-        screens.object(forKey: window)?.document = document
-        if window === self.window, self.document !== document { self.document = document }
+    /// `window` shows another tab, or another document in its tab.
+    func selectionChanged(in window: DocumentNSWindow) {
+        if window === self.window { windowBecameMain(window) }
     }
 
     func start() {
@@ -77,7 +61,17 @@ import SwiftUI
         // window before (off, after Settings) and do nothing. So a key
         // that may be a menu's has the menus brought up to date first.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if !event.modifierFlags.intersection([.command, .control]).isEmpty { MainActor.assumeIsolated { MainMenu.refresh() } }
+            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            // ⌃⇥ and ⌃⇧⇥: the next and previous tab, as in every tabbed
+            // window on the Mac (which gives them only to its own tabs).
+            if event.keyCode == 48, modifiers.subtracting(.shift) == .control,
+               let window = event.window as? DocumentNSWindow, window.attachedSheet == nil {
+                MainActor.assumeIsolated {
+                    if modifiers.contains(.shift) { window.tabs.selectPrevious() } else { window.tabs.selectNext() }
+                }
+                return nil
+            }
+            if !modifiers.intersection([.command, .control]).isEmpty { MainActor.assumeIsolated { MainMenu.refresh() } }
             return event
         }
     }
@@ -93,10 +87,11 @@ import SwiftUI
 
     private func windowBecameMain(_ window: NSWindow) {
         self.window = window
-        let screen = screens.object(forKey: window)
-        if editor !== screen?.editor { editor = screen?.editor }
-        if tabs !== screen?.tabs { tabs = screen?.tabs }
-        if document !== screen?.document { document = screen?.document }
+        let tabs = (window as? DocumentNSWindow)?.tabs
+        let tab = tabs?.selectedTab
+        if editor !== tab?.model { editor = tab?.model }
+        if self.tabs !== tabs { self.tabs = tabs }
+        if document !== tab?.document { document = tab?.document }
     }
 
     private func windowResignedMain(_ window: NSWindow) {

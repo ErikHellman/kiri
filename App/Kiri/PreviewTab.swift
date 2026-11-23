@@ -10,43 +10,41 @@ import KiriKit
 ///
 /// A preview never has unsaved changes: the first edit keeps it.
 @MainActor enum PreviewTabs {
-    private static let windows = NSHashTable<NSWindow>.weakObjects()
-
     /// Posted when a tab becomes a preview or stops being one, so the tab
     /// strips show it in the same turn.
     static let didChange = Notification.Name("KiriPreviewTabsDidChange")
 
-    static func isPreview(_ window: NSWindow) -> Bool { windows.contains(window) }
+    static func isPreview(_ tab: DocumentTab) -> Bool { tab.preview }
 
-    static func mark(_ window: NSWindow) {
-        guard !windows.contains(window) else { return }
-        windows.add(window)
-        NotificationCenter.default.post(name: didChange, object: window)
+    static func mark(_ tab: DocumentTab) {
+        guard !tab.preview else { return }
+        tab.preview = true
+        NotificationCenter.default.post(name: didChange, object: tab.window)
     }
 
     /// The preview stays: it is a tab like any other from here on, and
     /// its file a recent document (`KiriDocumentController.kept`).
-    static func keep(_ window: NSWindow?) {
-        guard let window else { return }
-        unmark(window)
-        (NSDocumentController.shared as? KiriDocumentController)?.kept(in: window)
+    static func keep(_ tab: DocumentTab?) {
+        guard let tab else { return }
+        unmark(tab)
+        (NSDocumentController.shared as? KiriDocumentController)?.kept(tab.document.fileURL)
     }
 
-    /// `window` is not the preview tab any more, whatever becomes of the
+    /// `tab` is not the preview tab any more, whatever becomes of the
     /// document it shows (another may be about to take its place).
-    static func unmark(_ window: NSWindow) {
-        guard windows.contains(window) else { return }
-        windows.remove(window)
-        NotificationCenter.default.post(name: didChange, object: window)
+    static func unmark(_ tab: DocumentTab) {
+        guard tab.preview else { return }
+        tab.preview = false
+        NotificationCenter.default.post(name: didChange, object: tab.window)
     }
 
     static func keep(_ document: NSDocument) {
-        for controller in document.windowControllers { keep(controller.window) }
+        keep(DocumentWindow.tab(of: document))
     }
 
-    /// The preview among the tabs `window` is one of, if there is one.
-    static func preview(among window: NSWindow) -> NSWindow? {
-        (window.tabbedWindows ?? [window]).first { isPreview($0) }
+    /// The preview among `window`'s tabs, if there is one.
+    static func preview(among window: NSWindow) -> DocumentTab? {
+        (window as? DocumentNSWindow)?.tabs.list.first { $0.preview }
     }
 }
 
@@ -95,20 +93,21 @@ import KiriKit
             }
             switch keyboard {
             case .stays: break
-            // Each tab is a window with a sidebar of its own.
-            case .sidebar: if shown !== window { editor.sidebarFocusRequest += 1 }
+            // The window's one sidebar has it, whichever tab shows.
+            case .sidebar: if !editor.sidebarHasFocus { editor.sidebarFocusRequest += 1 }
             case .editor: editor.controller?.focus()
             }
         }
         /// `shown` is a tab that was there already: it comes forward.
-        func finish(_ shown: NSWindow) {
+        func finish(_ shown: DocumentTab) {
             if keep { PreviewTabs.keep(shown) }
-            if shown.tabGroup?.selectedWindow !== shown { shown.tabGroup?.selectedWindow = shown }
-            shown.makeKeyAndOrderFront(nil)
-            place(in: shown)
-            done?(shown)
+            guard let window = shown.window else { done?(nil); return }
+            window.tabs.select(shown)
+            window.makeKeyAndOrderFront(nil)
+            place(in: window)
+            done?(window)
         }
-        if let open = NSDocumentController.shared.document(for: url), let shown = Editors.window(for: open) {
+        if let open = NSDocumentController.shared.document(for: url), let shown = DocumentWindow.tab(of: open) {
             finish(shown)
             return
         }
@@ -125,7 +124,7 @@ import KiriKit
                     return
                 }
                 guard let document = document as? KiriDocument else { recents?.forgetGlance(at: url); done?(nil); return }
-                if let shown = Editors.window(for: document) {
+                if let shown = DocumentWindow.tab(of: document) {
                     finish(shown)
                     return
                 }
@@ -154,52 +153,38 @@ import KiriKit
                     }
                     if was { PreviewTabs.mark(tab) } else { PreviewTabs.unmark(tab) }
                 }
-                // A tab of its own, after the one it was picked in
-                // (`WindowTabs.attach` puts it there and brings it forward).
-                let inGroup = window.isVisible || window.tabGroup?.selectedWindow?.isVisible == true
-                if inGroup { WindowPlacement.next = .init(host: window, after: window) }
+                // A tab of its own, after the one it was picked in.
+                if let host = window as? DocumentNSWindow { WindowPlacement.next = .init(host: host, after: host.tabs.document) }
                 document.makeWindowControllers()
-                guard let shown = Editors.window(for: document) else {
-                    WindowPlacement.next = nil
+                WindowPlacement.next = nil
+                guard let shown = DocumentWindow.tab(of: document), let shownWindow = shown.window else {
                     document.close()
                     done?(nil)
                     return
                 }
                 if keep { recents?.kept(url) } else { PreviewTabs.mark(shown) }
                 document.showWindows()
-                forgetPlacement()
-                place(in: shown)
-                done?(shown)
+                place(in: shownWindow)
+                done?(shownWindow)
             }
         }
     }
 
-    /// A placement nothing took (the window never came up) must not be
-    /// left for some later window.
-    private static func forgetPlacement(tries: Int = 0) {
-        guard WindowPlacement.next != nil else { return }
-        if tries < 40 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { forgetPlacement(tries: tries + 1) }
-        } else {
-            WindowPlacement.next = nil
-        }
-    }
-
     /// The tab a file from the sidebar may take over: the preview among
-    /// `window`'s tabs, or `window` itself while it holds nothing (an
+    /// `window`'s tabs, or the tab that shows while it holds nothing (an
     /// untitled document that is empty and unedited).
-    private static func reusableTab(for window: NSWindow) -> NSWindow? {
+    private static func reusableTab(for window: NSWindow) -> DocumentTab? {
         if let preview = PreviewTabs.preview(among: window) {
             // Never a tab with unsaved changes: that one is kept instead.
-            if NSDocumentController.shared.document(for: preview)?.isDocumentEdited == true {
+            if preview.document.isDocumentEdited {
                 PreviewTabs.keep(preview)
             } else {
                 return preview
             }
         }
-        if let document = NSDocumentController.shared.document(for: window) as? KiriDocument,
-           document.fileURL == nil, !document.isDocumentEdited, document.text.isEmpty {
-            return window
+        if let tab = (window as? DocumentNSWindow)?.tabs.selectedTab,
+           tab.document.fileURL == nil, !tab.document.isDocumentEdited, tab.document.text.isEmpty {
+            return tab
         }
         return nil
     }

@@ -1,13 +1,29 @@
 import KiriKit
 import SwiftUI
 
-/// One document window: the editor on a solid Honey panel over the canvas,
-/// with the glass status bar floating over its bottom edge.
+/// A document window: the tab strip, and the editor of the tab that shows
+/// on a solid Honey panel over the canvas, with the glass status bar
+/// floating over its bottom edge.
 struct EditorScreen: View {
-    let document: KiriDocument
-    @State private var model = EditorModel()
+    let tabs: WindowTabs
+
+    var body: some View {
+        if let tab = tabs.selectedTab {
+            TabScreen(tabs: tabs, tab: tab)
+        } else {
+            // (The last tab has gone and the window is closing.)
+            Color.clear.honeyCanvas()
+        }
+    }
+}
+
+/// What a window shows of its selected tab.
+private struct TabScreen: View {
+    let tabs: WindowTabs
+    let tab: DocumentTab
+    private var model: EditorModel { tab.model }
+    private var document: KiriDocument { tab.document }
     @State private var commandLineTool = CommandLineTool.shared
-    @State private var tabs = WindowTabs()
     @State private var saveState = HoneyTaskState.idle
     @State private var saver = SaveObserver()
     /// What the layout shows: follows `folder.sidebarVisible`, animated
@@ -27,17 +43,6 @@ struct EditorScreen: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The file's text (and its line numbers) shows. A file that opens in
-    /// a new tab, or in place of another (the preview tab), fades in on the
-    /// paper, which stays put: the file arriving is told in the content,
-    /// never by the window. 240 ms rising 4 pt; with reduced motion the
-    /// 140 ms fade alone; with Motion: Off at once.
-    @State private var textShown: Bool
-
-    init(document: KiriDocument, arriving: Bool = false) {
-        self.document = document
-        _textShown = State(initialValue: !arriving)
-    }
 
     /// Where the document's file is: nil until it is saved, and it follows
     /// Save As and a move in Finder.
@@ -81,56 +86,37 @@ struct EditorScreen: View {
         .frame(minWidth: SidebarLayout.narrowestWindow, minHeight: 280)
         .honeyCanvas()
         .background(WindowReader {
-            tabs.attach($0)
             // The menus act on the window that is in front.
-            FrontEditor.shared.register($0, editor: model, tabs: tabs, document: document)
+            if let window = $0 as? DocumentNSWindow { FrontEditor.shared.register(window) }
         })
         .onAppear {
-            detectLanguage()
-            tabs.resume()
-            if !textShown { showText() }
+            tabs.refresh()
             #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowShortcuts") { openWindow(id: ShortcutsView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowStyleGallery") { openWindow(id: "style-gallery") }
             #endif
         }
-        .onChange(of: fileURL) { detectLanguage() }
-        // Another document in this window (the preview tab going from
-        // file to file): a Save that was under way was the other one's.
-        .onChange(of: ObjectIdentifier(document)) {
-            detectLanguage()
-            saveState = .idle
-            fadeTextIn()
-        }
-        .onDisappear { tabs.invalidate() }
+        // Another tab, or another document in this one (the preview tab
+        // going from file to file): a Save that was under way was the
+        // other one's.
+        .onChange(of: tab.id) { saveState = .idle }
+        .onChange(of: ObjectIdentifier(document)) { saveState = .idle }
     }
 
-    /// The text comes in (`textShown`).
-    private func showText() {
-        let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
-        withAnimation(motion.reduced ? motion.quick : motion.medium) { textShown = true }
-    }
-
-    /// Another file in this window: its text fades in, as a new tab's does.
-    private func fadeTextIn() {
-        guard !HoneyMotion(appearance, systemReduced: reduceMotion).off else { return }
-        var hide = Transaction()
-        hide.disablesAnimations = true
-        withTransaction(hide) { textShown = false }
-        Task { @MainActor in showText() }
-    }
 
     private var editor: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
         // The bars pop in; with Reduce Motion they fade.
         let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
-        return EditorView(document: document, model: model, fontScale: textScale, fontFamily: editorFont.shown, language: model.language,
+        // A file that arrives (a new tab, or the preview tab taking another
+        // file) fades in on the paper, which stays put: the file arriving
+        // is told in the content, never by the window.
+        return EditorView(tab: tab, fontScale: textScale, fontFamily: editorFont.shown, language: model.language,
                    isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                      typingAnimations: typingAnimations))
-            .opacity(textShown ? 1 : 0)
-            .offset(y: textShown || motion.reduced ? 0 : 4)
+                                                      typingAnimations: typingAnimations),
+                   arrival: motion.off ? .none : motion.reduced ? .fade : .rise)
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it. (Not
             // while the palette is open: its list would lie over the
@@ -193,7 +179,8 @@ struct EditorScreen: View {
                         HoneyTabStrip(tabs.tabs,
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
                                       scrollOffset: Binding(get: { tabs.stripOffset }, set: { tabs.stripOffset = $0 }),
-                                      onClose: { tabs.close($0) }, onKeep: { tabs.keep($0) })
+                                      onClose: { tabs.close($0) }, onKeep: { tabs.keep($0) },
+                                      onDragOut: { id in tabs.tab(id: id).map(TabDrag.begin) })
                     }
                     Button {
                         NSDocumentController.shared.newDocument(nil)
@@ -243,10 +230,6 @@ struct EditorScreen: View {
         Binding(get: { document.hasBOM }, set: { document.setByteOrderMark($0) })
     }
 
-    private func detectLanguage() {
-        let language = document.detectedLanguage
-        if model.language != language { model.language = language }
-    }
 }
 
 extension LineEnding {

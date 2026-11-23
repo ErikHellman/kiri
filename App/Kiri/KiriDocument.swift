@@ -74,8 +74,8 @@ extension UTType {
         take(TextFile(text: text))
     }
 
-    /// Opens a new untitled document with `text` in it, in a window like
-    /// any other. It is not edited: closing piped text asks nothing.
+    /// Opens a new untitled document with `text` in it, in a tab like any
+    /// other. It is not edited: closing piped text asks nothing.
     static func openUntitled(text: String) -> KiriDocument {
         let document = KiriDocument(text: text)
         NSDocumentController.shared.addDocument(document)
@@ -235,10 +235,74 @@ extension UTType {
     func setLineEnding(_ new: LineEnding) { change(\.lineEnding, to: new, actionName: "Change Line Endings") }
     func setByteOrderMark(_ new: Bool) { change(\.hasBOM, to: new, actionName: "Change Byte Order Mark") }
 
-    // MARK: Windows and panels
+    // MARK: Tabs and panels
 
+    /// A document opens as a tab (`DocumentWindow.place`): of the front
+    /// window, or of a window of its own when that is asked for. It has a
+    /// window controller only while its tab shows.
     override func makeWindowControllers() {
-        addWindowController(DocumentWindow.controller(for: self))
+        DocumentWindow.place(self)
+    }
+
+    /// Its tab comes forward, in its window.
+    override func showWindows() {
+        guard let tab = DocumentWindow.tab(of: self), let window = tab.window else {
+            super.showWindows()
+            return
+        }
+        window.tabs.select(tab)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Sheets (the close question, Save As, a save that fails) show on its
+    /// tab's window, also while another tab shows there.
+    override var windowForSheet: NSWindow? {
+        DocumentWindow.window(of: self) ?? super.windowForSheet
+    }
+
+    /// The close question is asked with its tab showing, so it is seen
+    /// whose it is: from the tab's close button, closing the window, Close
+    /// All and quitting.
+    override func canClose(withDelegate delegate: Any, shouldClose shouldCloseSelector: Selector?,
+                           contextInfo: UnsafeMutableRawPointer?) {
+        if isDocumentEdited, let tab = DocumentWindow.tab(of: self), let window = tab.window {
+            window.tabs.select(tab)
+            window.makeKeyAndOrderFront(nil)
+        }
+        super.canClose(withDelegate: delegate, shouldClose: shouldCloseSelector, contextInfo: contextInfo)
+    }
+
+    /// Its tab goes first (the window with its last tab), then the
+    /// document. `kiri -w` and the files `kiri` made are told.
+    override func close() {
+        DocumentWindow.documentWillClose(self)
+        super.close()
+        DispatchQueue.main.async {
+            Waits.shared.check()
+            NewFiles.shared.check()
+        }
+    }
+
+    /// A window AppKit brings back at launch: a window of its own for the
+    /// document that showed in it, never a tab of whichever window is in
+    /// front. Its other tabs come back from the window's own state
+    /// (`DocumentNSWindow.restoreState`).
+    override func restoreWindow(withIdentifier identifier: NSUserInterfaceItemIdentifier, state: NSCoder,
+                                completionHandler: @escaping (NSWindow?, (any Error)?) -> Void) {
+        let window = DocumentWindow.makeWindow()
+        window.identifier = identifier
+        window.tabs.insert(DocumentWindow.tab(of: self) ?? DocumentTab(document: self, arriving: false))
+        completionHandler(window, nil)
+    }
+
+    /// The window remembers its tabs' recovery copies for the next launch.
+    @ObservationIgnored override nonisolated var autosavedContentsFileURL: URL? {
+        didSet {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                DocumentWindow.window(of: self)?.invalidateRestorableState()
+            }
+        }
     }
 
     /// The Save panel takes any name: a text editor saves a `Makefile` and

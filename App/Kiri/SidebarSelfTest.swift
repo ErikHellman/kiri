@@ -55,7 +55,7 @@ extension SelfTest {
         await menuChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
-        for w in f.group(first) { w.performClose(nil) }
+        first.performClose(nil)
         let closed = await f.wait { f.openDocuments().isEmpty && !NSApp.windows.contains { $0.isVisible && FolderSessions.session(for: $0)?.root.url == f.root } }
         report(closed, "the folder window's tabs all close, and no document of the folder is left open (\(f.openDocuments().count) left)")
     }
@@ -107,12 +107,14 @@ extension SelfTest {
     /// The preview tab: one click shows a file in it, the next file takes
     /// it over, and each way of keeping it makes it a tab like any other.
     private static func previewChecks(_ first: NSWindow, _ f: SidebarFixture) async {
-        func isPreview(_ w: NSWindow?) -> Bool {
-            guard let w, let tabs = WindowTabs.model(for: w) else { return false }
-            return PreviewTabs.isPreview(w) && tabs.tabs.first { $0.id == w.windowNumber }?.preview == true
+        func isPreview(_ t: DocumentTab?) -> Bool {
+            guard let t, let tabs = WindowTabs.model(for: first) else { return false }
+            return PreviewTabs.isPreview(t) && tabs.tabs.first { $0.id == t.id }?.preview == true
         }
-        guard let tabs = WindowTabs.model(for: first), let ktv = findTextView(in: first.contentView) as? KiriTextView,
-              let controller = ktv.delegate as? EditorController else { report(false, "the folder window's editor and tabs"); return }
+        guard let tabs = WindowTabs.model(for: first), let firstTab = tabs.selectedTab, let ktv = findTextView(in: first.contentView) as? KiriTextView,
+              let controller = ktv.delegate as? EditorController, controller === firstTab.controller else {
+            report(false, "the folder window's editor and tabs"); return
+        }
         /// The folder's files that would be in Open Recent by now (a test
         /// launch leaves the real list alone and keeps its own record).
         let notedBefore = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.count ?? 0
@@ -128,10 +130,10 @@ extension SelfTest {
         for name in ["a.swift", "b.md", "c.json", "d.txt", "e.py"] {
             let shown = await f.open(name, from: first)
             together = together && f.atAnswer.map { $0.title == name && $0.text == f.onDisk(name) } ?? false
-            sameTab = sameTab && shown === first && f.group(first).count == 1
+            sameTab = sameTab && shown === firstTab && f.group(first).count == 1
             contentsShown = contentsShown && ktv.string == f.onDisk(name) && controller.document === f.document(first)
                 && controller.model.language == Language.detect(fileName: name)
-            wasPreview = wasPreview && isPreview(first)
+            wasPreview = wasPreview && isPreview(firstTab)
         }
         report(sameTab && f.titles(first) == ["e.py"],
                "five files clicked one after another show in one tab, the window's first (\(f.group(first).count) tabs: \(f.strip(first)))")
@@ -140,13 +142,13 @@ extension SelfTest {
         report(together, "the tab's title and the text change in the same turn: never one file's name over another's text (\(f.atAnswer?.title ?? "nil"))")
         // The strip never had another tab, nor lost this one: only titles changed.
         let ids = Set(tabs.shown.dropFirst(max(shownBefore - 1, 0)).map { $0 })
-        report(ids == [[first.windowNumber]], "the strip kept its one tab throughout: no tab closed or opened (\(tabs.shown.count - shownBefore) changes, all of the title)")
+        report(ids == [[firstTab.id]], "the strip kept its one tab throughout: no tab closed or opened (\(tabs.shown.count - shownBefore) changes, all of the title)")
         let untitledGone = untitled.map { u in !NSDocumentController.shared.documents.contains { $0 === u } } ?? false
         report(untitledGone && f.openDocuments().count == 1,
                "the empty document the window began with is closed, and so is each file left behind (\(f.openDocuments().count) of the folder's files open)")
         // A file looked at before is read again: none was left open unseen.
         let again = await f.open("a.swift", from: first)
-        report(again === first && ktv.string == f.onDisk("a.swift") && f.openDocuments().count == 1 && isPreview(first),
+        report(again === firstTab && ktv.string == f.onDisk("a.swift") && f.openDocuments().count == 1 && isPreview(firstTab),
                "a file clicked a second time shows again (\(f.strip(first)))")
         // Looking is not opening: Open Recent is not a log of every file glanced at.
         report(recent().isEmpty, "files only looked at in the preview tab, and the ones it left behind, are not in Open Recent (\(recent().sorted()))")
@@ -178,7 +180,7 @@ extension SelfTest {
         // menus act on the file it shows now.
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         ktv.insertText("// kept\n", replacementRange: ktv.selectedRange())
-        let keptAtOnce = !PreviewTabs.isPreview(first)
+        let keptAtOnce = !PreviewTabs.isPreview(firstTab)
         await settle()
         let dirty = await f.wait { tabs.items.first?.dirty == true && tabs.items.first?.preview == false }
         report(keptAtOnce && dirty, "typing into a preview keeps it: a tab like any other, with its dot (\(f.strip(first)))")
@@ -199,24 +201,24 @@ extension SelfTest {
         // after it, and the one after that takes the preview over.
         let second = await f.open("b.md", from: first)
         let third = await f.open("c.json", from: first)
-        report(second != nil && second !== first && third === second && f.titles(first) == ["a.swift", "c.json"] && isPreview(second) && !isPreview(first),
+        report(second != nil && second !== firstTab && third === second && f.titles(first) == ["a.swift", "c.json"] && isPreview(second) && !isPreview(firstTab),
                "with the first tab kept, the next file opens a preview tab after it and the one after reuses that (\(f.strip(first)))")
         guard let second else { return }
 
         // A file that is open in a tab of its own is selected, and the preview stays.
-        let back = await f.open("a.swift", from: second)
-        report(back === first && first.tabGroup?.selectedWindow === first && f.group(first).count == 2 && isPreview(second),
+        let back = await f.open("a.swift", from: first)
+        report(back === firstTab && tabs.selectedTab === firstTab && f.group(first).count == 2 && isPreview(second),
                "a file that is open in a tab of its own is selected, not opened again (\(f.strip(first)))")
 
         // Kept by a save.
-        f.document(second)?.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+        second.document.save(withDelegate: nil, didSave: nil, contextInfo: nil)
         let keptBySave = await f.wait { !isPreview(second) && WindowTabs.model(for: first)?.tabs.last?.preview == false }
         report(keptBySave && f.onDisk("c.json") == SidebarFixture.contents["c.json"], "saving a preview keeps it (\(f.strip(first)))")
 
         // Kept by a double-click on the tab.
         let fourth = await f.open("d.txt", from: first)
         let previewBefore = isPreview(fourth)
-        if let fourth { WindowTabs.model(for: fourth)?.keep(fourth.windowNumber) }
+        if let fourth { tabs.keep(fourth.id) }
         let keptByTab = await f.wait { fourth.map { !isPreview($0) } ?? false }
         report(previewBefore && keptByTab && f.titles(first) == ["a.swift", "d.txt", "c.json"],
                "a double-click on a preview's tab keeps it; it opened after the tab it was picked in (\(f.strip(first)))")
@@ -230,14 +232,13 @@ extension SelfTest {
 
         // Return on a row: open to stay, the keyboard in the file's editor.
         let sixth = await f.open("sub/f.rs", keep: true, from: first, keyboard: .editor)
-        let inEditor = await f.wait { sixth.map { $0.firstResponder is KiriTextView && $0.tabGroup?.selectedWindow === $0 } ?? false }
+        let inEditor = await f.wait { sixth.map { first.firstResponder === $0.container.textView && tabs.selectedTab === $0 } ?? false }
         report(sixth != nil && !isPreview(sixth) && inEditor && f.group(first).count == 5,
                "Return on a row opens the file to stay and puts the keyboard in its editor (\(f.strip(first)))")
 
-        // Space on a row: the preview, with the keyboard still in the sidebar
-        // (here in the sidebar of the new tab the preview is).
+        // Space on a row: the preview, with the keyboard still in the sidebar.
         let seventh = await f.open("g.txt", from: first, keyboard: .sidebar)
-        let inSidebar = await f.wait { seventh.flatMap { FrontEditor.shared.editor(in: $0) }?.sidebarHasFocus == true }
+        let inSidebar = await f.wait { seventh?.model.sidebarHasFocus == true }
         // Kept one way or another, each is in Open Recent; the files
         // that were only looked at on the way (b.md, g.txt) are not.
         report(recent() == ["a.swift", "c.json", "d.txt", "e.py", "f.rs"],
@@ -247,9 +248,9 @@ extension SelfTest {
         report(f.openDocuments().count == f.group(first).count, "every open document of the folder has its tab (\(f.openDocuments().count) documents, \(f.group(first).count) tabs)")
 
         // What VoiceOver hears of a preview tab.
-        if let seventh, f.drawn(seventh) {
+        if seventh != nil, f.drawn(first) {
             await wakeAccessibility()
-            let tab = accessibilityElements(of: seventh).first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "g.txt" && $0.value == "Preview" }
+            let tab = accessibilityElements(of: first).first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "g.txt" && $0.value == "Preview" }
             report(tab != nil && tab?.actions.contains("Keep Open") == true,
                    "VoiceOver hears the preview tab as “g.txt, Preview”, with a Keep Open action (\(tab?.actions ?? []))")
         } else {
@@ -278,8 +279,8 @@ extension SelfTest {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             KiriCLI.open(KiriCLI.Request(entries: [.file(f.file("h.txt"), line: 0, column: 0)])) { c.resume() }
         }
-        let keptByName = await f.wait { byName.map { !PreviewTabs.isPreview($0) && WindowTabs.model(for: $0)?.tabs.contains { $0.title == "h.txt" && !$0.preview } == true } ?? false }
-        report(wasPreviewed && keptByName && f.group(first).count == tabsThen && byName?.tabGroup?.selectedWindow === byName,
+        let keptByName = await f.wait { byName.map { !PreviewTabs.isPreview($0) && tabs.tabs.contains { $0.title == "h.txt" && !$0.preview } } ?? false }
+        report(wasPreviewed && keptByName && f.group(first).count == tabsThen && byName.map { tabs.selectedTab === $0 } == true,
                "a file in the preview tab that is opened by name stays: the same tab, no longer a preview (\(f.strip(first)))")
         report(recent().contains("h.txt") && recent().contains("i.txt") && !recent().contains("g.txt") && !recent().contains("b.md"),
                "and is a recent document, as the file a double-click opened is; g.txt and b.md, only looked at, are not (\(recent().sorted()))")
@@ -291,36 +292,37 @@ extension SelfTest {
     private static func markChecks(_ first: NSWindow, _ f: SidebarFixture) async {
         /// The marks the sidebar of the tab that shows draws from.
         func marks() -> [URL: WindowTabs.FileMark] {
-            (first.tabGroup?.selectedWindow).flatMap { WindowTabs.model(for: $0) }?.openFiles ?? [:]
+            WindowTabs.model(for: first)?.openFiles ?? [:]
         }
         func says(_ m: WindowTabs.FileMark?) -> String { m.map { $0.preview ? "preview" : $0.edited ? "open, edited" : "open" } ?? "not open" }
-        let kept = f.group(first).compactMap { f.document($0)?.fileURL?.standardizedFileURL }
+        let kept = f.group(first).compactMap { $0.document.fileURL?.standardizedFileURL }
         let before = marks()
         report(Set(before.keys) == Set(kept) && before.values.allSatisfy { !$0.edited && !$0.preview } && before[f.file("b.md")] == nil,
                "the sidebar marks the files open in the window's tabs, and no other (\(before.count) of \(kept.count) tabs; b.md \(says(before[f.file("b.md")])))")
         // A click: the preview. An edit: unsaved. A save: open. Closed: no mark.
-        guard let g = await f.open("g.txt", from: first), let ktv = findTextView(in: g.contentView) else {
+        guard let g = await f.open("g.txt", from: first) else {
             report(false, "g.txt opens for the marks"); return
         }
         let asPreview = await f.wait { marks()[f.file("g.txt")] == .init(edited: false, preview: true) }
+        let ktv = g.container.textView
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         ktv.insertText("x", replacementRange: ktv.selectedRange())
         await settle()
         let asEdited = await f.wait { marks()[f.file("g.txt")] == .init(edited: true, preview: false) }
         // What VoiceOver hears on the rows, and that the current one is the selected one.
         var heard: Bool?, rows = ""
-        if f.drawn(g) {
+        if f.drawn(first) {
             await wakeAccessibility()
-            let all = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue }
+            let all = accessibilityElements(of: first).filter { $0.role == NSAccessibility.Role.button.rawValue }
             // (Below the top bar: the tabs have the files' names too.)
-            let row = { (name: String) in all.first { $0.name == name && $0.frame.maxY < g.frame.maxY - 60 } }
+            let row = { (name: String) in all.first { $0.name == name && $0.frame.maxY < first.frame.maxY - 60 } }
             // (sub is open: f.rs, inside it, was shown from the sidebar earlier, but by its path. Open it here.)
-            if let session = FolderSessions.session(for: g), !session.expanded.contains(f.file("sub")) {
+            if let session = FolderSessions.session(for: first), !session.expanded.contains(f.file("sub")) {
                 all.first { $0.name == "sub, folder" }?.press()
                 _ = await f.wait(1) { session.expanded.contains(f.file("sub")) }
                 await settle(150)
             }
-            let after = accessibilityElements(of: g).filter { $0.role == NSAccessibility.Role.button.rawValue && $0.frame.maxY < g.frame.maxY - 60 }
+            let after = accessibilityElements(of: first).filter { $0.role == NSAccessibility.Role.button.rawValue && $0.frame.maxY < first.frame.maxY - 60 }
             let deep = { (name: String) in after.first { $0.name == name } }
             rows = ["g.txt", "a.swift", "b.md"].map { "\($0): “\(row($0)?.value ?? "none")”" }.joined(separator: ", ")
                 + ", sub: “\(deep("sub, folder")?.value ?? "none")”, f.rs in it: “\(deep("f.rs")?.value ?? "none")”"
@@ -329,10 +331,10 @@ extension SelfTest {
                 && all.first { $0.name == "sub, folder" }?.value == "collapsed" && deep("sub, folder")?.value == "expanded"
                 && deep("f.rs")?.value == "Open, level 2"
         }
-        f.document(g)?.save(withDelegate: nil, didSave: nil, contextInfo: nil)
+        g.document.save(withDelegate: nil, didSave: nil, contextInfo: nil)
         let asSaved = await f.wait { marks()[f.file("g.txt")] == .init(edited: false, preview: false) }
         try? "g\n".write(to: f.file("g.txt"), atomically: true, encoding: .utf8)
-        g.performClose(nil)
+        WindowTabs.model(for: first)?.close(g.id)
         let asClosed = await f.wait { marks()[f.file("g.txt")] == nil && marks().count == kept.count }
         report(asPreview && asEdited && asSaved && asClosed,
                "a row's mark follows its tab: the preview when clicked, unsaved once typed in, open when saved, none when the tab closes (\(asPreview) \(asEdited) \(asSaved) \(asClosed))")
@@ -349,17 +351,17 @@ extension SelfTest {
     /// in Finder is never chosen (a test launch would not show Finder
     /// anyway), and the paths are copied to a pasteboard of the test's.
     private static func menuChecks(_ first: NSWindow, _ f: SidebarFixture) async {
-        guard let session = FolderSessions.session(for: first), let shown = first.tabGroup?.selectedWindow else {
+        guard let session = FolderSessions.session(for: first), let shownTab = WindowTabs.model(for: first)?.selectedTab else {
             report(false, "the folder window's session for the menu checks"); return
         }
         typealias Menu = SidebarMenu
+        let shown = first
         func groups(_ target: Menu.Target) -> [[SidebarMenuItem]] { Menu.groups(for: target, session: session, window: shown) }
         func titles(_ target: Menu.Target) -> [[String]] { groups(target).map { $0.map(\.title) } }
         func item(_ title: String, _ target: Menu.Target) -> SidebarMenuItem? { groups(target).joined().first { $0.title == title } }
         func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: f.file(name).path) }
-        func window(of name: String) -> NSWindow? {
-            NSApp.windows.first { $0.isVisible && f.document($0)?.fileURL?.standardizedFileURL == f.file(name) }
-                ?? NSDocumentController.shared.document(for: f.file(name)).flatMap { Editors.window(for: $0) }
+        func tab(of name: String) -> DocumentTab? {
+            NSDocumentController.shared.document(for: f.file(name)).flatMap { DocumentWindow.tab(of: $0) }
         }
         let sub = f.file("sub")
 
@@ -442,18 +444,18 @@ extension SelfTest {
             session.commitEdit("new note.md")
         }
         let made = await f.wait { exists("sub/new note.md") && session.editing == nil }
-        let madeWindow = await f.wait { window(of: "sub/new note.md").map { f.group(first).contains($0) && $0.firstResponder is KiriTextView } ?? false }
-        let newWindow = window(of: "sub/new note.md")
-        report(fieldUp && made && madeWindow && f.onDisk("sub/new note.md").isEmpty && newWindow.map { !PreviewTabs.isPreview($0) } == true
+        let madeTab = await f.wait { tab(of: "sub/new note.md").map { t in f.group(first).contains { $0 === t } && first.firstResponder === t.container.textView } ?? false }
+        let newTab = tab(of: "sub/new note.md")
+        report(fieldUp && made && madeTab && f.onDisk("sub/new note.md").isEmpty && newTab.map { !PreviewTabs.isPreview($0) } == true
                && session.cursor == f.file("sub/new note.md") && session.visibleRows().contains { $0.node.url == f.file("sub/new note.md") },
                "New File… on a folder asks for the name in place, makes the empty file there and opens it in a tab to stay, the keyboard in its editor (“new note.md”, \(typed ? "typed as keys, the space too" : "given without keys: the window is covered or the screen locked, and SwiftUI isn't showing the field"))")
 
         // New File… on the folder itself with the rows scrolled away from
         // the top: its field is there all the same, and takes the keyboard.
+        // (The new file's tab is in front: back to the one before.)
+        f.select(shownTab)
+        _ = await f.wait(1) { WindowTabs.model(for: first)?.selectedTab === shownTab && shown.isVisible }
         let editor = FrontEditor.shared.editor(in: shown)
-        // (The new file's tab is in front: back to the one the menus are asked of.)
-        f.select(shown)
-        _ = await f.wait(1) { shown.tabGroup?.selectedWindow === shown && shown.isVisible }
         if f.drawn(shown), let editor, let last = session.visibleRows().last?.node.url {
             let frame = shown.frame
             shown.setFrame(NSRect(x: frame.minX, y: frame.maxY - shown.contentMinSize.height, width: frame.width, height: shown.contentMinSize.height), display: true)
@@ -487,7 +489,9 @@ extension SelfTest {
 
         // Rename… on a file that is open with unsaved changes: the file
         // moves, its tab follows, and what was unsaved still is.
-        if let eWindow = window(of: "e.py"), let eText = findTextView(in: eWindow.contentView), let eDocument = f.document(eWindow) {
+        if let eTab = tab(of: "e.py") {
+            let eText = eTab.container.textView, eDocument = eTab.document
+            f.select(eTab)
             eText.insertText("# unsaved\n", replacementRange: NSRange(location: 0, length: 0))
             await settle()
             _ = await f.wait { eDocument.isDocumentEdited }
@@ -495,7 +499,7 @@ extension SelfTest {
             let renaming = session.editing == .rename(f.file("e.py"))
             session.commitEdit("renamed.py")
             let moved = await f.wait { !exists("e.py") && exists("renamed.py") && eDocument.fileURL?.standardizedFileURL == f.file("renamed.py") && session.editing == nil }
-            let model = { (first.tabGroup?.selectedWindow).flatMap { WindowTabs.model(for: $0) } }
+            let model = { WindowTabs.model(for: first) }
             let followed = await f.wait {
                 model()?.tabs.contains { $0.title == "renamed.py" && $0.dirty } == true && model()?.openFiles[f.file("renamed.py")]?.edited == true
                     && model()?.openFiles[f.file("e.py")] == nil
@@ -525,21 +529,21 @@ extension SelfTest {
         // Open in New Window: a file that is open in a tab moves out to a
         // window of its own, one that isn't opens in one; neither has the sidebar.
         let before = f.group(first).count
-        let dWindow = window(of: "d.txt")
+        let dTab = tab(of: "d.txt")
         item(Menu.openInNewWindow, .file(f.file("d.txt")))?.action()
-        let movedOut = await f.wait {
-            dWindow.map { !f.group(first).contains($0) && ($0.tabbedWindows?.count ?? 1) == 1 && WindowTabs.model(for: $0)?.folder == nil && $0.isVisible } ?? false
+        func alone(_ t: DocumentTab?) -> Bool {
+            guard let t, let w = t.window else { return false }
+            return w !== first && w.tabs.list.count == 1 && w.tabs.folder == nil && w.isVisible
         }
+        let movedOut = await f.wait { alone(dTab) }
         item(Menu.openInNewWindow, .file(f.file("notes.md")))?.action()
-        let opened = await f.wait {
-            window(of: "notes.md").map { !f.group(first).contains($0) && ($0.tabbedWindows?.count ?? 1) == 1 && WindowTabs.model(for: $0)?.folder == nil } ?? false
-        }
+        let opened = await f.wait { alone(tab(of: "notes.md")) }
         report(movedOut && opened && f.group(first).count == before - 1,
                "Open in New Window moves an open file's tab out to a window of its own and opens another file in one, both without the sidebar (\(f.group(first).count) tabs left of \(before))")
-        for w in [dWindow, window(of: "notes.md")].compactMap({ $0 }) { w.performClose(nil) }
-        _ = await f.wait { window(of: "d.txt") == nil && window(of: "notes.md") == nil }
+        for t in [dTab, tab(of: "notes.md")].compactMap({ $0 }) { t.window?.performClose(nil) }
+        _ = await f.wait { tab(of: "d.txt") == nil && tab(of: "notes.md") == nil }
         // Back to the folder window, for what comes after.
-        (first.tabGroup?.selectedWindow ?? first).makeKeyAndOrderFront(nil)
+        first.makeKeyAndOrderFront(nil)
         report(SidebarFiles.revealed.isEmpty, "nothing was shown in Finder (\(SidebarFiles.revealed.count))")
     }
 
@@ -550,7 +554,7 @@ extension SelfTest {
     /// that a narrow window keeps the editor its minimum.
     private static func edgeChecks(_ first: NSWindow, _ f: SidebarFixture) async {
         let store = SidebarWidth.shared
-        guard let shown = first.tabGroup?.selectedWindow, let other = f.group(first).first(where: { $0 !== shown }) else {
+        guard let shownTab = WindowTabs.model(for: first)?.selectedTab, let other = f.group(first).first(where: { $0 !== shownTab }) else {
             report(false, "two tabs for the sidebar's edge checks"); return
         }
         let saved = { UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?[Prefs.sidebarWidthKey] as? NSObject }
@@ -560,8 +564,9 @@ extension SelfTest {
             setArgument(Prefs.sidebarWidthKey, given)
             store.set(SidebarWidth.remembered)
         }
+        let shown = first
         // (The tab that showed before this one has just closed.)
-        f.select(shown)
+        f.select(shownTab)
         let drawn = await f.wait(1) { f.drawn(shown) }
         let row = Double(shown.frame.width) - 2 * Honey.gap
         func widest(_ w: NSWindow) -> Double { SidebarLayout.widest(in: Double(w.frame.width) - 2 * Honey.gap, gap: Honey.gap) }
@@ -609,13 +614,13 @@ extension SelfTest {
         } else {
             print("SELFTEST SKIP a window at its narrowest keeps the editor its minimum beside a wide sidebar (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }
-        // Every tab is a window with a sidebar of its own: all have the width.
+        // The window's one sidebar keeps its width from tab to tab.
         store.set(320)
         f.select(other)
-        let otherShows = await shows(320, in: other)
-        f.select(shown)
-        if drawn && f.drawn(other) || otherShows {
-            report(otherShows, "another tab of the window has the same width (\(laidOut(other) ?? -1) pt)")
+        let otherShows = await shows(320, in: shown)
+        f.select(shownTab)
+        if drawn || otherShows {
+            report(otherShows, "another tab of the window has the same width (\(laidOut(shown) ?? -1) pt)")
         } else {
             print("SELFTEST SKIP another tab of the window has the same width (the window is covered or the screen locked: SwiftUI isn't updating it)")
         }
@@ -678,20 +683,20 @@ extension SelfTest {
     }
 
     /// Brings a tab forward, as a click on it in the strip does.
-    func select(_ w: NSWindow) {
-        w.tabGroup?.selectedWindow = w
-        w.makeKeyAndOrderFront(nil)
+    func select(_ t: DocumentTab) {
+        t.window?.tabs.select(t)
+        t.window?.makeKeyAndOrderFront(nil)
     }
 
-    func document(_ w: NSWindow) -> KiriDocument? { NSDocumentController.shared.document(for: w) as? KiriDocument }
-    func group(_ w: NSWindow) -> [NSWindow] { w.tabbedWindows ?? [w] }
-    func titles(_ w: NSWindow) -> [String] { group(w).map { document($0)?.displayName ?? "?" } }
-    func text(_ w: NSWindow) -> String { SelfTest.findTextView(in: w.contentView)?.string ?? "<no editor>" }
+    /// The document of the tab `w` shows.
+    func document(_ w: NSWindow) -> KiriDocument? { SelfTest.shownDocument(in: w) }
+    func group(_ w: NSWindow) -> [DocumentTab] { (w as? DocumentNSWindow)?.tabs.list ?? [] }
+    func titles(_ w: NSWindow) -> [String] { group(w).map(\.document.displayName) }
+    func text(_ t: DocumentTab) -> String { t.container.textView.string }
 
-    /// The strip's items, as the window's own tab model has them.
+    /// The strip's items, as the window's tab model has them.
     func strip(_ w: NSWindow) -> String {
-        // (Of the tab that shows: the others' strips are not watching.)
-        (WindowTabs.model(for: w.tabGroup?.selectedWindow ?? w)?.tabs ?? []).map { $0.title + ($0.preview ? " (preview)" : "") + ($0.dirty ? " •" : "") }
+        (WindowTabs.model(for: w)?.tabs ?? []).map { $0.title + ($0.preview ? " (preview)" : "") + ($0.dirty ? " •" : "") }
             .joined(separator: ", ")
     }
 
@@ -701,21 +706,22 @@ extension SelfTest {
     }
 
     /// What a click on the file's row does (and a double-click, with
-    /// `keep`); answers with the window the file shows in.
-    func open(_ name: String, keep: Bool = false, from w: NSWindow, keyboard: SidebarOpen.Keyboard = .stays) async -> NSWindow? {
-        let shown: NSWindow? = await withCheckedContinuation { c in
-            SidebarOpen.open(file(name), keep: keep, from: w, keyboard: keyboard) { shown in
+    /// `keep`); answers with the tab the file shows in.
+    func open(_ name: String, keep: Bool = false, from w: NSWindow, keyboard: SidebarOpen.Keyboard = .stays) async -> DocumentTab? {
+        let url = file(name)
+        let shown: DocumentTab? = await withCheckedContinuation { c in
+            SidebarOpen.open(url, keep: keep, from: w, keyboard: keyboard) { window in
+                let tab = window.flatMap { _ in NSDocumentController.shared.document(for: url).flatMap { DocumentWindow.tab(of: $0) } }
                 // In the turn the file is shown in: what the strip and the editor say.
-                self.atAnswer = shown.map { s in
-                    ((WindowTabs.model(for: s.tabGroup?.selectedWindow ?? s)?.tabs ?? []).first { $0.id == s.windowNumber }?.title ?? "", self.text(s))
+                self.atAnswer = tab.map { t in
+                    ((t.window?.tabs.tabs ?? []).first { $0.id == t.id }?.title ?? "", self.text(t))
                 }
-                c.resume(returning: shown)
+                c.resume(returning: tab)
             }
         }
         guard let shown else { return nil }
-        // A new tab joins its group a turn later; its strip follows.
-        _ = await wait { group(w).contains(shown) && shown.tabGroup?.selectedWindow === shown
-            && document(shown)?.fileURL?.standardizedFileURL == file(name) && text(shown) == onDisk(name) }
+        _ = await wait { group(w).contains { $0 === shown } && shown.window?.tabs.selectedTab === shown
+            && shown.document.fileURL?.standardizedFileURL == url && text(shown) == onDisk(name) }
         await SelfTest.settle()
         return shown
     }

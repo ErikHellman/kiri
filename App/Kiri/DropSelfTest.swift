@@ -105,12 +105,15 @@ extension SelfTest {
             NSDocumentController.shared.documents.first { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }
                 .flatMap { Editors.window(for: $0) }
         }
-        func tabs(_ w: NSWindow) -> [String] { (w.tabbedWindows ?? [w]).map { NSDocumentController.shared.document(for: $0)?.displayName ?? "?" } }
+        func tabs(_ w: NSWindow) -> [String] { documents(in: w).map(\.displayName) }
+        func document(of url: URL) -> NSDocument? {
+            NSDocumentController.shared.documents.first { $0.fileURL?.standardizedFileURL == url.standardizedFileURL }
+        }
         func close(_ urls: [URL]) async {
-            for url in urls { window(of: url)?.performClose(nil) }
+            for url in urls { closeTab(of: document(of: url)) }
             _ = await wait { urls.allSatisfy { window(of: $0) == nil } }
         }
-        let text = ktv.string, firstName = tabs(original)[0]
+        let text = ktv.string, firstName = tabs(original)[0], firstDocument = shownDocument(in: original)
         /// What has been put into the text, if anything.
         func inserted() -> String {
             let now = ktv.string as NSString, was = text as NSString
@@ -128,25 +131,27 @@ extension SelfTest {
         // one a new tab joins by itself.
         let other = file("in-front.txt")
         KiriCLI.open(KiriCLI.Request(newWindow: true, entries: [.file(other, line: 0, column: 0)]))
-        guard await wait(until: { window(of: other).map { !($0.tabbedWindows ?? []).contains(original) && $0.isVisible } ?? false }),
+        guard await wait(until: { window(of: other).map { $0 !== original && $0.isVisible } ?? false }),
               let front = window(of: other) else { report(false, "a second window opens for the drop checks"); return }
         try? await Task.sleep(for: .milliseconds(300))
 
         // Three files on the text of the window behind.
         let onTextFiles = [file("drop-a.txt"), file("drop-b.md"), file("drop-c.swift")]
+        let windowsBefore = Set(NSApp.windows.map { ObjectIdentifier($0) })
         var result = drop(pasteboard(files: onTextFiles), on: original, at: onText)
-        var opened = await wait { onTextFiles.allSatisfy { url in window(of: url).map { (original.tabbedWindows ?? []).contains($0) } ?? false } }
+        var opened = await wait { onTextFiles.allSatisfy { url in window(of: url) === original } }
         try? await Task.sleep(for: .milliseconds(300))
+        let made = NSApp.windows.filter { !windowsBefore.contains(ObjectIdentifier($0)) }.count
         report(result.taken && opened && tabs(original) == [firstName] + onTextFiles.map(\.lastPathComponent) && tabs(front) == [other.lastPathComponent]
-               && ktv.string == text,
-               "three files dropped on the text of the window behind open as its tabs, in order, and nothing goes into the text (taken by \(result.target): \(result.taken); tabs \(tabs(original)); the other window \(tabs(front)); put into the text: \(inserted()))")
+               && ktv.string == text && made == 0,
+               "three files dropped on the text of the window behind open as its tabs, in order, with no window made for them, and nothing goes into the text (taken by \(result.target): \(result.taken); tabs \(tabs(original)); the other window \(tabs(front)); put into the text: \(inserted()); \(made) windows made)")
         if ktv.string != text { ktv.undoManager?.undo() }
 
         // One on the tab strip: it joins after the tab that shows.
         let onStripFile = [file("drop-d.txt")]
-        let showing = original.tabGroup?.selectedWindow ?? original
+        let showing = original
         result = drop(pasteboard(files: onStripFile), on: showing, at: onStrip)
-        opened = await wait { window(of: onStripFile[0]).map { (original.tabbedWindows ?? []).contains($0) } ?? false }
+        opened = await wait { window(of: onStripFile[0]) === original }
         try? await Task.sleep(for: .milliseconds(300))
         report(result.taken && opened && tabs(original).last == "drop-d.txt" && tabs(front) == [other.lastPathComponent],
                "a file dropped on the tab strip opens as a tab of that window (taken by \(result.target): \(result.taken); tabs \(tabs(original)))")
@@ -154,11 +159,11 @@ extension SelfTest {
         // A file that is already open comes forward; no second tab.
         let count = tabs(original).count
         result = drop(pasteboard(files: [onTextFiles[0]]), on: showing, at: onStrip)
-        let selected = await wait(1.5) { original.tabGroup?.selectedWindow === window(of: onTextFiles[0]) }
+        let selected = await wait(1.5) { isShowing(document(of: onTextFiles[0])) }
         report(result.taken && selected && tabs(original).count == count,
                "a file that is open already is shown, not opened twice (\(tabs(original).count) tabs)")
         await close(onTextFiles + onStripFile)
-        original.tabGroup?.selectedWindow = original
+        show(firstDocument)
 
         // A folder: a folder window of its own, as Open Folder gives.
         let folder = dir.appendingPathComponent("project")
@@ -171,7 +176,7 @@ extension SelfTest {
             return folderWindow != nil
         }
         report(result.taken && opened && folderWindow.flatMap { FolderSessions.session(for: $0) }?.root.url == folder
-               && !(original.tabbedWindows ?? []).contains { $0 === folderWindow } && FolderSessions.session(for: original) == nil
+               && folderWindow !== original && FolderSessions.session(for: original) == nil
                && ktv.string == text,
                "a folder dropped on the text opens as a folder window of its own (taken by \(result.target): \(result.taken); \(folderWindow.flatMap { FolderSessions.session(for: $0) }?.root.url.lastPathComponent ?? "no folder window"); put into the text: \(inserted()))")
         if ktv.string != text { ktv.undoManager?.undo() }
@@ -181,12 +186,12 @@ extension SelfTest {
             let onSidebar = NSPoint(x: 60, y: folderWindow.frame.height / 2)
             let sidebarFile = [file("drop-e.txt")]
             result = drop(pasteboard(files: sidebarFile), on: folderWindow, at: onSidebar)
-            opened = await wait { window(of: sidebarFile[0]).map { (folderWindow.tabbedWindows ?? []).contains($0) || $0 === folderWindow } ?? false }
+            opened = await wait { window(of: sidebarFile[0]) === folderWindow }
             try? await Task.sleep(for: .milliseconds(300))
             let inFolderWindow = window(of: sidebarFile[0]).map { FolderSessions.session(for: $0)?.root.url == folder } ?? false
             report(result.taken && opened && inFolderWindow,
                    "a file dropped on the sidebar opens in that folder window (taken by \(result.target): \(result.taken))")
-            for w in folderWindow.tabbedWindows ?? [folderWindow] { w.performClose(nil) }
+            folderWindow.performClose(nil)
             _ = await wait { !NSApp.windows.contains { $0.isVisible && FolderSessions.session(for: $0)?.root.url == folder } }
         }
 

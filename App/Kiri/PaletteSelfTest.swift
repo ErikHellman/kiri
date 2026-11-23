@@ -32,7 +32,7 @@ extension SelfTest {
             let folder = defaults.string(forKey: "KiriOpenFolder") != nil
             DispatchQueue.main.asyncAfter(deadline: .now() + (folder ? 2.6 : 1.2)) {
                 let front = folder ? NSApp.orderedWindows.first { $0.isVisible && FolderSessions.session(for: $0) != nil } : nil
-                guard let window = front?.tabGroup?.selectedWindow ?? front ?? textView.window,
+                guard let window = front ?? textView.window,
                       let palette = FrontEditor.shared.editor(in: window)?.palette else { return }
                 // The menus are the front window's once SwiftUI has heard which that is.
                 FrontEditor.shared.selfTestMain(window)
@@ -640,7 +640,7 @@ extension SelfTest {
             report(false, "a folder window opens for the palette's file checks"); return
         }
         defer {
-            for w in first.tabbedWindows ?? [first] { NSDocumentController.shared.document(for: w)?.close() }
+            for doc in documents(in: first) { doc.close() }
             original.orderFront(nil)
         }
         await settle(300)
@@ -677,18 +677,20 @@ extension SelfTest {
         // Return on a file opens it as a tab of this window, to stay.
         let noted = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.count ?? 0
         palette.commit()
-        var ideaTab: NSWindow?
+        var ideaTab: DocumentTab?
+        let greeterTab = (first as? DocumentNSWindow)?.tabs.list.first?.id ?? -1
         let openedIdea = await wait {
-            ideaTab = (first.tabbedWindows ?? []).first { document($0) == url("docs/notes/deep/idea.md") }
-            return ideaTab.map { $0.tabGroup?.selectedWindow === $0 && $0.firstResponder is KiriTextView } ?? false
+            ideaTab = (first as? DocumentNSWindow)?.tabs.list.first { $0.document.fileURL?.standardizedFileURL == url("docs/notes/deep/idea.md") }
+            return ideaTab.map { isShowing($0.document) && first.firstResponder === $0.container.textView } ?? false
         }
         let recentNow = (NSDocumentController.shared as? KiriDocumentController)?.selfTestNoted.dropFirst(noted).map(\.lastPathComponent) ?? []
-        report(openedIdea && !palette.isOpen && ideaTab.map { !PreviewTabs.isPreview($0) } == true && (first.tabbedWindows?.count ?? 1) == 2
+        report(openedIdea && !palette.isOpen && ideaTab.map { !PreviewTabs.isPreview($0) } == true && documents(in: first).count == 2
                && recentNow.contains("idea.md"),
-               "Return on a file opens it in a tab of this window, to stay, with the keyboard in its editor, and it is a recent document (\(first.tabbedWindows?.count ?? 1) tabs, recent: \(recentNow))")
-        guard let ideaTab, let ideaModel = FrontEditor.shared.editor(in: ideaTab) else { return }
+               "Return on a file opens it in a tab of this window, to stay, with the keyboard in its editor, and it is a recent document (\(documents(in: first).count) tabs, recent: \(recentNow))")
+        guard let ideaTab else { return }
+        let ideaModel = ideaTab.model
         await settle(300)
-        FrontEditor.shared.selfTestMain(ideaTab)
+        FrontEditor.shared.selfTestMain(first)
 
         // With nothing typed: the other tabs, the recent files, then the
         // commands. A recent file that is in a tab is listed as the tab.
@@ -696,14 +698,14 @@ extension SelfTest {
         let second = ideaModel.palette
         second.open()
         let top = second.rows.prefix(4)
-        report(top.count == 4 && top[0].action == .tab(first.windowNumber) && top[0].title == "Greeter.swift" && top[0].detail == "Sources/App"
+        report(top.count == 4 && top[0].action == .tab(greeterTab) && top[0].title == "Greeter.swift" && top[0].detail == "Sources/App"
                && top[0].spoken == "Greeter.swift, tab, Sources/App" && top[1].action == .file(outside.standardizedFileURL)
                && top[2].action == .file(url("README.md")) && top[2].detail.isEmpty && { if case .command = top[3].action { true } else { false } }(),
                "with nothing typed: the other open tab, then the recent files (not the one in a tab, nor this window's own), then the commands (\(top.map { "\($0.title) · \($0.detail)" }))")
         // A file that is open in a tab and in the folder shows once, as the tab.
         second.text = "greeter"
         let greeters = second.rows.filter { $0.title == "Greeter.swift" }
-        report(greeters.count == 1 && greeters.first?.action == .tab(first.windowNumber) && second.rows.contains { isFile($0, "Tests/GreeterTests.swift") }
+        report(greeters.count == 1 && greeters.first?.action == .tab(greeterTab) && second.rows.contains { isFile($0, "Tests/GreeterTests.swift") }
                && second.rows.first?.title == "Greeter.swift",
                "a file that is open in a tab and in the folder shows once, as the tab, ahead of the files (\(second.rows.prefix(3).map { "\($0.title) · \($0.spoken)" }))")
         second.text = "readme"
@@ -711,8 +713,8 @@ extension SelfTest {
         // Return on a tab brings it forward.
         second.text = "greeter"
         second.commit()
-        let selected = await wait { first.tabGroup?.selectedWindow === first }
-        report(selected && !second.isOpen && (first.tabbedWindows?.count ?? 1) == 2, "Return on a tab brings that tab forward (\(first.tabbedWindows?.count ?? 1) tabs)")
+        let selected = await wait { document(first) == url("Sources/App/Greeter.swift") }
+        report(selected && !second.isOpen && documents(in: first).count == 2, "Return on a tab brings that tab forward (\(documents(in: first).count) tabs)")
         await settle(300)
         FrontEditor.shared.selfTestMain(first)
 

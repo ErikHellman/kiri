@@ -494,7 +494,8 @@ struct PaletteRow: Equatable, Identifiable {
             if let root, path.hasPrefix(root + "/") { return String(path.dropFirst(root.count + 1)) }
             return TabNames.abbreviatingHome(path, home: home)
         }
-        tabs = (FrontEditor.shared.tabs(in: window)?.items ?? []).filter { $0.id != window.windowNumber }.map { item in
+        let windowTabs = FrontEditor.shared.tabs(in: window)
+        tabs = (windowTabs?.items ?? []).filter { $0.id != windowTabs?.selected }.map { item in
             let url = item.path.map { URL(fileURLWithPath: $0).standardizedFileURL }
             return (item.id, url.map(shown) ?? item.title, url)
         }
