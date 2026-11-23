@@ -1,10 +1,11 @@
 import KiriKit
 import SwiftUI
 
-/// The command palette (⌘K): the third of the bars that float over the top
-/// of the editor panel, one at a time, with the find bar's glass, radius
-/// and focus ring. A field, and under it in the same panel what the field
-/// finds. All of it is `PaletteController`'s; this only shows it.
+/// The command palette (⌘K) and the language picker (⌃⌘L): the third of
+/// the bars that float over the top of the editor panel, one at a time,
+/// with the find bar's glass, radius and focus ring. A field, and under it
+/// in the same panel what the field finds. All of it is
+/// `PaletteController`'s; this only shows it.
 struct CommandPalette: View {
     @Bindable var palette: PaletteController
     /// The document's lines, for `:` mode ("of 340").
@@ -79,16 +80,30 @@ struct CommandPalette: View {
         .onAppear { DispatchQueue.main.async { focused = true } }
         .onExitCommand { palette.cancel() }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Command palette")
+        .accessibilityLabel(name)
+    }
+
+    /// What the field says before anything is typed, and what VoiceOver
+    /// calls the panel.
+    private var name: String { palette.kind == .language ? "Language picker" : "Command palette" }
+
+    private var prompt: String {
+        if palette.kind == .language { return panelWidth < 360 ? "Language" : "Search languages by name or file extension" }
+        return panelWidth < 360 ? "Search" : "Search files, tabs and commands"
+    }
+
+    private var symbol: String {
+        if palette.kind == .language { return "chevron.left.forwardslash.chevron.right" }
+        return palette.mode == .line ? "arrow.right.to.line" : "magnifyingglass"
     }
 
     private var field: some View {
         HStack(spacing: 8) {
-            Image(systemName: palette.mode == .line ? "arrow.right.to.line" : "magnifyingglass").font(.system(size: 12, weight: .bold))
+            Image(systemName: symbol).font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.honeyAccentInk)
                 .frame(width: 16)
                 .accessibilityHidden(true)
-            BarTextField(prompt: panelWidth < 360 ? "Search" : "Search files, tabs and commands", text: $palette.text)
+            BarTextField(prompt: prompt, text: $palette.text)
                 .focused($focused)
                 // The arrows move through the rows while the keyboard
                 // stays in the field.
@@ -97,8 +112,10 @@ struct CommandPalette: View {
                 .onKeyPress(.pageUp) { palette.move(by: -rowsThatFit); return .handled }
                 .onKeyPress(.pageDown) { palette.move(by: rowsThatFit); return .handled }
                 .onSubmit { palette.commit() }
-                .accessibilityLabel("Command palette")
-                .accessibilityHint("Type to search. Up and Down Arrow choose a result, Return runs it.")
+                .accessibilityLabel(name)
+                .accessibilityHint(palette.kind == .language
+                    ? "Type to search. Up and Down Arrow choose a language and show it, Return keeps it."
+                    : "Type to search. Up and Down Arrow choose a result, Return runs it.")
             // A big folder's first reading: its files are on their way.
             if palette.isReadingFolder {
                 Text("Reading the folder…")
@@ -196,15 +213,24 @@ struct CommandPalette: View {
                 // The selected row is kept in sight; nothing glides there.
                 // A new list starts at its top.
                 .onChange(of: [palette.rows.first?.id ?? "", String(palette.rows.count), String(palette.selection)]) {
-                    let selection = palette.selection
-                    guard palette.rows.indices.contains(selection) else { return }
-                    if selection == 0 {
-                        proxy.scrollTo(palette.rows[0].id, anchor: .top)
-                    } else {
-                        proxy.scrollTo(palette.rows[selection].id)
-                    }
+                    keepSelectionInSight(proxy)
                 }
+                // The panel opens with its rows already there (the language
+                // picker with the document's language selected, far down the
+                // list), so nothing changes for the line above to see: the
+                // selection is brought into sight once the rows are laid out.
+                .onAppear { DispatchQueue.main.async { keepSelectionInSight(proxy) } }
             }
+        }
+    }
+
+    private func keepSelectionInSight(_ proxy: ScrollViewProxy) {
+        let selection = palette.selection
+        guard palette.rows.indices.contains(selection) else { return }
+        if selection == 0 {
+            proxy.scrollTo(palette.rows[0].id, anchor: .top)
+        } else {
+            proxy.scrollTo(palette.rows[selection].id)
         }
     }
 }
@@ -230,7 +256,7 @@ private struct PaletteRowView: View {
                 content(detail: "", marks: [])
             }
             .padding(.leading, 8)
-            .padding(.trailing, row.shortcut == nil ? 10 : 5)
+            .padding(.trailing, row.shortcut == nil && !row.isCurrent ? 10 : 5)
             .frame(height: CommandPalette.rowHeight - 2)
             .background {
                 if selected {
@@ -265,7 +291,14 @@ private struct PaletteRowView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let shortcut = row.shortcut { KeyCaps(shortcut.glyphs) }
+            if let shortcut = row.shortcut {
+                KeyCaps(shortcut.glyphs)
+            } else if row.isCurrent {
+                // The language the document has now.
+                Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Color.honeyAccentInk)
+                    .padding(.trailing, 2)
+            }
         }
     }
 

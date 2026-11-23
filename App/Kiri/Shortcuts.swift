@@ -21,6 +21,10 @@ enum Keys {
     static let palette = KeyboardShortcut("k", modifiers: .command)
     /// The palette too, by the key other editors find a file with.
     static let goToFile = KeyboardShortcut("p", modifiers: .command)
+    /// The language picker: L for language, with the Control the other
+    /// "set how this document shows" keys have (⌃⌘W, ⌃⌘S). ⌘L is Go to
+    /// Line, and ⇧⌘L is macOS's Search With Google service.
+    static let chooseLanguage = KeyboardShortcut("l", modifiers: [.control, .command])
     static let shiftRight = KeyboardShortcut("]", modifiers: .command)
     static let shiftLeft = KeyboardShortcut("[", modifiers: .command)
     static let bigger = KeyboardShortcut("+", modifiers: .command)
@@ -198,6 +202,12 @@ struct ShortcutGroup: Identifiable {
             Item("Commands only", "Type >"),
             Item("A line of the document (Go to Line)", "Type :42"),
             Item("Close the palette", "⎋"),
+        ]),
+        ShortcutGroup(title: "Language", systemImage: "chevron.left.forwardslash.chevron.right", items: [
+            Item("Choose the document's language", Keys.chooseLanguage),
+            Item("Find one by name or file extension", "Type rust, rs, yml…"),
+            Item("Choose a language / keep it", "↑  ↓  ↩"),
+            Item("Close, putting back the one before", "⎋"),
         ]),
         ShortcutGroup(title: "Moving around", systemImage: "arrow.up.and.down.text.horizontal", items: [
             Item("Go to line (or line:column)", Keys.goToLine),

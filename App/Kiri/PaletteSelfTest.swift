@@ -338,6 +338,7 @@ extension SelfTest {
         palette.cancel()
 
         await palettePreviews(window, model)
+        await languagePicker(window, model)
 
         // ⌘P, the key other editors find a file with, opens it too.
         let file = main.item(withTitle: "File")?.submenu?.item(withTitle: KiriCommands.goToFileTitle)
@@ -492,6 +493,96 @@ extension SelfTest {
         let after = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
         report(NSDictionary(dictionary: saved).isEqual(to: after) && UserDefaults.standard.string(forKey: Prefs.colorThemeKey) == setting,
                "the previews wrote no saved preference")
+    }
+
+    /// The language picker (⌃⌘L, and the language in the status bar): the
+    /// palette with only the languages, found by name or by a file
+    /// extension, the one in force selected and shown as the selection
+    /// moves.
+    private static func languagePicker(_ window: NSWindow, _ model: EditorModel) async {
+        let palette = model.palette
+        let before = model.language
+        func pause(_ seconds: Double) async { try? await Task.sleep(for: .milliseconds(Int(seconds * 1000))) }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 2, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        model.language = .swift
+
+        // Format ▸ Choose Language… is on ⌃⌘L, and the key opens the picker.
+        let item = NSApp.mainMenu?.item(withTitle: KiriCommands.languageMenu[0])?.submenu?.item(withTitle: KiriCommands.chooseLanguageTitle)
+        let keyed = item?.keyEquivalent == "l"
+            && item?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == [.control, .command]
+        paletteKey("l", code: 37, [.control, .command], in: window)
+        let opened = await wait { palette.isOpen && palette.kind == .language }
+        report(keyed && item?.isEnabled == true && opened,
+               "Format ▸ \(KiriCommands.chooseLanguageTitle) is on ⌃⌘L and opens the language picker (⌃⌘\(item?.keyEquivalent ?? "none"), open \(opened))")
+
+        // Every language, the one in force selected and ticked.
+        let all = palette.rows.count == Language.all.count
+        let current = palette.selectedRow
+        let swift = current?.title == "Swift" && current?.isCurrent == true && current?.spoken.contains("current") == true
+        let ticked = palette.rows.filter(\.isCurrent).count == 1
+        let plainFirst = palette.rows.first?.title == "Plain Text"
+        report(all && swift && ticked && plainFirst,
+               "it lists every language, Plain Text first, with Swift selected and ticked (\(palette.rows.count) rows, selected “\(current?.title ?? "none")”, \(palette.rows.filter(\.isCurrent).count) ticked)")
+
+        // Typing finds one by name, by extension and by file name.
+        palette.text = "rus"
+        let byName = palette.rows.first?.title == "Rust" && palette.rows.first?.titleMarks == [0..<3]
+        palette.text = "yml"
+        let byExtension = palette.rows.first?.title == "YAML" && palette.rows.first?.detail.hasPrefix(".yml") == true
+        palette.text = "Gemfile"
+        let byFileName = palette.rows.first?.title == "Ruby"
+        palette.text = "zzqqxx"
+        let nothing = palette.rows.isEmpty && palette.emptyMessage?.contains("file extension") == true
+        report(byName && byExtension && byFileName && nothing,
+               "a name, an extension (“yml”) or a file name (“Gemfile”) finds the language, and what matches nothing says so (\(byName), \(byExtension), \(byFileName), “\(palette.emptyMessage ?? "")”)")
+
+        // The selection shows the language; Escape puts Swift back.
+        palette.text = "rust"
+        let typedOnly = model.language == .swift
+        palette.move(by: -1)
+        await pause(PaletteController.languagePause + 0.1)
+        let shown = model.language == .rust
+        palette.cancel()
+        let restored = model.language == .swift && !palette.isOpen
+        report(typedOnly && shown && restored,
+               "the selection on Rust shows the document as Rust and Escape puts Swift back (\(typedOnly), \(shown), \(restored))")
+
+        // Return keeps it, with the keyboard back in the editor.
+        palette.chooseLanguage()
+        palette.text = "rust"
+        palette.commit()
+        let kept = model.language == .rust && !palette.isOpen
+        // Reopened, Rust is the one ticked and selected.
+        palette.chooseLanguage()
+        let onRust = palette.selectedRow?.title == "Rust" && palette.selectedRow?.isCurrent == true
+        // ⌃⌘L again closes it; the palette's own ⌘K turns the picker into the palette.
+        palette.toggleLanguages()
+        let closed = !palette.isOpen
+        palette.chooseLanguage()
+        palette.open(with: ">")
+        let toPalette = palette.isOpen && palette.kind == .palette && palette.rows.contains { $0.title == "Save" }
+        palette.cancel()
+        report(kept && onRust && closed && toPalette,
+               "Return keeps the language, it is ticked when the picker opens again, ⌃⌘L closes it and ⌘K turns it into the palette (\(kept), \(onRust), \(closed), \(toPalette))")
+
+        // The status bar's language opens it, and it is never open with the find bar.
+        palette.toggleLanguages()
+        let fromBar = palette.isOpen && palette.kind == .language
+        model.find.show()
+        let findWins = !palette.isOpen && model.find.isOpen
+        model.find.close()
+        report(fromBar && findWins, "the status bar's language opens the picker, and the find bar takes its place (\(fromBar), \(findWins))")
+        palette.cancel()
+        model.language = before
+        model.controller?.setLanguage(before)
     }
 
     /// Files, tabs and recent files in the palette, in a folder window of
@@ -653,6 +744,17 @@ enum PaletteSample {
         .file(tab.map { .tab($0) } ?? .file(URL(fileURLWithPath: "/" + path)), path: path, marks: marks, tab: tab != nil)
     }
 
+    /// The language picker's rows for what is typed, the document's own
+    /// language ticked.
+    private static func languages(_ typed: String, current: Language) -> [PaletteRow] {
+        LanguageSearch.search(typed).map { hit in
+            let icon = FileIcon.of(hit.language)
+            return PaletteRow(action: .language(hit.language), symbol: icon.symbol, tint: icon.tint, title: hit.language.name,
+                              titleMarks: hit.nameMarks, detail: hit.detail, detailMarks: hit.detailMarks,
+                              isCurrent: hit.language == current)
+        }
+    }
+
     @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
         let commands = [
             command("Save", "File", Keys.save, marks: [0..<1]),
@@ -692,6 +794,12 @@ enum PaletteSample {
             ("> and a letter: commands with their keys, more than fit", .sample(text: ">s", rows: commands, selection: 5), 8),
             ("no match", .sample(text: "zzqq", rows: []), 8),
             ("a short window: three rows", .sample(text: ">s", rows: commands), 3),
+            ("the language picker (⌃⌘L): nothing typed, the document's language ticked",
+             .sample(text: "", rows: languages("", current: .swift),
+                     selection: languages("", current: .swift).firstIndex { $0.isCurrent } ?? 0, kind: .language), 8),
+            ("the picker, “ts” typed", .sample(text: "ts", rows: languages("ts", current: .swift), kind: .language), 8),
+            ("the picker, an extension typed", .sample(text: "yml", rows: languages("yml", current: .swift), kind: .language), 8),
+            ("the picker, no match", .sample(text: "zzqq", rows: [], kind: .language), 8),
         ]
         return VStack(alignment: .leading, spacing: 12) {
             ForEach([860.0, 460.0, 220.0], id: \.self) { width in

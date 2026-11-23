@@ -1742,9 +1742,12 @@ import os
         let list = elements()
         let menus = list.filter { $0.role == NSAccessibility.Role.popUpButton.rawValue || $0.role == NSAccessibility.Role.menuButton.rawValue }
             .map(\.name)
-        let named = ["Language, ", "Encoding, ", "Line endings, "].allSatisfy { prefix in menus.contains { $0.hasPrefix(prefix) && $0.count > prefix.count } }
-        let current = !visible || menus.contains("Language, \(model.language.name)") && menus.contains("Encoding, UTF-8") && menus.contains("Line endings, LF")
-        report(named && current, "the status bar's menus say what they are and their value (\(menus))")
+        // (The language is a button: it opens the language picker.)
+        let language = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "Language" }
+        let named = ["Encoding, ", "Line endings, "].allSatisfy { prefix in menus.contains { $0.hasPrefix(prefix) && $0.count > prefix.count } }
+            && language?.value.isEmpty == false
+        let current = !visible || language?.value == model.language.name && menus.contains("Encoding, UTF-8") && menus.contains("Line endings, LF")
+        report(named && current, "the status bar's menus and its language say what they are and their value (\(menus), Language “\(language?.value ?? "none")”)")
         let position = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.name == "Go to Line" }
         let indentation = list.first { $0.value.hasPrefix("Indentation, ") || $0.name.hasPrefix("Indentation, ") }
         report(position?.value.hasPrefix("Line ") == true && indentation != nil,
