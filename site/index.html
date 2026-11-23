@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiri: a beautiful text editor for quick edits</title>
+  <meta name="description" content="Kiri is a native SwiftUI text editor for macOS. It launches instantly, opens the files you reach for every day, and highlights the syntax of common programming languages.">
+  <meta name="theme-color" content="#F5EEE1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16120E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://kiri.hellsoft.se/">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://kiri.hellsoft.se/">
+  <meta property="og:title" content="Kiri: a beautiful text editor for quick edits">
+  <meta property="og:description" content="A native SwiftUI text editor for macOS that launches instantly, with Liquid Glass, six color themes and Tree-sitter syntax highlighting.">
+  <meta property="og:image" content="https://kiri.hellsoft.se/assets/og.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="fonts/Nunito-800.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/Nunito-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="Kiri home">
+      <img src="assets/icon.png" alt="" width="36" height="36">
+      <span>Kiri</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#themes">Themes</a>
+      <a href="#cli">Command line</a>
+      <a href="https://github.com/ErikHellman/kiri">GitHub</a>
+    </nav>
+    <a class="btn btn-small js-download" href="https://github.com/ErikHellman/kiri/releases/latest">Download</a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true"><div class="comb comb-a"></div><div class="comb comb-b"></div></div>
+      <div class="hero-text">
+        <img class="hero-icon" src="assets/icon.png" alt="The Kiri app icon: a letter in a frosted glass envelope with a honey seal" width="128" height="128">
+        <h1>A beautiful text editor for quick&nbsp;edits.</h1>
+        <p class="lead">Kiri is a native Mac app that opens in an instant, reads the files you reach for every day and colors their code. Open a file, make the change, get back to work.</p>
+        <div class="cta">
+          <a class="btn js-download" href="https://github.com/ErikHellman/kiri/releases/latest">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Download for Mac
+          </a>
+          <a class="btn btn-glass" href="https://github.com/ErikHellman/kiri">View on GitHub</a>
+        </div>
+        <p class="fine"><span class="js-version">Free</span> · macOS 26 Tahoe or later · Apple silicon and Intel</p>
+      </div>
+      <figure class="hero-shot">
+        <picture>
+          <source srcset="assets/shots/hero-dark.webp" media="(prefers-color-scheme: dark)">
+          <img src="assets/shots/hero-light.webp" alt="Kiri editing a Swift file: honey colored tabs and Save button in glass over a warm cream editor" width="1600" height="1025">
+        </picture>
+      </figure>
+    </section>
+
+    <section id="features" class="section">
+      <h2>Small, fast, and lovely to look at</h2>
+      <p class="section-lead">Everything a quick edit needs, nothing that slows it down.</p>
+      <div class="grid">
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+          <h3>Instant launch</h3>
+          <p>About a third of a second to the first window on an M-series Mac. Kiri is ready before you are.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c4 4 7 7 7 11a7 7 0 0 1-14 0c0-4 3-7 7-11z"/></svg></div>
+          <h3>Honey and Liquid Glass</h3>
+          <p>Glass chrome over warm paper, the text on a solid panel. Light, dark and high contrast, and it follows Reduce Motion and Reduce Transparency.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5"/></svg></div>
+          <h3>Real syntax highlighting</h3>
+          <p>Tree-sitter for Swift, TypeScript, Python, Go, Rust, Kotlin, C, C++, Zig and more. Only the visible text is colored, so big files stay fast.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 8h18M3 8v11h18V8M3 8l2-4h6l2 4"/></svg></div>
+          <h3>Tabs and folders</h3>
+          <p>Documents open as tabs in one window. Open a folder for a file sidebar with a preview tab, so looking through files leaves one tab, not twenty.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 5 5"/></svg></div>
+          <h3>Command palette</h3>
+          <p>⌘K finds a file in the folder, another tab, a recent file or any menu command by a few of its letters. ⌘L goes to a line.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5zM15 4v4h4M8 13h8M8 17h5"/></svg></div>
+          <h3>Saving is yours</h3>
+          <p>Your file changes when you save, never otherwise. A recovery copy kept out of your folders brings unsaved work back after a crash.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></div>
+          <h3>Any text file</h3>
+          <p>Markdown, JSON, YAML, TOML, CSV, logs and source code. Encoding and line endings are detected and saved back exactly as they were.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8M20 4v5h-5"/></svg></div>
+          <h3>Stays up to date</h3>
+          <p>Signed and notarized by Apple, with a built-in updater that installs new versions when you say so.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section showcase">
+      <div class="row">
+        <div class="row-text">
+          <h2>Find anything with a few letters</h2>
+          <p>The command palette floats over your text: “grsw” finds Greeter.swift, “tc” runs Toggle Comment. Every menu command is in it, with its shortcut, so it is also where you look a key up.</p>
+        </div>
+        <img class="shot" src="assets/shots/palette.webp" alt="The command palette open over the editor, listing files and commands" loading="lazy" width="1600" height="1025">
+      </div>
+      <div class="row reverse">
+        <div class="row-text">
+          <h2>Find and replace that stays out of the way</h2>
+          <p>A glass bar over the top of the editor, matches highlighted as you type with a count. Match case, regular expressions with <code>$1</code> replacements, and Replace All as one undo step.</p>
+        </div>
+        <img class="shot" src="assets/shots/find.webp" alt="The find bar over a Swift file, with matches highlighted" loading="lazy" width="1600" height="1025">
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <h2>Notes, configs and READMEs too</h2>
+          <p>Markdown headings, lists and code blocks are colored as you write. A status bar of glass shows the language, encoding and line endings, and fades while you type.</p>
+        </div>
+        <img class="shot" src="assets/shots/markdown.webp" alt="A Markdown document in Kiri" loading="lazy" width="1600" height="1025">
+      </div>
+    </section>
+
+    <section id="themes" class="section">
+      <h2>Six themes, light and dark</h2>
+      <p class="section-lead">Each one recolors every surface and every syntax color. Even the Dock icon follows along.</p>
+      <div class="themes" role="radiogroup" aria-label="Color theme">
+        <button class="theme" role="radio" data-theme="honey" aria-checked="true"><img src="assets/themes/icon-honey.png" alt="" width="80" height="80"><span>Honey</span></button>
+        <button class="theme" role="radio" data-theme="matcha" aria-checked="false"><img src="assets/themes/icon-matcha.png" alt="" width="80" height="80"><span>Matcha</span></button>
+        <button class="theme" role="radio" data-theme="sakura" aria-checked="false"><img src="assets/themes/icon-sakura.png" alt="" width="80" height="80"><span>Sakura</span></button>
+        <button class="theme" role="radio" data-theme="tide" aria-checked="false"><img src="assets/themes/icon-tide.png" alt="" width="80" height="80"><span>Tide</span></button>
+        <button class="theme" role="radio" data-theme="lavender" aria-checked="false"><img src="assets/themes/icon-lavender.png" alt="" width="80" height="80"><span>Lavender</span></button>
+        <button class="theme" role="radio" data-theme="graphite" aria-checked="false"><img src="assets/themes/icon-graphite.png" alt="" width="80" height="80"><span>Graphite</span></button>
+      </div>
+      <p class="theme-blurb js-theme-blurb" aria-live="polite">Warm cream and amber. Kiri's own.</p>
+      <figure class="theme-shot">
+        <img class="js-theme-shot" src="assets/themes.webp" alt="Kiri in its six color themes" loading="lazy" width="1920" height="1215">
+      </figure>
+    </section>
+
+    <section id="cli" class="section cli">
+      <div class="row">
+        <div class="row-text">
+          <h2>At home in the terminal</h2>
+          <p>Install the <code>kiri</code> command from the Kiri menu once, then open files, folders and pipes from anywhere. It reuses the running app, so it is instant too.</p>
+          <p>Make it your editor for git and everything else with <code>export EDITOR="kiri -w"</code>.</p>
+        </div>
+        <pre class="term" aria-label="Examples of the kiri command"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><code><span class="c"># open files as tabs</span>
+<span class="p">$</span> kiri notes.md todo.txt
+<span class="c"># …at line 42, column 5</span>
+<span class="p">$</span> kiri src/main.swift:42:5
+<span class="c"># a window with a file sidebar</span>
+<span class="p">$</span> kiri ~/project
+<span class="c"># standard input in a new tab</span>
+<span class="p">$</span> git diff | kiri -
+<span class="c"># wait until the tab is closed</span>
+<span class="p">$</span> git config --global core.editor "kiri -w"</code></pre>
+      </div>
+    </section>
+
+    <section class="section get">
+      <img src="assets/icon.png" alt="" width="112" height="112">
+      <h2>Get Kiri</h2>
+      <p class="section-lead">Download the disk image, open it and drag Kiri into Applications.</p>
+      <div class="cta center">
+        <a class="btn js-download" href="https://github.com/ErikHellman/kiri/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn btn-glass" href="https://github.com/ErikHellman/kiri/releases">All releases</a>
+      </div>
+      <p class="fine"><span class="js-version">Free</span> · macOS 26 Tahoe or later · Universal (Apple silicon and Intel)</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Made with honey in Sweden by <a href="https://hellsoft.se">Hellman Software AB</a>.</p>
+    <p><a href="https://github.com/ErikHellman/kiri">Source on GitHub</a> · <a href="https://github.com/ErikHellman/kiri/issues">Report an issue</a> · Set in <a href="fonts/OFL.txt">Nunito</a></p>
+  </footer>
+</body>
+</html>

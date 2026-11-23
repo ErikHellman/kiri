@@ -1,6 +1,13 @@
 # Kiri
 
-A beautiful text editor for quick edits.
+[![Latest release](https://img.shields.io/github/v/release/ErikHellman/kiri?label=release&color=E09A2D)](https://github.com/ErikHellman/kiri/releases/latest)
+[![CI](https://github.com/ErikHellman/kiri/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ErikHellman/kiri/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/ErikHellman/kiri/total?color=995A05)](https://github.com/ErikHellman/kiri/releases)
+![macOS 26+](https://img.shields.io/badge/macOS-26%2B-3B2A2F?logo=apple)
+
+A beautiful text editor for quick edits. **[kiri.hellsoft.se](https://kiri.hellsoft.se)** · **[Download for Mac](https://github.com/ErikHellman/kiri/releases/latest)**
+
+[![Kiri, a text editor for the Mac, in light and dark](docs/promo/hero.png)](https://kiri.hellsoft.se)
 
 Kiri is a native SwiftUI app for macOS that launches instantly, opens the files you reach for every day, and highlights the syntax of common programming languages. It is built for opening a file, making a change and getting back to work, not for replacing a full IDE.
 
@@ -112,5 +119,7 @@ Tests: `cd KiriKit && swift test` (the token, document-model, search, fuzzy-matc
 - `App/` the macOS app (XcodeGen spec in `App/project.yml`): `NSDocument` documents as tabs of windows that host SwiftUI (`DocumentWindow`, `WindowTabs`), the TextKit 2 editor, the command palette, settings and commands.
 - `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).
 - `docs/DESIGN.md` the design language.
+- `site/` the website, [kiri.hellsoft.se](https://kiri.hellsoft.se), published by `.github/workflows/pages.yml` on every push to `main` that changes it.
+- `docs/promo/` promotional graphics (`hero.png`, `social.png` for GitHub's social preview, `light-dark.png`, `themes.png`), drawn by `node scripts/promo/promo.mjs` (Node and Playwright) from the app screenshots in `docs/promo/shots`, which also writes the website's images into `site/assets`.
 
 Nunito is licensed under the SIL Open Font License 1.1 (`KiriKit/Sources/KiriKit/Fonts/OFL.txt`). Tree-sitter grammars and queries are MIT licensed (`KiriKit/Sources/KiriSyntax/Queries/LICENSES.txt`).
