@@ -12,6 +12,8 @@ struct PaletteRow: Equatable, Identifiable {
         case file(URL)
         /// A menu item is chosen.
         case command(MenuCommand)
+        /// The document gets this language (the language picker).
+        case language(Language)
     }
 
     let action: Action
@@ -27,12 +29,16 @@ struct PaletteRow: Equatable, Identifiable {
     var detailMarks: [Range<Int>] = []
     /// A command's key.
     var shortcut: KeyboardShortcut?
+    /// The language in force, checked at the trailing edge (the language
+    /// picker).
+    var isCurrent = false
 
     var id: String {
         switch action {
         case .tab(let id): "tab:\(id)"
         case .file(let url): "file:" + url.path
         case .command(let command): "command:" + command.id
+        case .language(let language): "language:" + language.id
         }
     }
 
@@ -41,7 +47,7 @@ struct PaletteRow: Equatable, Identifiable {
     /// apart. Nil where there is nothing shorter to say.
     var shortDetail: String? {
         switch action {
-        case .command: return nil
+        case .command, .language: return nil
         case .tab, .file:
             guard let slash = detail.lastIndex(of: "/"), detail.index(after: slash) < detail.endIndex else { return nil }
             return "…" + detail[slash...]
@@ -49,13 +55,14 @@ struct PaletteRow: Equatable, Identifiable {
     }
 
     /// What VoiceOver hears: "Save, Command S", "Greeter.swift, tab,
-    /// Sources/Tidepool".
+    /// Sources/Tidepool", "Rust, current, .rs".
     var spoken: String {
         var parts = [title]
         switch action {
         case .tab: parts.append("tab")
         case .file: break
         case .command(let command): if command.isOn { parts.append("checked") }
+        case .language: if isCurrent { parts.append("current") }
         }
         if !detail.isEmpty, shortcut == nil { parts.append(detail) }
         if let shortcut { parts.append(shortcut.spoken) }
@@ -110,7 +117,25 @@ struct PaletteRow: Equatable, Identifiable {
         case line
     }
 
-    var mode: Mode { text.hasPrefix(">") ? .commands : text.hasPrefix(":") ? .line : .everything }
+    var mode: Mode {
+        guard kind == .palette else { return .everything }
+        return text.hasPrefix(">") ? .commands : text.hasPrefix(":") ? .line : .everything
+    }
+
+    /// What the panel is for.
+    enum Kind: Equatable {
+        /// The command palette (⌘K): files, tabs and commands.
+        case palette
+        /// The language picker (⌃⌘L, or the language in the status bar):
+        /// the same panel with only the languages, found by name or file
+        /// extension (`LanguageSearch`). The selection starts on the
+        /// language in force and shows each one it is moved to, as the
+        /// palette's "Language:" rows do; Return keeps it, Escape puts
+        /// back the one before.
+        case language
+    }
+
+    private(set) var kind = Kind.palette
 
     /// What is looked for: the text without the prefix that says where.
     var query: String {
@@ -147,6 +172,7 @@ struct PaletteRow: Equatable, Identifiable {
     /// What the list says in place of rows when nothing matches.
     var emptyMessage: String? {
         guard rows.isEmpty, isOpen, mode != .line else { return nil }
+        if kind == .language { return "No language matches “\(query)”. Its name or a file extension finds it." }
         if query.isEmpty { return "Nothing to show yet." }
         return mode == .commands ? "No command matches “\(query)”. Fewer letters may find it."
             : "No file, tab or command matches “\(query)”. Fewer letters may find it."
@@ -225,7 +251,13 @@ struct PaletteRow: Equatable, Identifiable {
     /// is previewed: a theme is every window's.)
     private func updatePreview() {
         var wanted: Preview?
-        if isOpen, moved, !inBackground, case .command(let command)? = selectedRow?.action { wanted = Self.preview(for: command) }
+        if isOpen, moved, !inBackground {
+            switch selectedRow?.action {
+            case .command(let command)?: wanted = Self.preview(for: command)
+            case .language(let language)?: wanted = .language(language)
+            default: break
+            }
+        }
         if case .language = wanted, (controller?.textView?.textStorage?.length ?? 0) > Self.languagePreviewLimit { wanted = nil }
         show(wanted)
     }
@@ -319,10 +351,38 @@ struct PaletteRow: Equatable, Identifiable {
     /// Opens the palette, or with it open puts `prefill` in its field
     /// and the keyboard there.
     func open(with prefill: String = "") {
+        open(.palette, with: prefill)
+    }
+
+    /// ⌃⌘L, or the language in the status bar: opens the language picker
+    /// (the palette with only the languages), or closes it.
+    func toggleLanguages() {
+        if isOpen, kind == .language { cancel() } else { chooseLanguage() }
+    }
+
+    /// Opens the language picker; with the palette open, it becomes the
+    /// picker.
+    func chooseLanguage() {
+        open(.language, with: "")
+    }
+
+    private func open(_ kind: Kind, with prefill: String) {
         guard let model, let controller, controller.textView != nil else { return }
+        if isOpen, kind != self.kind {
+            // From the palette to the picker or back: a line or a look
+            // that was only being shown comes down first.
+            model.goToLine.cancel(focusEditor: false)
+            moved = false
+            show(nil)
+        }
+        self.kind = kind
         if !isOpen {
             // One bar at a time.
             model.find.close(focusEditor: false)
+            inBackground = false
+            watchWindow()
+        }
+        if kind == .palette, !gathered {
             // The menus are read while the editor has the keyboard: what
             // Edit has on and off is then what it will be when a command
             // runs, with the keyboard back there.
@@ -330,8 +390,9 @@ struct PaletteRow: Equatable, Identifiable {
             commands = MenuCommands.all()
             commandCandidates = commands.map { FuzzyCandidate($0.title) }
             gatherFiles()
-            inBackground = false
-            watchWindow()
+            gathered = true
+        }
+        if !isOpen {
             isOpen = true
             model.overlayChanged()
         }
@@ -378,6 +439,8 @@ struct PaletteRow: Equatable, Identifiable {
         isOpen = false
         moved = false
         show(nil)
+        // (`kind` stays as it was while the panel fades out: each opening says which.)
+        gathered = false
         mainObservers.forEach(NotificationCenter.default.removeObserver)
         mainObservers = []
         rows = []
@@ -413,6 +476,10 @@ struct PaletteRow: Equatable, Identifiable {
         let inField = (window?.firstResponder as? NSTextView)?.isFieldEditor == true
         close(focusEditor: inField)
     }
+
+    /// The commands, tabs, recent files and the folder have been read
+    /// since the palette opened (the language picker needs none of them).
+    @ObservationIgnored private var gathered = false
 
     /// The tabs, the recent files and the folder, as the palette opens.
     private func gatherFiles() {
@@ -493,6 +560,11 @@ struct PaletteRow: Equatable, Identifiable {
             close()
             return
         }
+        if case .language(let language) = row.action {
+            keep(.language(language))
+            close()
+            return
+        }
         #if DEBUG || KIRI_SELFTEST
         if Self.selfTestRunsFirst { perform(row); close(); return }
         #endif
@@ -514,6 +586,8 @@ struct PaletteRow: Equatable, Identifiable {
             if let window { SidebarOpen.open(url, keep: true, from: window, keyboard: .editor) }
         case .command(let command):
             MenuCommands.perform(command)
+        case .language(let language):
+            setLanguage(language)
         }
     }
 
@@ -531,7 +605,9 @@ struct PaletteRow: Equatable, Identifiable {
     private func textChanged() {
         guard isOpen, let goToLine = model?.goToLine else { return }
         moved = false
-        if mode == .line {
+        if kind == .language {
+            searchLanguages()
+        } else if mode == .line {
             // From the first colon on, where the editor was is kept to go back to.
             goToLine.begin()
             goToLine.text = String(text.dropFirst())
@@ -550,7 +626,7 @@ struct PaletteRow: Equatable, Identifiable {
     /// tabs, the recent files, then every command (the app menu's last). Otherwise what matches,
     /// best first, a file or a tab ahead of a command that matches as well.
     private func search(keepingSelection: Bool = false) {
-        guard isOpen else { return }
+        guard isOpen, kind == .palette else { return }
         // (A selection nobody moved stays on the first row, which may be a new one.)
         let selected = keepingSelection && moved ? selectedRow?.id : nil
         let fuzzy = FuzzyQuery(query)
@@ -611,6 +687,23 @@ struct PaletteRow: Equatable, Identifiable {
         if !keepingSelection { announce(rowsChanged: true) }
     }
 
+    /// The language picker's list for what is typed. With nothing typed
+    /// the selection starts on the language in force, where ↑ and ↓ go on
+    /// from.
+    private func searchLanguages() {
+        // (The one in force: not one that is only being shown.)
+        let current = languageBefore ?? model?.language
+        rows = LanguageSearch.search(query).map { hit in
+            let icon = FileIcon.of(hit.language)
+            return PaletteRow(action: .language(hit.language), symbol: icon.symbol, tint: icon.tint, title: hit.language.name,
+                              titleMarks: hit.nameMarks, detail: hit.detail, detailMarks: hit.detailMarks,
+                              isCurrent: hit.language == current)
+        }
+        selection = query.isEmpty ? rows.firstIndex { $0.isCurrent } ?? 0 : 0
+        updatePreview()
+        announce(rowsChanged: true)
+    }
+
     private func tabRow(_ tab: (id: Int, path: String, url: URL?), marks: [Range<Int>] = []) -> PaletteRow {
         guard tab.url != nil else {
             // A document that has no file yet: its title is all it has.
@@ -650,8 +743,10 @@ struct PaletteRow: Equatable, Identifiable {
     #if DEBUG || KIRI_SELFTEST
     /// A palette in a given state with no editor behind it, for pictures
     /// drawn offscreen.
-    static func sample(text: String, rows: [PaletteRow], selection: Int = 0, line: LineStatus? = nil) -> PaletteController {
+    static func sample(text: String, rows: [PaletteRow], selection: Int = 0, line: LineStatus? = nil,
+                       kind: Kind = .palette) -> PaletteController {
         let palette = PaletteController()
+        palette.kind = kind
         palette.text = text
         palette.rows = rows
         palette.selection = selection

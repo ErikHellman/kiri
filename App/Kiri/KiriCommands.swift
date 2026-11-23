@@ -20,6 +20,8 @@ struct KiriCommands: Commands {
     /// The palette's own menu items, which it leaves out of its list.
     static let paletteTitle = "Command Palette…"
     static let goToFileTitle = "Go to File…"
+    /// Format ▸ Choose Language…: the language picker (⌃⌘L).
+    static let chooseLanguageTitle = "Choose Language…"
     /// The menus whose choices the palette shows while the selection is
     /// on one of them (`PaletteController.preview`): where they are in
     /// the menu bar, said once for the menus and for the palette.
@@ -192,6 +194,11 @@ struct KiriCommands: Commands {
         }
 
         CommandMenu(Self.languageMenu[0]) {
+            // The picker with a search field; the menu below it is the
+            // same choice for the menu bar (and the palette's "Language:" rows).
+            Button(Self.chooseLanguageTitle) { editor?.palette.toggleLanguages() }
+                .keyboardShortcut(Keys.chooseLanguage)
+                .disabled(editor == nil)
             Picker(Self.languageMenu[1], selection: languageBinding) {
                 ForEach(Language.all) { Text($0.name).tag($0) }
             }

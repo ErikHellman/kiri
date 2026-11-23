@@ -860,22 +860,29 @@ public struct HoneyStatusMenu<Items: View>: View {
 }
 
 /// A status item that does something when pressed, with the hover capsule
-/// and focus ring of `HoneyStatusMenu` and no chevron.
+/// and focus ring of `HoneyStatusMenu`. With `chevron` it looks like a
+/// menu (for an item that opens a picker of its own), and an `.accent` one
+/// is the same small amber pill at rest.
 public struct HoneyStatusButton: View {
     let text: String
     let systemImage: String?
     let reserving: [String]
+    let tone: HoneyPill.Tone
+    let chevron: Bool
     let showing: HoneyStatusHighlight?
     let onFocusChange: ((Bool) -> Void)?
     let action: () -> Void
 
     /// - Parameter reserving: the widest texts the item may come to show;
     ///   it keeps their room, with `text` at its leading edge.
-    public init(_ text: String, systemImage: String? = nil, reserving: [String] = [], showing: HoneyStatusHighlight? = nil,
-                onFocusChange: ((Bool) -> Void)? = nil, action: @escaping () -> Void) {
+    public init(_ text: String, systemImage: String? = nil, reserving: [String] = [], tone: HoneyPill.Tone = .neutral,
+                chevron: Bool = false, showing: HoneyStatusHighlight? = nil, onFocusChange: ((Bool) -> Void)? = nil,
+                action: @escaping () -> Void) {
         self.text = text
         self.systemImage = systemImage
         self.reserving = reserving
+        self.tone = tone
+        self.chevron = chevron
         self.showing = showing
         self.onFocusChange = onFocusChange
         self.action = action
@@ -883,13 +890,23 @@ public struct HoneyStatusButton: View {
 
     public var body: some View {
         Button(action: action) {
-            HoneyStatusText(text: text, systemImage: systemImage, reserving: reserving)
-                .padding(.horizontal, HoneyStatusMetrics.side)
+            label
+                .padding(.leading, HoneyStatusMetrics.side)
+                .padding(.trailing, chevron ? HoneyStatusMetrics.menuTrailing : HoneyStatusMetrics.side)
                 .frame(height: HoneyStatusMetrics.itemHeight)
                 .contentShape(Capsule())
         }
         .buttonStyle(HoneyStatusButtonStyle())
-        .modifier(HoneyStatusChrome(tone: .neutral, chevron: false, showing: showing, onFocusChange: onFocusChange))
+        .modifier(HoneyStatusChrome(tone: tone, chevron: chevron, showing: showing, onFocusChange: onFocusChange))
+    }
+
+    @ViewBuilder private var label: some View {
+        let value = HoneyStatusText(text: text, systemImage: systemImage, reserving: reserving)
+        if tone == .accent {
+            value.font(.honey(.caption, weight: .heavy)).foregroundStyle(Color.honeyAccentInk)
+        } else {
+            value
+        }
     }
 }
 

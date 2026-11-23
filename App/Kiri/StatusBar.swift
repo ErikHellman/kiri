@@ -6,8 +6,9 @@ import SwiftUI
 /// language, the caret's position, the indentation, the encoding and the
 /// line endings.
 ///
-/// Language, encoding and line endings are menus, the position opens Go to
-/// Line and the indentation is only a label; what can be pressed shows a
+/// The language opens the language picker (the palette with only the
+/// languages, ⌃⌘L), encoding and line endings are menus, the position
+/// opens Go to Line and the indentation is only a label; what can be pressed shows a
 /// capsule (and a menu its chevron) on hover and keyboard focus. The bar
 /// keeps its width as the caret moves (`StatusText.Reserve`), and in a panel
 /// too narrow for all of it the indentation goes first, then the save
@@ -80,15 +81,17 @@ struct EditorStatusBar: View {
     /// The bar stays solid while the keyboard is on one of its items.
     private func focusChanged(_ focused: Bool) { model.statusRest.focusChanged(inside: focused) }
 
+    /// The language picker: a field to search in and the languages under
+    /// it, over the top of the editor (`PaletteController.chooseLanguage`).
     private var language: some View {
-        HoneyStatusMenu(model.language.name, name: "Language", tone: .accent, showing: highlight(.language),
-                        onFocusChange: focusChanged) {
-            Picker("Language", selection: $model.language) {
-                ForEach(Language.all) { Text($0.name).tag($0) }
-            }
-            .pickerStyle(.inline)
+        HoneyStatusButton(model.language.name, tone: .accent, chevron: true, showing: highlight(.language),
+                          onFocusChange: focusChanged) {
+            model.palette.toggleLanguages()
         }
-        .help("Language")
+        .help("Language (\(Keys.chooseLanguage.glyphs))")
+        .accessibilityLabel("Language")
+        .accessibilityValue(model.language.name)
+        .accessibilityHint("Opens the language picker, to search for a language")
     }
 
     private var position: some View {
