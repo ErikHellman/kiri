@@ -26,9 +26,10 @@ const C = {
   canvas: "#F5EEE1", surface: "#FFFCF6", surface2: "#F2E8D6", line: "#E8DAC3",
   fg: "#3B2A2F", muted: "#76615A", accent: "#E09A2D", accentHi: "#F6C25E",
   ink: "#995A05", soft: "#FBE7C2", focus: "#B8700E", glow: "#FFF7E6",
-  // Name tags: a caramel that both Finder label colors read on (black text in
-  // light mode about 5:1, white text in dark mode about 4:1).
-  tag: "#AE6F22", tagHi: "#C3842F",
+  // Name tags behind Finder's labels. Finder keeps the labels black over a
+  // background picture in dark mode too (checked on macOS 26), so the tags
+  // can be light: accent-soft honey, black text on it about 17:1.
+  tag: "#FBE7C2", tagHi: "#FFF3DC",
 };
 
 const font = (w) => {
@@ -118,7 +119,7 @@ export function backgroundSVG() {
   // Finder draws the name centered under the icon; the tag sits behind it.
   const tag = (c, w) => `
     <rect x="${c.x - w / 2}" y="${c.y + ICON / 2 + 8}" width="${w}" height="22" rx="11" fill="url(#tagG)"/>
-    <rect x="${c.x - w / 2 + 0.5}" y="${c.y + ICON / 2 + 8.5}" width="${w - 1}" height="21" rx="10.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.28"/>`;
+    <rect x="${c.x - w / 2 + 0.5}" y="${c.y + ICON / 2 + 8.5}" width="${w - 1}" height="21" rx="10.5" fill="none" stroke="${C.accent}" stroke-opacity="0.45"/>`;
 
   // The trail: from Kiri's cushion, up in an arc, down into Applications.
   const p0 = [kiri.x + 92, kiri.y - 16], p1 = [kiri.x + 140, kiri.y - 92];

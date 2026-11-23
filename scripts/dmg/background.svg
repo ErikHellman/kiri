@@ -26,7 +26,7 @@
     <stop offset="1" stop-color="#E8DAC3" stop-opacity="0.9"/>
   </linearGradient>
   <linearGradient id="tagG" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#C3842F"/><stop offset="1" stop-color="#AE6F22"/>
+    <stop offset="0" stop-color="#FFF3DC"/><stop offset="1" stop-color="#FBE7C2"/>
   </linearGradient>
   <linearGradient id="beeG" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#F6C25E"/><stop offset="1" stop-color="#E09A2D"/>
@@ -67,9 +67,9 @@
     <ellipse cx="490" cy="262" rx="50" ry="7" fill="#B8700E" opacity="0.12" filter="url(#blur6)"/>
 
     <rect x="147" y="276" width="46" height="22" rx="11" fill="url(#tagG)"/>
-    <rect x="147.5" y="276.5" width="45" height="21" rx="10.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.28"/>
+    <rect x="147.5" y="276.5" width="45" height="21" rx="10.5" fill="none" stroke="#E09A2D" stroke-opacity="0.45"/>
     <rect x="443" y="276" width="94" height="22" rx="11" fill="url(#tagG)"/>
-    <rect x="443.5" y="276.5" width="93" height="21" rx="10.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.28"/>
+    <rect x="443.5" y="276.5" width="93" height="21" rx="10.5" fill="none" stroke="#E09A2D" stroke-opacity="0.45"/>
 
 <circle cx="262.00" cy="188.00" r="1.60" fill="#E09A2D" opacity="0.35"/><circle cx="267.11" cy="179.95" r="1.68" fill="#E09A2D" opacity="0.39"/><circle cx="272.28" cy="171.95" r="1.77" fill="#E09A2D" opacity="0.43"/><circle cx="277.52" cy="164.04" r="1.85" fill="#E09A2D" opacity="0.47"/><circle cx="282.89" cy="156.22" r="1.94" fill="#E09A2D" opacity="0.51"/><circle cx="288.50" cy="148.51" r="2.02" fill="#E09A2D" opacity="0.54"/><circle cx="294.41" cy="141.11" r="2.10" fill="#E09A2D" opacity="0.58"/><circle cx="300.87" cy="134.20" r="2.19" fill="#E09A2D" opacity="0.62"/><circle cx="308.37" cy="128.40" r="2.27" fill="#E09A2D" opacity="0.66"/><circle cx="317.40" cy="125.97" r="2.36" fill="#E09A2D" opacity="0.70"/><circle cx="326.02" cy="129.65" r="2.44" fill="#E09A2D" opacity="0.74"/><circle cx="332.51" cy="136.60" r="2.53" fill="#E09A2D" opacity="0.78"/><circle cx="337.69" cy="144.49" r="2.61" fill="#E09A2D" opacity="0.82"/><circle cx="342.24" cy="152.85" r="2.69" fill="#E09A2D" opacity="0.85"/><circle cx="346.41" cy="161.43" r="2.78" fill="#E09A2D" opacity="0.89"/>
 <g transform="translate(366 192) rotate(30) scale(1.08)" filter="url(#beeShadow)">
