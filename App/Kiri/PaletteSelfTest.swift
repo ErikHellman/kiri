@@ -168,6 +168,10 @@ extension SelfTest {
             return place.menu.items[place.index].title != command.path.last
         }
         report(lost.isEmpty, "every row is found again in the menu bar by its path (\(lost.map(\.title)))")
+        let commandPaths = rows.compactMap { r -> [String]? in if case .command(let c) = r.action { return c.path } else { return nil } }
+        let firstApp = commandPaths.firstIndex { $0.first == MenuCommands.appName }
+        report(commandPaths.first?.first == "File" && firstApp.map { i in commandPaths[i...].allSatisfy { $0.first == MenuCommands.appName } } == true,
+               "with nothing typed, the File menu's commands come first and the app menu's (About, Settings) last (first: \(commandPaths.first ?? []))")
 
         // Typing filters, best first, the letters marked; > is commands only.
         palette.text = "upper"
@@ -666,7 +670,7 @@ enum PaletteSample {
             file("Sources/Tidepool/Greeter.swift", tab: 1), file("README.md", tab: 2),
             PaletteRow(action: .tab(3), symbol: "rectangle.stack", title: "Untitled", detail: ""),
             file("~/Sources/kiri/docs/DESIGN.md"), file("~/Sources/tidepool/Package.swift"), file("~/.zshrc"),
-            command("About Kiri", "Kiri"), command("Settings…", "Kiri", Keys.settings), command("New", "File", Keys.new),
+            command("New", "File", Keys.new), command("New Tab", "File", Keys.newTab), command("Open…", "File", Keys.open),
         ]
         // "gre" typed in a folder window: files, a tab and commands, mixed.
         let mixed = [

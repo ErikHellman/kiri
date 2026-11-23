@@ -76,7 +76,7 @@ struct MenuCommand: Equatable, Identifiable {
         return out
     }
 
-    private static var appName: String {
+    static var appName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? ProcessInfo.processInfo.processName
     }
 

@@ -547,7 +547,7 @@ struct PaletteRow: Equatable, Identifiable {
     }
 
     /// Fills the list for what is typed. With nothing typed: the other
-    /// tabs, the recent files, then every command. Otherwise what matches,
+    /// tabs, the recent files, then every command (the app menu's last). Otherwise what matches,
     /// best first, a file or a tab ahead of a command that matches as well.
     private func search(keepingSelection: Bool = false) {
         guard isOpen else { return }
@@ -560,7 +560,11 @@ struct PaletteRow: Equatable, Identifiable {
                 found += tabs.map { tabRow($0) }
                 found += recents.map { .file(.file($0.url), path: $0.path) }
             }
-            found += commands.map { Self.row(for: $0) }
+            // The app menu's commands (About, Settings, Install) last: a
+            // list that opens on "About Kiri" puts the least used first.
+            let app = MenuCommands.appName
+            let (own, rest) = (commands.filter { $0.path.first == app }, commands.filter { $0.path.first != app })
+            found += (rest + own).map { Self.row(for: $0) }
         } else {
             // Each kind's best, then all of them in one order.
             var ranked: [(score: Int, kind: Int, row: PaletteRow)] = []
