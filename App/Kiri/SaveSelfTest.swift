@@ -635,6 +635,10 @@ extension SelfTest {
 ///   `-NSQuitAlwaysKeepsWindows YES` (the system setting that reopens
 ///   windows): the file's window is back, once, with no empty document
 ///   beside it.
+/// - `tabs-quit` (with three files, which open as three tabs of one
+///   window) / `tabs-check`, both with `-NSQuitAlwaysKeepsWindows YES`:
+///   the window comes back with its three tabs in their order, the one
+///   that showed (the middle one) showing.
 /// - `empty-check`: a launch with nothing to restore or recover starts in
 ///   one empty document. Run after a quit with no window open, and after
 ///   the app was killed (when AppKit doesn't call the launch a default
@@ -666,6 +670,20 @@ extension SelfTest {
             case "frame-set": frameSet(textView)
             case "frame-check": frameCheck(textView)
             case "restore-check": await restoreCheck()
+            case "tabs-check": await tabsCheck()
+            case "tabs-quit":
+                // Three tabs of one window, the middle one showing.
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+                let docs = documents(in: DocumentWindow.all.first)
+                if docs.count == 3 { show(docs[1]) }
+                await settle(500)
+                print("SELFTEST info quitting with \(DocumentWindow.all.count) windows: \(docs.map { $0.displayName ?? "" }), showing \(shownDocument(in: DocumentWindow.all.first)?.displayName ?? "none")")
+                report(DocumentWindow.all.count == 1 && docs.count == 3 && isShowing(docs[1]),
+                       "quitting with three tabs in one window, the middle one showing")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
             case "empty-check": await emptyCheck()
             case "restore-quit":
                 // A quit as the person's: the document is not closed
@@ -696,6 +714,17 @@ extension SelfTest {
         let windows = NSApp.windows.filter { $0.isVisible && DocumentWindow.isDocumentWindow($0) }
         report(docs.count == 1 && docs.first?.fileURL?.lastPathComponent == "crash.swift" && docs.first?.isDocumentEdited == false && windows.count == 1,
                "the window that was open at the quit is back, once, and no empty document with it (\(docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }), \(windows.count) windows)")
+    }
+
+    private static func tabsCheck() async {
+        _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+        await settle(500)
+        let windows = DocumentWindow.all
+        let docs = documents(in: windows.first)
+        let names = docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }
+        report(windows.count == 1 && names == ["crash.swift", "second.txt", "third.md"] && docs.count == 3 && isShowing(docs[1])
+               && NSDocumentController.shared.documents.count == 3,
+               "the window comes back with its three tabs, in their order, the one that showed showing, and nothing else (\(windows.count) windows, \(names), showing \(shownDocument(in: windows.first)?.displayName ?? "none"))")
     }
 
     private static func emptyCheck() async {
