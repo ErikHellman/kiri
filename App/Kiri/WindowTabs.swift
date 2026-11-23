@@ -121,7 +121,7 @@ import SwiftUI
         Self.models.setObject(self, forKey: window)
         #endif
         window.tabbingMode = .preferred
-        window.tabbingIdentifier = "se.hellsoft.kiri.document"
+        window.tabbingIdentifier = Self.tabbingIdentifier
         Self.useTallTitleBar(window)
         // `kiri -n` and folders get a window of their own; files dropped
         // on a window join that one's tabs, whichever window is in front.
@@ -168,6 +168,24 @@ import SwiftUI
             self.refresh()
         }
         resume()
+    }
+
+    static let tabbingIdentifier = "se.hellsoft.kiri.document"
+
+    /// The window a document window made now will join as a tab
+    /// (`attach`, which takes the placement, decides it the same way), or
+    /// nil for one that gets a window of its own: the first, `kiri -n`, a
+    /// folder. Asked while the window is made, before it shows, so that it
+    /// can come up where its tabs are (`DocumentWindow.controller`).
+    static func upcomingHost() -> NSWindow? {
+        if let placement = WindowPlacement.next {
+            guard let wanted = placement.host else { return nil }
+            if wanted.isVisible { return wanted }
+            if let shown = wanted.tabGroup?.selectedWindow, shown.isVisible { return shown }
+        }
+        return NSApp.orderedWindows.first {
+            $0.isVisible && $0.tabbingIdentifier == tabbingIdentifier && !joining.contains(ObjectIdentifier($0))
+        }
     }
 
     /// Windows that are up but haven't joined a tab group yet. Several files

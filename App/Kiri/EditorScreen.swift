@@ -27,6 +27,17 @@ struct EditorScreen: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The file's text (and its line numbers) shows. A file that opens in
+    /// a new tab, or in place of another (the preview tab), fades in on the
+    /// paper, which stays put: the file arriving is told in the content,
+    /// never by the window. 240 ms rising 4 pt; with reduced motion the
+    /// 140 ms fade alone; with Motion: Off at once.
+    @State private var textShown: Bool
+
+    init(document: KiriDocument, arriving: Bool = false) {
+        self.document = document
+        _textShown = State(initialValue: !arriving)
+    }
 
     /// Where the document's file is: nil until it is saved, and it follows
     /// Save As and a move in Finder.
@@ -77,6 +88,7 @@ struct EditorScreen: View {
         .onAppear {
             detectLanguage()
             tabs.resume()
+            if !textShown { showText() }
             #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowShortcuts") { openWindow(id: ShortcutsView.windowID) }
@@ -89,8 +101,24 @@ struct EditorScreen: View {
         .onChange(of: ObjectIdentifier(document)) {
             detectLanguage()
             saveState = .idle
+            fadeTextIn()
         }
         .onDisappear { tabs.invalidate() }
+    }
+
+    /// The text comes in (`textShown`).
+    private func showText() {
+        let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
+        withAnimation(motion.reduced ? motion.quick : motion.medium) { textShown = true }
+    }
+
+    /// Another file in this window: its text fades in, as a new tab's does.
+    private func fadeTextIn() {
+        guard !HoneyMotion(appearance, systemReduced: reduceMotion).off else { return }
+        var hide = Transaction()
+        hide.disablesAnimations = true
+        withTransaction(hide) { textShown = false }
+        Task { @MainActor in showText() }
     }
 
     private var editor: some View {
@@ -101,6 +129,8 @@ struct EditorScreen: View {
                    isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations))
+            .opacity(textShown ? 1 : 0)
+            .offset(y: textShown || motion.reduced ? 0 : 4)
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it. (Not
             // while the palette is open: its list would lie over the

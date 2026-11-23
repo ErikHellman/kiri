@@ -14,7 +14,10 @@ import SwiftUI
     private static let keepsState = !UserDefaults.standard.bool(forKey: "ApplePersistenceIgnoreState")
 
     static func controller(for document: KiriDocument) -> NSWindowController {
-        let host = NSHostingController(rootView: DocumentRoot(document: document))
+        // A window that is to be a tab of one that shows (most are: ⌘O,
+        // ⌘N, Open Recent, `kiri file`, a drop, the sidebar).
+        let tabOf = WindowTabs.upcomingHost()
+        let host = NSHostingController(rootView: DocumentRoot(document: document, arriving: tabOf != nil))
         // The content says how small the window may get (`EditorScreen`'s
         // minimum), never how big it is: that is the person's to choose.
         host.sizingOptions = [.minSize]
@@ -40,6 +43,21 @@ import SwiftUI
         // A window of its own (`kiri -n`, a folder) steps down and right of
         // the one before it; a tab takes its group's frame.
         controller.shouldCascadeWindows = true
+        if let tabOf {
+            // It shows a moment before it joins the tabs (`WindowTabs.attach`).
+            // Without this, that moment is a whole new window zooming in
+            // beside the old one (the system's document-window animation)
+            // and then jumping into its tabs. Instead it comes up without
+            // the zoom, exactly where its tabs are, so joining them moves
+            // nothing: only the new tab growing into the strip and the
+            // file's text fading in (`EditorScreen`) show it arriving.
+            window.animationBehavior = .none
+            let shown = tabOf.tabGroup?.selectedWindow ?? tabOf
+            if !shown.styleMask.contains(.fullScreen) {
+                window.setFrame(shown.frame, display: false)
+                controller.shouldCascadeWindows = false
+            }
+        }
         return controller
     }
 
@@ -61,7 +79,7 @@ import SwiftUI
         // (which may be a tab that isn't showing): it never comes forward
         // with the file before.
         FrontEditor.shared.editor(in: window)?.controller?.show(document)
-        host.rootView = DocumentRoot(document: document)
+        host.rootView = DocumentRoot(document: document, arriving: false)
         FrontEditor.shared.documentChanged(to: document, in: window)
         controller.synchronizeWindowTitleWithDocumentName()
         // The tab's title in the same turn as the text, not one later
@@ -173,8 +191,10 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 /// chosen in Settings (or being previewed).
 private struct DocumentRoot: View {
     let document: KiriDocument
+    /// It opens as a new tab (`EditorScreen.textShown`).
+    let arriving: Bool
 
     var body: some View {
-        AppearanceRoot { EditorScreen(document: document) }
+        AppearanceRoot { EditorScreen(document: document, arriving: arriving) }
     }
 }
