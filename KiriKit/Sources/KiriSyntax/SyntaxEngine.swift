@@ -188,9 +188,14 @@ public final class SyntaxParser: @unchecked Sendable {
     private let parser = Parser()
     private var tree: MutableTree?
 
-    /// `timeout` (seconds) caps one full parse, so pathological input never
-    /// hangs; tests that measure other costs on huge files may raise it.
-    public init?(grammar: SyntaxGrammar, timeout: TimeInterval = 2) {
+    /// Never hangs on pathological input: one full parse stops after 2 s.
+    public convenience init?(grammar: SyntaxGrammar) {
+        self.init(grammar: grammar, timeout: 2)
+    }
+
+    /// `timeout` (seconds) caps one full parse; tests that measure other
+    /// costs on huge files may raise it.
+    public init?(grammar: SyntaxGrammar, timeout: TimeInterval) {
         self.grammar = grammar
         guard (try? parser.setLanguage(grammar.language)) != nil else { return nil }
         parser.timeout = timeout
