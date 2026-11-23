@@ -7,6 +7,9 @@
 # Needs Xcode 26+ and XcodeGen (brew install xcodegen). To sign with your
 # own identity, set SIGN_IDENTITY (default "-", ad hoc). Builds for this
 # Mac's architecture; ARCH="arm64 x86_64" builds a universal app.
+# KIRI_VERSION and KIRI_BUILD, if set, replace App/project.yml's version
+# (CFBundleShortVersionString) and build number (CFBundleVersion), as the
+# release workflow does.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -16,6 +19,9 @@ DERIVED="$ROOT/build/DerivedData"
 ARCH=${ARCH:-$(uname -m)}
 APP="$ROOT/build/Kiri.app"
 PROJECT=App/Kiri.xcodeproj
+VERSION_SETTINGS=
+[ -n "${KIRI_VERSION:-}" ] && VERSION_SETTINGS="MARKETING_VERSION=$KIRI_VERSION"
+[ -n "${KIRI_BUILD:-}" ] && VERSION_SETTINGS="$VERSION_SETTINGS CURRENT_PROJECT_VERSION=$KIRI_BUILD"
 
 command -v xcodegen >/dev/null || { echo "xcodegen not found: brew install xcodegen" >&2; exit 1; }
 
@@ -88,15 +94,13 @@ fi
 echo "==> Building Kiri (Release, $ARCH)"
 run_xcodebuild build -project "$PROJECT" -scheme Kiri -configuration Release \
     -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath "$DERIVED" -skipPackageUpdates \
-    ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO -quiet
+    ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO $VERSION_SETTINGS -quiet
 
 rm -rf "$APP"
 cp -R "$DERIVED/Build/Products/Release/Kiri.app" "$APP"
-# A real identity also gets a secure timestamp, which notarization needs.
-TIMESTAMP=--timestamp=none
-[ "$SIGN_IDENTITY" = "-" ] || TIMESTAMP=--timestamp
-codesign --force --deep --options runtime $TIMESTAMP --sign "$SIGN_IDENTITY" "$APP"
-codesign --verify --deep --strict "$APP"
+# Inside out, Sparkle's helpers first; a real identity also gets a secure
+# timestamp, which notarization needs.
+scripts/codesign-app.sh "$APP" "$SIGN_IDENTITY"
 echo "Built $APP ($(du -sh "$APP" | cut -f1))"
 
 if [ "${1:-}" = "--install" ]; then

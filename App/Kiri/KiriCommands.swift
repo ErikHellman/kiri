@@ -35,6 +35,13 @@ struct KiriCommands: Commands {
     private var document: KiriDocument? { FrontEditor.shared.document }
 
     var body: some Commands {
+        // Below About Kiri, where Mac apps keep it. Off in a build that
+        // can't update itself (no feed or key: see `Updater`).
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Updater.shared.checkForUpdates() }
+                .disabled(!Updater.shared.canCheck)
+        }
+
         CommandGroup(replacing: .appSettings) {
             // With the gear macOS gives a Settings scene's own item.
             Button("Settings…", systemImage: "gear") { openWindow(id: SettingsView.windowID) }
