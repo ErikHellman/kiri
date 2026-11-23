@@ -20,7 +20,7 @@ APP="$ROOT/build/Kiri.app"
 DMGBUILD_VERSION=1.6.7
 # Finder's title bar, added to the window so the content is exactly the
 # picture's 660 x 392 points.
-WINDOW_CHROME=${WINDOW_CHROME:-28}
+WINDOW_CHROME=${WINDOW_CHROME:-32}
 
 for arg in "$@"; do
     case "$arg" in

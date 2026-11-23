@@ -117,8 +117,8 @@ export function backgroundSVG() {
   };
   // Finder draws the name centered under the icon; the tag sits behind it.
   const tag = (c, w) => `
-    <rect x="${c.x - w / 2}" y="${c.y + ICON / 2 + 3}" width="${w}" height="22" rx="11" fill="url(#tagG)"/>
-    <rect x="${c.x - w / 2 + 0.5}" y="${c.y + ICON / 2 + 3.5}" width="${w - 1}" height="21" rx="10.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.28"/>`;
+    <rect x="${c.x - w / 2}" y="${c.y + ICON / 2 + 8}" width="${w}" height="22" rx="11" fill="url(#tagG)"/>
+    <rect x="${c.x - w / 2 + 0.5}" y="${c.y + ICON / 2 + 8.5}" width="${w - 1}" height="21" rx="10.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.28"/>`;
 
   // The trail: from Kiri's cushion, up in an arc, down into Applications.
   const p0 = [kiri.x + 92, kiri.y - 16], p1 = [kiri.x + 140, kiri.y - 92];
@@ -192,7 +192,7 @@ ${sprinkles}
 <text x="${W / 2}" y="84" text-anchor="middle" font-family="NunitoK" font-weight="600" font-size="14" fill="${C.muted}">Drag it into Applications and you’re all set.</text>
 
 ${cushion(kiri)}${cushion(apps)}
-${tag(kiri, 52)}${tag(apps, 100)}
+${tag(kiri, 46)}${tag(apps, 94)}
 
 ${trail}
 <g transform="translate(${beeAt.x} ${beeAt.y}) rotate(30) scale(1.08)" filter="url(#beeShadow)">${bee}</g>
@@ -237,7 +237,7 @@ if (process.argv.includes("--preview")) {
     <path d="M10,42 q0,-6 6,-6 h96 q6,0 6,6 v60 q0,8 -8,8 H18 q-8,0 -8,-8Z" fill="url(#f)"/>
     <g fill="none" stroke="#2c6fb5" stroke-opacity="0.55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M52,92 L64,58 L76,92 M56,82 h16"/></g></svg>`;
-  const label = (c, text) => `<div style="position:absolute;left:${c.x - 60}px;top:${c.y + ICON / 2 + 6}px;width:120px;text-align:center;
+  const label = (c, text) => `<div style="position:absolute;left:${c.x - 60}px;top:${c.y + ICON / 2 + 15}px;width:120px;text-align:center;
     font:13px -apple-system,'Helvetica Neue',Arial,sans-serif;color:#1d1d1f">${text}</div>`;
   const icon = (c, src) => `<img src="${src}" style="position:absolute;left:${c.x - ICON / 2}px;top:${c.y - ICON / 2}px;width:${ICON}px;height:${ICON}px">`;
   const bar = 28, pad = 40;
