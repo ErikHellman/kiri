@@ -58,29 +58,39 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     @Binding var selection: ID
     let onClose: ((ID) -> Void)?
     let onKeep: ((ID) -> Void)?
+    let onDragOut: ((ID) -> Void)?
     let scrollOffset: Binding<CGFloat>?
     @Namespace private var pill
     @FocusState private var focused: ID?
     @State private var position = ScrollPosition(x: 0)
     @State private var scrolled = HoneyScrollOffset()
+    /// The tab `onDragOut` was called for, in the drag under way.
+    @GestureState private var dragging: ID?
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
     @Environment(\.honeyOffscreen) private var offscreen
 
     /// - Parameter scrollOffset: where a strip that scrolls is scrolled to,
-    ///   for when several strips show the same tabs in turn (Kiri has one
-    ///   per window of a tab group): each starts where the last one was, so
-    ///   the tabs don't jump when one window takes another's place.
+    ///   kept by the owner, so that a strip that is made again starts where
+    ///   the last one was.
     /// - Parameter onKeep: a preview tab was double-clicked (or VoiceOver's
     ///   Keep Open chosen): it is to become a tab like any other.
+    /// - Parameter onDragOut: a tab is being pulled up or down out of the
+    ///   strip, to be dragged to another window or out on its own. Called
+    ///   once per drag, while the mouse is still down: the owner starts the
+    ///   drag from there.
     public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, scrollOffset: Binding<CGFloat>? = nil,
-                onClose: ((ID) -> Void)? = nil, onKeep: ((ID) -> Void)? = nil) {
+                onClose: ((ID) -> Void)? = nil, onKeep: ((ID) -> Void)? = nil, onDragOut: ((ID) -> Void)? = nil) {
         self.tabs = tabs
         _selection = selection
         self.scrollOffset = scrollOffset
         self.onClose = onClose
         self.onKeep = onKeep
+        self.onDragOut = onDragOut
     }
+
+    /// How far a tab is pulled across the strip before it comes out of it.
+    static var dragOutDistance: CGFloat { 18 }
 
     public var body: some View {
         let natural = tabs.map { HoneyTabMetrics.naturalWidth($0, selected: $0.id == selection) }
@@ -182,6 +192,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
                 } keep: {
                     onKeep?(tab.id)
                 }
+                .simultaneousGesture(dragOut(tab.id), isEnabled: onDragOut != nil)
                 .id(tab.id)
                 // A new tab grows in from nothing and a closed one
                 // collapses; with reduced motion they fade.
@@ -192,6 +203,18 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
 
     private func select(_ id: ID, _ motion: HoneyMotion) {
         withAnimation(motion.shape) { selection = id }
+    }
+
+    /// A tab pulled across the strip's edge (`onDragOut`).
+    private func dragOut(_ id: ID) -> some Gesture {
+        // Gesture state: it is reset however the drag ends, also when the
+        // owner's drag takes the mouse from it.
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .updating($dragging) { value, state, _ in
+                guard abs(value.translation.height) > Self.dragOutDistance, state != id else { return }
+                state = id
+                onDragOut?(id)
+            }
     }
 
     /// "5 ⌄" at the end of a strip that scrolls: a menu of every tab, in

@@ -143,15 +143,18 @@ extension SelfTest {
                "and the colors are the new theme's: paper, text, and the line numbers as the gutter draws them (\(hex(number)); \(second.name)'s are \(hex(gutterColor)), \(chosen.name)'s \(hex(old)))")
 
         // A window that closes mid-fade takes its fade along.
-        let extra = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true)
+        let windowsBefore = Set(DocumentWindow.all.map { ObjectIdentifier($0) })
+        KiriCLI.open(KiriCLI.Request(newWindow: true, entries: [.untitled]))
         let clock = ContinuousClock()
         let start = clock.now
-        while clock.now - start < .seconds(3), extra.flatMap({ Editors.window(for: $0) })?.contentView?.layer == nil
-            || !(window.tabbedWindows ?? []).contains(where: { $0 === extra.flatMap { Editors.window(for: $0) } }) {
+        var other: DocumentNSWindow?
+        while clock.now - start < .seconds(3) {
+            other = DocumentWindow.all.first { !windowsBefore.contains(ObjectIdentifier($0)) }
+            if other?.contentView?.layer != nil, other?.isVisible == true { break }
             try? await Task.sleep(for: .milliseconds(25))
         }
         try? await Task.sleep(for: .milliseconds(200))
-        if let extra, let other = Editors.window(for: extra), let otherLayer = other.contentView?.layer {
+        if let other, let extra = shownDocument(in: other), let otherLayer = other.contentView?.layer {
             ThemeController.show(third, appearance: appearance)
             let fading = fade(otherLayer) != nil
             extra.close()
@@ -160,7 +163,7 @@ extension SelfTest {
                    && transitions(under: layer) == 0 && shape() == before && Honey.theme == third,
                    "a window closed mid-fade leaves nothing behind, and the theme has changed (\(shape()) of \(before))")
         } else {
-            report(false, "a second tab opens for the close mid-fade check")
+            report(false, "a second window opens for the close mid-fade check")
         }
 
         // Light or dark alone fades too.

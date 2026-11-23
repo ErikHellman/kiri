@@ -143,8 +143,8 @@ import SwiftUI
     }
 }
 
-/// Which window shows which folder. Tabs dragged into or opened in a
-/// folder window share its session.
+/// Which window shows which folder. The tabs of a folder window, opened
+/// in it, dragged into it or merged into it, share its sidebar.
 @MainActor enum FolderSessions {
     private static var byWindow: [ObjectIdentifier: (window: WeakWindow, session: FolderSession)] = [:]
     private static var observing = false
@@ -169,13 +169,6 @@ import SwiftUI
 
     static func session(for window: NSWindow) -> FolderSession? {
         if let entry = byWindow[ObjectIdentifier(window)], entry.window.window === window { return entry.session }
-        // A new tab in a folder window takes the folder.
-        for sibling in window.tabbedWindows ?? [] where sibling !== window {
-            if let entry = byWindow[ObjectIdentifier(sibling)], entry.window.window === sibling {
-                set(entry.session, for: window)
-                return entry.session
-            }
-        }
         return nil
     }
 
@@ -203,7 +196,7 @@ import SwiftUI
 }
 
 /// How wide the folder sidebar is: one width for every folder window and
-/// every tab (each tab is a window with a sidebar of its own), remembered
+/// every tab (a window's tabs share its one sidebar), remembered
 /// from launch to launch (`Prefs.sidebarWidthKey`). The edge between the
 /// sidebar and the editor sets it (`SidebarEdge`).
 @MainActor @Observable final class SidebarWidth {

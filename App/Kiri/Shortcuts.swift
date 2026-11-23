@@ -9,6 +9,7 @@ enum Keys {
     static let saveAs = KeyboardShortcut("s", modifiers: [.shift, .command])
     static let close = KeyboardShortcut("w", modifiers: .command)
     static let closeAll = KeyboardShortcut("w", modifiers: [.option, .command])
+    static let closeWindow = KeyboardShortcut("w", modifiers: [.shift, .command])
     static let settings = KeyboardShortcut(",", modifiers: .command)
     static let newTab = KeyboardShortcut("t", modifiers: .command)
     static let find = KeyboardShortcut("f", modifiers: .command)
@@ -149,6 +150,7 @@ struct ShortcutGroup: Identifiable {
             Item("Save", Keys.save),
             Item("Save as…", Keys.saveAs),
             Item("Close tab", Keys.close),
+            Item("Close window", Keys.closeWindow),
             Item("Settings…", Keys.settings),
             Item("Quit", "⌘Q"),
         ]),

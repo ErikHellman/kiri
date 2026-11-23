@@ -13,6 +13,7 @@ import os
     private static var typedOnLaunch = false
     private static var openedFolder = false
     private static var arrangedTabs = false
+    private static var openedLater = false
     private static var renderedTabs = false
     private static var renderedFind = false
     private static var renderedChrome = false
@@ -490,6 +491,19 @@ import os
                 }
             }
         }
+        // Screenshot helper: -KiriOpenLater <path:path:…> opens those files
+        // one after another, 1.5 s apart, as ⌘O does (which can't be used
+        // here: the Open panel needs the app in front).
+        if let later = UserDefaults.standard.string(forKey: "KiriOpenLater"), !openedLater {
+            openedLater = true
+            for (i, path) in later.split(separator: ":").enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5 * Double(i + 1)) {
+                    print("SELFTEST info opening \(path) at \(ProcessInfo.processInfo.systemUptime)")
+                    fflush(stdout)
+                    NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: String(path)), display: true) { _, _, _ in }
+                }
+            }
+        }
         // Screenshot helper: -KiriOpenFolder <path> opens a folder window, as
         // `kiri <folder>` does (which can't be used here: it activates the app).
         // -KiriOpenFolderFiles <path:path:…> opens those files as its tabs.
@@ -557,7 +571,7 @@ import os
             }
         }
         // Screenshot helpers for the tab strip, run once the launch's files
-        // are all up and their tab groups have stopped changing:
+        // are all up and their windows' tabs have stopped changing:
         // -KiriWindowSize 480x400 sizes the document windows, -KiriDirtyTab
         // <title> types into that tab, -KiriSelectTab <title> selects it.
         // Prints "SELFTEST arranged" when done.
@@ -566,17 +580,17 @@ import os
             Task { @MainActor in
                 let clock = ContinuousClock()
                 var last: [Int] = [], since = clock.now
-                var windows: [NSWindow] = []
+                var windows: [DocumentNSWindow] = []
                 while true {
                     try? await Task.sleep(for: .milliseconds(100))
-                    windows = NSApp.windows.filter { $0.isVisible && NSDocumentController.shared.document(for: $0) != nil }
-                    let now = windows.map { $0.tabbedWindows?.count ?? 1 }
+                    windows = DocumentWindow.all.filter(\.isVisible)
+                    let now = windows.map { $0.tabs.list.count }
                     if now != last { last = now; since = clock.now }
                     if !windows.isEmpty, clock.now - since > .seconds(1) { break }
                 }
-                @MainActor func tab(_ key: String) -> NSWindow? {
+                @MainActor func tab(_ key: String) -> DocumentTab? {
                     guard let title = UserDefaults.standard.string(forKey: key) else { return nil }
-                    for w in windows where w.title == title { return w }
+                    for w in windows { for t in w.tabs.list where t.document.displayName == title { return t } }
                     return nil
                 }
                 if let size = UserDefaults.standard.string(forKey: "KiriWindowSize")?.split(separator: "x").compactMap({ Double($0) }),
@@ -585,10 +599,11 @@ import os
                         w.setFrame(NSRect(x: w.frame.minX, y: w.frame.maxY - size[1], width: size[0], height: size[1]), display: true)
                     }
                 }
-                if let w = tab("KiriDirtyTab"), let tv = findTextView(in: w.contentView) {
+                if let t = tab("KiriDirtyTab"), let w = t.window {
                     // Typing counts as an edit in the tab that is showing.
-                    w.tabGroup?.selectedWindow = w
+                    w.tabs.select(t)
                     try? await Task.sleep(for: .milliseconds(300))
+                    let tv = t.container.textView
                     w.makeFirstResponder(tv)
                     tv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
                     // The edit counts once its undo group closes, which
@@ -600,9 +615,10 @@ import os
                     }
                     try? await Task.sleep(for: .milliseconds(200))
                 }
-                if let w = tab("KiriSelectTab") { w.tabGroup?.selectedWindow = w }
+                if let t = tab("KiriSelectTab") { t.window?.tabs.select(t) }
                 try? await Task.sleep(for: .milliseconds(100))
-                print("SELFTEST arranged \(windows.count) windows, front tab “\(windows.first?.tabGroup?.selectedWindow?.title ?? "")”, edited \(windows.filter(\.isDocumentEdited).map(\.title))")
+                let edited = windows.flatMap(\.tabs.list).filter { $0.document.isDocumentEdited }.map(\.document.displayName)
+                print("SELFTEST arranged \(windows.count) windows, front tab “\(windows.first?.tabs.selectedTab?.document.displayName ?? "")”, edited \(edited)")
                 fflush(stdout)
             }
         }
@@ -1897,10 +1913,9 @@ import os
         func editor(of doc: NSDocument) async -> (NSWindow, KiriTextView, EditorController)? {
             var found: (NSWindow, KiriTextView, EditorController)?
             _ = await wait {
-                guard let w = Editors.window(for: doc), (w.tabbedWindows?.count ?? 1) > 1, w.tabGroup?.selectedWindow === w,
-                      let tv = findTextView(in: w.contentView) as? KiriTextView, let c = tv.delegate as? EditorController,
-                      c.document != nil else { return false }
-                found = (w, tv, c)
+                guard let t = documentTab(of: doc), let w = t.window, w.tabs.list.count > 1, isShowing(doc),
+                      t.controller.document != nil else { return false }
+                found = (w, t.container.textView, t.controller)
                 return true
             }
             return found
@@ -2030,18 +2045,19 @@ import os
         }
 
         // Closing the tab that is showing (⌘W): its strip is watching the
-        // tab group at that moment. The untitled one is clean again after
+        // tabs at that moment. The untitled one is clean again after
         // the undo, so neither asks anything.
-        let before = original.tabbedWindows?.count ?? 1
+        let before = documents(in: original).count
         for document in [opened, doc].compactMap({ $0 }) {
-            guard let w = Editors.window(for: document) else { continue }
-            w.tabGroup?.selectedWindow = w
+            guard let w = DocumentWindow.window(of: document) else { continue }
+            show(document)
             await settle(300)
-            w.performClose(nil)
+            FrontEditor.shared.selfTestMain(w)
+            FileAction.close()
             await settle(300)
         }
-        let left = await wait(2) { (original.tabbedWindows?.count ?? 1) == before - 2 }
-        report(left, "the tab that is showing closes, an untitled one too (\(before) tabs, then \(original.tabbedWindows?.count ?? 1))")
+        let left = await wait(2) { documents(in: original).count == before - 2 }
+        report(left, "File ▸ Close closes the tab that is showing, an untitled one too (\(before) tabs, then \(documents(in: original).count))")
     }
 
     /// Edit ▸ Transformations, on a selected word.
@@ -2068,20 +2084,41 @@ import os
     private static func tabs(_ window: NSWindow) {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-tab-test.txt")
         try? "second tab\n".write(to: url, atomically: true, encoding: .utf8)
+        let url2 = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-tab-test-2.txt")
+        try? "third tab\n".write(to: url2, atomically: true, encoding: .utf8)
+        let firstDocument = shownDocument(in: window)
+        // Opening a file never makes a window, also in a window that has
+        // tabs already: counted as each file opens, and once all are in.
+        let windowsBefore = NSApp.windows.count, documentWindowsBefore = DocumentWindow.all.count
+        let windowObjects = Set(NSApp.windows.map { ObjectIdentifier($0) })
+        var counts: [Int] = []
+        let slot = (window as? DocumentNSWindow)?.editorSlot
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, _, _ in
+            counts.append(NSApp.windows.count)
+            // Its text fades in on the editor's own layer, begun as it opens.
+            let fading = slot?.tab?.document === doc && slot?.tab?.container.layer?.animation(forKey: "kiriArrival") != nil
+            report(fading, "the new tab's text fades in on the paper, the fade begun as the file opens")
+            NSDocumentController.shared.openDocument(withContentsOf: url2, display: true) { doc2, _, _ in
+            counts.append(NSApp.windows.count)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                let count = window.tabbedWindows?.count ?? 1
-                report(count == 2, "second document opens as a tab (\(count) tabs)")
-                let second = doc?.windowControllers.first?.window
-                report(second?.firstResponder is NSTextView, "new tab's editor has focus")
-                window.tabGroup?.selectedWindow = window
-                report(window.tabGroup?.selectedWindow === window, "selecting a tab")
-                second?.performClose(nil)
+                let count = documents(in: window).count
+                report(count == 3, "two more documents open as tabs (\(count) tabs)")
+                counts.append(NSApp.windows.count)
+                report(counts.allSatisfy { $0 == windowsBefore } && DocumentWindow.all.count == documentWindowsBefore
+                       && NSApp.windows.allSatisfy { windowObjects.contains(ObjectIdentifier($0)) },
+                       "opening a file, in a window with one tab and in one with two, makes no window: NSApp.windows stays at \(windowsBefore) (\(counts))")
+                report(window.firstResponder === editorText(of: doc2) && isShowing(doc2), "new tab's editor has focus")
+                show(firstDocument)
+                report(isShowing(firstDocument) && window.firstResponder === editorText(of: firstDocument), "selecting a tab")
+                closeTab(of: doc)
+                closeTab(of: doc2)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    report((window.tabbedWindows?.count ?? 1) == 1, "closing a tab")
+                    report(documents(in: window).count == 1 && NSApp.windows.count == windowsBefore, "closing a tab")
                     try? FileManager.default.removeItem(at: url)
+                    try? FileManager.default.removeItem(at: url2)
                     Task { @MainActor in
                         await tabState(window)
+                        await moveAndMerge(window)
                         await frontWindow(window)
                         await toggleCommentStage(window)
                         await paletteStage(window)
@@ -2100,6 +2137,7 @@ import os
                         quit()
                     }
                 }
+            }
             }
         }
     }
@@ -2193,22 +2231,21 @@ import os
                 c.resume(returning: d)
             }
         }
-        guard let d2 = opened, await time({ Editors.window(for: d2).map { window.tabbedWindows?.contains($0) ?? false } ?? false }) != nil,
-              let w2 = Editors.window(for: d2), let model2 = WindowTabs.model(for: w2) else {
+        guard let d2 = opened, await time({ DocumentWindow.window(of: d2) === window }) != nil,
+              let t1 = model.list.first, let t2 = model.tab(for: d2) else {
             report(false, "a second tab opens for the tab model checks"); return
         }
-        let joined = await time { model2.items.map(\.id) == [window.windowNumber, w2.windowNumber] && model2.selected == w2.windowNumber }
-        report(joined != nil, "a new tab's strip shows both tabs, itself selected (\(model2.items.map(\.title)), \(ms(joined)))")
-        /// The native tab bar's title bar accessory is there and hidden.
-        func barHidden(_ w: NSWindow) -> Bool {
-            !w.titlebarAccessoryViewControllers.isEmpty && w.titlebarAccessoryViewControllers.allSatisfy(\.isHidden)
-        }
-        let hidden2 = await time { barHidden(w2) }
-        report(hidden2.map { $0 <= quick } ?? false, "the native tab bar is hidden in the new tab (\(ms(hidden2)))")
-        // Its own tab grows in beside the ones it joined; it never showed
-        // itself alone with the others arriving around it.
-        report(model2.shown == [[window.windowNumber], [window.windowNumber, w2.windowNumber]],
-               "a new tab first shows the tabs it joins, then itself (\(model2.shown.map(\.count)))")
+        let model2 = model
+        let joined = await time { model.items.map(\.id) == [t1.id, t2.id] && model.selected == t2.id }
+        report(joined != nil, "a new tab shows in the window's strip after the first, selected (\(model.items.map(\.title)), \(ms(joined)))")
+        // No system tabs: no window of its own, nor a tab bar of macOS's.
+        report(window.tabbingMode == .disallowed && window.tabbedWindows == nil && DocumentWindow.all.count == 1
+               && window.titlebarAccessoryViewControllers.isEmpty,
+               "the new tab is in the window, not a window joined to it: no system tab group or tab bar (\(DocumentWindow.all.count) windows)")
+        // Its own tab grows in beside the one there; the strip never
+        // showed it alone.
+        report(Array(model.shown.suffix(2)) == [[t1.id], [t1.id, t2.id]],
+               "the strip goes from the one tab to both in one step (\(model.shown.suffix(2).map(\.count)))")
         report(model2.tabs.last?.tooltip == d2.fileURL.map { TabNames.abbreviatingHome($0.path, home: NSHomeDirectory()) }
                && model2.tabs.first?.tooltip != nil,
                "tabs carry their paths as tooltips (\(model2.tabs.last?.tooltip ?? "none"))")
@@ -2224,19 +2261,89 @@ import os
         report(renamed != nil && renameDone != nil && renamed! - renameDone! <= quick,
                "Save As renames the tab within 50 ms of the save (“\(model2.items.last?.title ?? "")”, save \(ms(renameDone)), tab \(ms(renamed)))")
 
-        // Back to the first tab: its strip stopped watching while it was
-        // away, and is current the moment it shows.
-        window.tabGroup?.selectedWindow = window
-        let back = await time { model.selected == window.windowNumber && model.items.count == 2 && model.items.last?.path == d2.fileURL?.path }
-        report(back.map { $0 <= quick } ?? false, "a tab that comes back shows the group as it is now (\(ms(back)))")
-        let hidden1 = await time { barHidden(window) }
-        report(hidden1.map { $0 <= quick } ?? false, "and has the native tab bar hidden (\(ms(hidden1)))")
+        // Back to the first tab: it shows at once, its editor with it.
+        model.select(t1)
+        let back = await time { model.selected == t1.id && model.items.count == 2 && model.items.last?.path == d2.fileURL?.path
+            && findTextView(in: window.contentView) === t1.container.textView }
+        report(back.map { $0 <= quick } ?? false, "a tab selected again shows at once, with its own editor, and the strip as it is now (\(ms(back)))")
 
         // The other tab closes while this one shows.
-        w2.performClose(nil)
-        let closed = await time { model.items.map(\.id) == [window.windowNumber] }
-        report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed elsewhere leaves the strip (\(ms(closed)))")
-        _ = await time { (window.tabbedWindows?.count ?? 1) == 1 }
+        model.close(t2.id)
+        let closed = await time { model.items.map(\.id) == [t1.id] }
+        report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed while another shows leaves the strip (\(ms(closed)))")
+    }
+
+    /// Window ▸ Move Tab to New Window and Merge All Windows move tabs whole
+    /// (the editor goes along), and a click on a tab in the strip selects it.
+    private static func moveAndMerge(_ original: NSWindow) async {
+        guard let window = original as? DocumentNSWindow, let first = shownDocument(in: window) else {
+            report(false, "the first window, for Move Tab and Merge"); return
+        }
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-move-test-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let urls = ["move-a.txt", "move-b.txt"].map { name -> URL in
+            let url = dir.appendingPathComponent(name)
+            try? "\(name)\n".write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(entries: urls.map { .file($0, line: 0, column: 0) })) { c.resume() }
+        }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        guard await wait(until: { documents(in: window).count == 3 }), let moved = documents(in: window).last,
+              let editor = editorText(of: moved) else {
+            report(false, "two files open as tabs for Move Tab and Merge (\(documents(in: window).count) tabs)"); return
+        }
+        defer { for url in urls { NSDocumentController.shared.document(for: url)?.close() } }
+        FrontEditor.shared.selfTestMain(window)
+        WindowAction.moveTabToNewWindow()
+        var other: NSWindow?
+        let movedOut = await wait {
+            other = DocumentWindow.window(of: moved)
+            return other.map { $0 !== window && $0.isVisible } ?? false
+        }
+        report(movedOut && documents(in: other) == [moved] && documents(in: window).count == 2 && editorText(of: moved) === editor
+               && DocumentWindow.all.count == 2,
+               "Window ▸ Move Tab to New Window gives the tab a window of its own, its editor with it, and the others stay (\(documents(in: window).count) tabs left, \(DocumentWindow.all.count) windows)")
+        show(first)
+        FrontEditor.shared.selfTestMain(window)
+        WindowAction.mergeAllWindows()
+        let merged = await wait { DocumentWindow.all.count == 1 && documents(in: window).count == 3 }
+        report(merged && documents(in: window).last === moved && isShowing(first) && editorText(of: moved) === editor
+               && other.map { !$0.isVisible } ?? false,
+               "Window ▸ Merge All Windows brings the other window's tabs in after this window's, which keeps the tab it showed, and the other window closes (\(DocumentWindow.all.count) windows, \(documents(in: window).count) tabs)")
+
+        // A click on a tab in the strip, as a mouse down and up in the
+        // window (posted to this app only; the pointer doesn't move).
+        let target = documents(in: window)[1]
+        await wakeAccessibility()
+        let tab = accessibilityElements(of: window).first {
+            $0.role == NSAccessibility.Role.button.rawValue && $0.name == target.displayName && $0.frame.minY > window.frame.maxY - 60
+        }
+        if let tab, window.occlusionState.contains(.visible) {
+            let point = window.convertPoint(fromScreen: NSPoint(x: tab.frame.midX, y: tab.frame.midY))
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                if let e = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                              pressure: type == .leftMouseDown ? 1 : 0) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+            }
+            let clicked = await wait(2) { isShowing(target) }
+            report(clicked, "a click on a tab in the strip shows it (the drag that pulls a tab out doesn't get in the way of a click)")
+        } else {
+            print("SELFTEST SKIP a click on a tab in the strip (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        show(first)
     }
 
     /// Save says what the tab's dot says, by its shape and to VoiceOver:
@@ -2299,9 +2406,11 @@ import os
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("front.txt")
         try? "second window\n".write(to: url, atomically: true, encoding: .utf8)
-        let opened: NSDocument? = await withCheckedContinuation { c in
-            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { d, _, _ in c.resume(returning: d) }
+        // In a window of its own, as `kiri -n` opens it.
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(newWindow: true, entries: [.file(url, line: 0, column: 0)])) { c.resume() }
         }
+        let opened = NSDocumentController.shared.document(for: url)
         let clock = ContinuousClock()
         func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
             let start = clock.now
@@ -2313,7 +2422,7 @@ import os
         }
         var second: (window: NSWindow, text: KiriTextView, controller: EditorController)?
         _ = await wait {
-            guard let doc = opened, let w = Editors.window(for: doc), let tv = findTextView(in: w.contentView) as? KiriTextView,
+            guard let doc = opened, let w = Editors.window(for: doc), w !== original, let tv = editorText(of: doc),
                   let c = tv.delegate as? EditorController, c.document === doc else { return false }
             second = (w, tv, c)
             return true
@@ -2404,7 +2513,7 @@ import os
         FrontEditor.shared.selfTestMain(nil)
 
         second.window.performClose(nil)
-        _ = await wait { (original.tabbedWindows?.count ?? 1) == 1 }
+        _ = await wait { DocumentWindow.all.count == 1 }
         await front(original)
     }
 
@@ -2575,11 +2684,11 @@ import os
             }
         }
         func entries(_ urls: [URL]) -> [KiriCLI.Request.Entry] { urls.map { .file($0, line: 0, column: 0) } }
-        func group(_ w: NSWindow) -> Set<ObjectIdentifier> { Set((w.tabbedWindows ?? [w]).map { ObjectIdentifier($0) }) }
-        /// "8 of 8 open, tab groups [9]": how many of the files have a window,
-        /// and the sizes of the tab groups those windows are in.
+        func group(_ w: NSWindow) -> Set<ObjectIdentifier> { Set(documents(in: w).map { ObjectIdentifier($0) }) }
+        /// "8 of 8 open, windows of [9] tabs": how many of the files have a tab,
+        /// and how many tabs the windows they are in have.
         func shape(_ ws: [NSWindow], of count: Int) -> String {
-            "\(ws.count) of \(count) open, tab groups \(Set(ws.map(group)).map(\.count).sorted(by: >))"
+            "\(ws.count) of \(count) open, windows of \(Set(ws.map(group)).map(\.count).sorted(by: >)) tabs"
         }
         /// All of `ws` are tabs of one window.
         func together(_ ws: [NSWindow]) -> Bool { Set(ws.map(group)).count == 1 }
@@ -2588,8 +2697,10 @@ import os
         let cli = files("cli", 8)
         KiriCLI.open(KiriCLI.Request(entries: entries(cli)))
         var ws = await settledWindows(cli)
-        report(ws.count == 8 && together(ws) && group(original).count == 9 && ws.allSatisfy { group($0) == group(original) },
-               "kiri with 8 files: all tabs of the front window (\(shape(ws, of: 8)))")
+        let order = documents(in: original).suffix(8).map { $0.fileURL?.lastPathComponent ?? "" }
+        report(ws.count == 8 && together(ws) && group(original).count == 9 && ws.allSatisfy { group($0) == group(original) }
+               && order == cli.map(\.lastPathComponent),
+               "kiri with 8 files: all tabs of the front window, in order (\(shape(ws, of: 8)); \(order.first ?? "")…\(order.last ?? ""))")
 
         // Finder or the Open panel, eight files: the same.
         let finder = files("finder", 8)
@@ -2637,45 +2748,46 @@ import os
     /// at the narrowest. Read from what VoiceOver is given, which has the
     /// frames of the real scroll view (pictures drawn offscreen have none).
     private static func crowdedStrip(_ original: NSWindow) async {
-        guard let group = original.tabGroup, group.windows.count >= 12 else {
-            report(false, "a crowded tab group to look at (\(original.tabGroup?.windows.count ?? 0) tabs)"); return
+        let group = documents(in: original)
+        guard group.count >= 12, let tabs = WindowTabs.model(for: original) else {
+            report(false, "a crowded strip to look at (\(group.count) tabs)"); return
         }
         await wakeAccessibility()
         let width = original.frame.width
         defer {
-            for w in group.windows { w.setFrame(NSRect(x: w.frame.minX, y: w.frame.minY, width: width, height: w.frame.height), display: true) }
+            original.setFrame(NSRect(x: original.frame.minX, y: original.frame.minY, width: width, height: original.frame.height), display: true)
         }
         for narrow in [false, true] {
             if narrow {
-                for w in group.windows { w.setFrame(NSRect(x: w.frame.minX, y: w.frame.minY, width: 480, height: w.frame.height), display: true) }
+                original.setFrame(NSRect(x: original.frame.minX, y: original.frame.minY, width: 480, height: original.frame.height), display: true)
             }
             // The last tab is the one a scroll view could leave cut off:
             // selected, it grows past where the content ended.
-            for (position, tab) in [("last", group.windows.last), ("first", group.windows.first), ("middle", group.windows[group.windows.count / 2])] {
-                guard let tab else { continue }
-                group.selectedWindow = tab
+            for (position, doc) in [("last", group.last), ("first", group.first), ("middle", group[group.count / 2])] {
+                guard let doc, let tab = tabs.tab(for: doc) else { continue }
+                tabs.select(tab)
                 // In front of Kiri's other windows (the app itself stays in
                 // the background): SwiftUI leaves a covered window's
                 // views alone until it shows.
-                tab.orderFront(nil)
+                original.orderFront(nil)
                 try? await Task.sleep(for: .milliseconds(100))
                 // Nor one that can't be seen at all: behind a locked screen
                 // or other apps' windows its strip never hears of the
                 // selection (`onChange` waits for the window to show).
-                guard tab.occlusionState.contains(.visible) else {
-                    print("SELFTEST SKIP \(group.windows.count) tabs at \(Int(tab.frame.width)) pt, \(position) selected (the window is covered or the screen locked: SwiftUI isn't updating it)")
+                guard original.occlusionState.contains(.visible) else {
+                    print("SELFTEST SKIP \(group.count) tabs at \(Int(original.frame.width)) pt, \(position) selected (the window is covered or the screen locked: SwiftUI isn't updating it)")
                     continue
                 }
                 // Long enough for the selection's spring to come to rest.
                 try? await Task.sleep(for: .milliseconds(900))
-                let list = accessibilityElements(of: tab)
+                let list = accessibilityElements(of: original)
                 let strip = list.first { $0.role == NSAccessibility.Role.scrollArea.rawValue && $0.name == "Tabs" }?.frame
                 let selected = list.first { $0.role == NSAccessibility.Role.button.rawValue && $0.selected }
                 let after = list.filter { ["New Tab", "Save"].contains($0.name) }.map(\.frame)
                 let inView = strip.map { s in selected.map { $0.frame.minX >= s.minX - 0.5 && $0.frame.maxX <= s.maxX + 0.5 } ?? false } ?? false
-                let room = strip.map { s in after.count == 2 && after.allSatisfy { $0.minX >= s.maxX && $0.maxX <= tab.frame.maxX - Honey.gap + 0.5 } } ?? false
-                report(inView && room && selected?.name == tab.title,
-                       "\(group.windows.count) tabs at \(Int(tab.frame.width)) pt, \(position) selected: whole in the strip, + and Save in the window (strip \(strip.map { "\($0.minX)…\($0.maxX)" } ?? "none"), “\(selected?.name ?? "none")” \(selected.map { "\($0.frame.minX)…\($0.frame.maxX)" } ?? ""), buttons \(after.map { "\($0.minX)…\($0.maxX)" }))")
+                let room = strip.map { s in after.count == 2 && after.allSatisfy { $0.minX >= s.maxX && $0.maxX <= original.frame.maxX - Honey.gap + 0.5 } } ?? false
+                report(inView && room && selected?.name == doc.displayName,
+                       "\(group.count) tabs at \(Int(original.frame.width)) pt, \(position) selected: whole in the strip, + and Save in the window (strip \(strip.map { "\($0.minX)…\($0.maxX)" } ?? "none"), “\(selected?.name ?? "none")” \(selected.map { "\($0.frame.minX)…\($0.frame.maxX)" } ?? ""), buttons \(after.map { "\($0.minX)…\($0.maxX)" }))")
             }
         }
     }
@@ -2748,7 +2860,7 @@ import os
     }
 
     /// The windows of the documents for `urls`, once every one of them has a
-    /// window and the tab groups have stopped changing (or after 8 s).
+    /// tab and the windows' tabs have stopped changing (or after 8 s).
     private static func settledWindows(_ urls: [URL]) async -> [NSWindow] {
         let names = Set(urls.map(\.lastPathComponent))
         func windows() -> [NSWindow] {
@@ -2761,7 +2873,7 @@ import os
         var last: [[Int]] = [], since = clock.now
         while clock.now - start < .seconds(8) {
             let ws = windows()
-            let now = ws.map { w in (w.tabbedWindows ?? [w]).map { ObjectIdentifier($0).hashValue }.sorted() }
+            let now = ws.map { w in documents(in: w).map { ObjectIdentifier($0).hashValue } }
             if now != last { last = now; since = clock.now }
             if ws.count == names.count, clock.now - since > .milliseconds(700) { return ws }
             try? await Task.sleep(for: .milliseconds(50))
@@ -2774,6 +2886,40 @@ import os
         if let tv = view as? NSTextView { return tv }
         for sub in view.subviews { if let tv = findTextView(in: sub) { return tv } }
         return nil
+    }
+
+    // MARK: Tabs
+
+    /// The tab that shows `doc`.
+    static func documentTab(of doc: NSDocument?) -> DocumentTab? { doc.flatMap { DocumentWindow.tab(of: $0) } }
+
+    /// The editor of `doc`'s tab, showing or not.
+    static func editorText(of doc: NSDocument?) -> KiriTextView? { documentTab(of: doc)?.container.textView }
+
+    /// `doc`'s tab is the one its window shows.
+    static func isShowing(_ doc: NSDocument?) -> Bool {
+        documentTab(of: doc).map { $0.window?.tabs.selectedTab === $0 } ?? false
+    }
+
+    /// Brings `doc`'s tab forward in its window.
+    static func show(_ doc: NSDocument?) {
+        if let tab = documentTab(of: doc) { tab.window?.tabs.select(tab) }
+    }
+
+    /// The tab's close button: closes `doc`'s tab, asking first if it has
+    /// unsaved changes.
+    static func closeTab(of doc: NSDocument?) {
+        if let tab = documentTab(of: doc), let window = tab.window { window.tabs.close(tab.id) }
+    }
+
+    /// The documents of `window`'s tabs, in order.
+    static func documents(in window: NSWindow?) -> [KiriDocument] {
+        (window as? DocumentNSWindow)?.tabs.list.map(\.document) ?? []
+    }
+
+    /// The document of the tab `window` shows.
+    static func shownDocument(in window: NSWindow?) -> KiriDocument? {
+        (window as? DocumentNSWindow)?.tabs.selectedTab?.document
     }
 }
 

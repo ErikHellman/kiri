@@ -37,6 +37,7 @@ extension SelfTest {
         let only = UserDefaults.standard.string(forKey: "KiriSaveStage")
         let stages: [(String, (URL) async -> Void)] = [
             ("recovery", periodicRecovery), ("types", anyFileSavesInPlace), ("close", closeDirty), ("tab", backgroundTab),
+            ("window", closeWindow),
             ("revert", revert), ("disk", changedOnDisk), ("untitled", untitled), ("wait", waiting), ("new", newFile),
             ("stdin", standardInput), ("recent", openRecent), ("closeAll", closeAll),
         ]
@@ -80,9 +81,8 @@ extension SelfTest {
         guard let doc = doc as? KiriDocument else { return nil }
         var found: Tab?
         _ = await wait {
-            guard let w = Editors.window(for: doc), let tv = findTextView(in: w.contentView) as? KiriTextView,
-                  let c = tv.delegate as? EditorController, c.document === doc else { return false }
-            found = Tab(doc: doc, window: w, text: tv, controller: c)
+            guard let t = DocumentWindow.tab(of: doc), let w = t.window, t.controller.document === doc else { return false }
+            found = Tab(doc: doc, window: w, text: t.container.textView, controller: t.controller)
             return true
         }
         return found
@@ -101,8 +101,12 @@ extension SelfTest {
         return url
     }
 
+    /// The tab's close button.
+    private static func close(_ tab: Tab) { closeTab(of: tab.doc) }
+
     /// Types at the start of the tab's text, as an edit the document counts.
     private static func insert(_ text: String, in tab: Tab) async {
+        show(tab.doc)
         tab.window.makeFirstResponder(tab.text)
         tab.text.insertText(text, replacementRange: NSRange(location: 0, length: 0))
         await settle()
@@ -213,7 +217,7 @@ extension SelfTest {
         await insert("typed ", in: tab)
         let copy = await autosave(tab.doc)
 
-        tab.window.performClose(nil)
+        close(tab)
         let asked = await sheet(on: tab.window)
         let titles = buttons(in: asked?.contentView).map(\.title)
         report(titles == ["Save", "Don’t Save", "Cancel"], "closing a tab with unsaved changes asks (\(titles))")
@@ -222,7 +226,7 @@ extension SelfTest {
         report(isOpen(tab.doc) && tab.window.isVisible && tab.doc.isDocumentEdited && FileState(url) == untouched && exists(copy),
                "Cancel keeps the tab, its changes and its recovery copy; the file is untouched")
 
-        tab.window.performClose(nil)
+        close(tab)
         _ = await sheet(on: tab.window)
         await press("Don’t Save", on: tab.window)
         let discarded = await wait { !isOpen(tab.doc) }
@@ -234,7 +238,7 @@ extension SelfTest {
         report(tab.text.string == "one\n" && !tab.doc.isDocumentEdited, "opened again, it is the file as it was (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
         await insert("kept ", in: tab)
         let second = await autosave(tab.doc)
-        tab.window.performClose(nil)
+        close(tab)
         _ = await sheet(on: tab.window)
         await press("Save", on: tab.window)
         let saved = await wait { !isOpen(tab.doc) }
@@ -248,19 +252,73 @@ extension SelfTest {
         let one = file("behind.txt", "behind\n", in: dir), two = file("showing.txt", "showing\n", in: dir)
         guard let behind = await open(one), let showing = await open(two) else { report(false, "two files open for the tab check"); return }
         await insert("typed ", in: behind)
-        showing.window.tabGroup?.selectedWindow = showing.window
-        _ = await wait { showing.window.tabGroup?.selectedWindow === showing.window }
+        show(showing.doc)
+        _ = await wait { isShowing(showing.doc) }
         await settle(200)
-        guard let strip = WindowTabs.model(for: showing.window), behind.window.tabGroup === showing.window.tabGroup else {
+        guard let strip = WindowTabs.model(for: showing.window), behind.window === showing.window,
+              let behindTab = documentTab(of: behind.doc) else {
             report(false, "the two files are tabs of one window"); behind.doc.close(); showing.doc.close(); return
         }
-        strip.close(behind.window.windowNumber)
+        strip.close(behindTab.id)
         let asked = await sheet(on: behind.window)
-        report(asked != nil && behind.window.tabGroup?.selectedWindow === behind.window && isOpen(behind.doc),
+        report(asked != nil && isShowing(behind.doc) && isOpen(behind.doc),
                "closing a tab that isn't showing brings it forward to ask about its changes")
         await press("Cancel", on: behind.window)
         behind.doc.close()
         showing.doc.close()
+    }
+
+    /// A window's close button, with tabs that have unsaved changes: the
+    /// first of them comes forward and asks, and Cancel keeps it all; Don't
+    /// Save asks the next in turn, and then every tab closes, and the window.
+    private static func closeWindow(_ dir: URL) async {
+        let urls = ["window-a.txt", "window-b.txt", "window-c.txt"].map { file($0, "\($0)\n", in: dir) }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(newWindow: true, entries: urls.map { .file($0, line: 0, column: 0) })) { c.resume() }
+        }
+        var tabs: [Tab] = []
+        for url in urls { if let t = await tab(of: NSDocumentController.shared.document(for: url)) { tabs.append(t) } }
+        guard tabs.count == 3, let window = tabs[0].window as? DocumentNSWindow, tabs.allSatisfy({ $0.window === window }),
+              documents(in: window).count == 3 else {
+            report(false, "three files open as the tabs of a window of their own"); return
+        }
+        let (a, b, c) = (tabs[0], tabs[1], tabs[2])
+        await insert("typed ", in: a)
+        await insert("typed ", in: b)
+        show(c.doc)
+        await settle(200)
+        // The button itself, as a click on it goes.
+        let button = window.standardWindowButton(.closeButton)
+        button?.performClick(nil)
+        let firstAsked = await wait { window.attachedSheet != nil && isShowing(a.doc) }
+        await press("Cancel", on: window)
+        await settle(300)
+        report(firstAsked && window.isVisible && tabs.allSatisfy({ isOpen($0.doc) }) && documents(in: window).count == 3
+               && a.doc.isDocumentEdited && b.doc.isDocumentEdited,
+               "the close button of a window whose tabs have unsaved changes brings the first of them forward to ask, and Cancel keeps the window and every tab (\(documents(in: window).count) tabs)")
+        // AppKit's own action for the button, should anything give it back
+        // (it goes to the document that shows): the same question.
+        let ours = button?.action
+        button?.action = NSSelectorFromString("_close:")
+        button?.performClick(nil)
+        let askedByAppKit = await wait { window.attachedSheet != nil && isShowing(a.doc) }
+        await press("Cancel", on: window)
+        await settle(300)
+        button?.action = ours
+        report(askedByAppKit && window.isVisible && documents(in: window).count == 3 && tabs.allSatisfy({ isOpen($0.doc) }),
+               "AppKit's own close action asks the same way, and Cancel keeps the window and every tab")
+        button?.performClick(nil)
+        _ = await sheet(on: window)
+        buttons(in: window.attachedSheet?.contentView).first { $0.title == "Don’t Save" }?.performClick(nil)
+        let secondAsked = await wait { window.attachedSheet != nil && isShowing(b.doc) }
+        buttons(in: window.attachedSheet?.contentView).first { $0.title == "Don’t Save" }?.performClick(nil)
+        let closed = await wait { !window.isVisible && tabs.allSatisfy { !isOpen($0.doc) } }
+        report(secondAsked && closed && DocumentWindow.all.allSatisfy({ $0 !== window }),
+               "Don’t Save asks the next tab with changes in turn, brought forward, and then every tab closes and the window with them")
+        if !closed { for t in tabs { t.doc.close() } }
+        for url in urls where (try? String(contentsOf: url, encoding: .utf8)) != "\(url.lastPathComponent)\n" {
+            report(false, "\(url.lastPathComponent) was written to")
+        }
     }
 
     /// A file changed by something else: a document without unsaved changes
@@ -309,7 +367,7 @@ extension SelfTest {
         guard let tab = await openNew() else { report(false, "kiri with a file that doesn't exist opens it empty"); return }
         let made = exists(url)
         await insert("never saved", in: tab)
-        tab.window.performClose(nil)
+        close(tab)
         _ = await sheet(on: tab.window)
         await press("Don’t Save", on: tab.window)
         let gone = await wait { !exists(url) }
@@ -317,7 +375,7 @@ extension SelfTest {
 
         guard let again = await openNew() else { report(false, "it opens again"); return }
         await insert("saved", in: again)
-        again.window.performClose(nil)
+        close(again)
         _ = await sheet(on: again.window)
         await press("Save", on: again.window)
         _ = await wait { !isOpen(again.doc) }
@@ -338,7 +396,7 @@ extension SelfTest {
         report(tab.text.string == "piped in\n" && tab.doc.fileURL == nil && !tab.doc.isDocumentEdited && !tab.controller.model.showsStartHint
                && !exists(input),
                "kiri - opens its text in a new untitled tab, not edited and without the first-run hint (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
-        tab.window.performClose(nil)
+        close(tab)
         let closed = await wait(2) { !isOpen(tab.doc) }
         report(closed && tab.window.attachedSheet == nil, "and closing it asks nothing")
         if !closed { tab.doc.close() }
@@ -438,8 +496,8 @@ extension SelfTest {
         let reverted = await wait { !tab.doc.isDocumentEdited }
         report(titles.contains("Revert") && titles.contains("Cancel") && kept, "Revert to Saved asks first, and Cancel keeps the changes (\(titles))")
         report(reverted && tab.text.string == "let one = 1\n" && isOpen(tab.doc) && tab.controller.document === tab.doc
-               && Editors.window(for: tab.doc) === tab.window && findTextView(in: tab.window.contentView) === tab.text,
-               "Revert reads the file into the same document, window and editor (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
+               && Editors.window(for: tab.doc) === tab.window && editorText(of: tab.doc) === tab.text,
+               "Revert reads the file into the same document, tab and editor (“\(tab.text.string.replacingOccurrences(of: "\n", with: "⏎"))”)")
         report(!exists(copy) && tab.doc.autosavedContentsFileURL == nil && !(tab.text.undoManager?.canUndo ?? true),
                "and deletes the recovery copy and the undo history")
         tab.doc.close()
@@ -509,7 +567,7 @@ extension SelfTest {
             report(false, "another untitled document opens"); return
         }
         await insert("kept\n", in: last)
-        last.window.performClose(nil)
+        close(last)
         _ = await sheet(on: last.window)
         buttons(in: last.window.attachedSheet?.contentView).first { $0.title == "Save" }?.performClick(nil)
         let askedWhere = await wait { last.window.attachedSheet is NSSavePanel }
@@ -554,7 +612,7 @@ extension SelfTest {
         guard let (marker, tab) = await request(1) else { report(false, "kiri -w opens its file"); return }
         let untouched = FileState(url)
         await insert("Fix the thing", in: tab)
-        tab.window.performClose(nil)
+        close(tab)
         _ = await sheet(on: tab.window)
         let whileAsked = exists(marker)
         await press("Cancel", on: tab.window)
@@ -563,7 +621,7 @@ extension SelfTest {
                "kiri -w keeps waiting while the close question is up and after Cancel")
 
         // Save: the marker goes only once the file has the text.
-        tab.window.performClose(nil)
+        close(tab)
         _ = await sheet(on: tab.window)
         var bytesWhenReleased: Data?
         let watcher = Task { @MainActor in
@@ -580,7 +638,7 @@ extension SelfTest {
         guard let (marker2, tab2) = await request(2) else { report(false, "kiri -w opens its file again"); return }
         let saved = FileState(url)
         await insert("Changed my mind ", in: tab2)
-        tab2.window.performClose(nil)
+        close(tab2)
         _ = await sheet(on: tab2.window)
         await press("Don’t Save", on: tab2.window)
         let released2 = await wait { !exists(marker2) }
@@ -608,7 +666,7 @@ extension SelfTest {
         _ = await wait(3) { !question.isEmpty && tab3.window.attachedSheet == nil }
         report(question.contains("Cancel") && isOpen(tab3.doc) && exists(marker3) && FileState(url) == saved,
                "quitting while a changed tab is waited for asks first, and Cancel keeps Kiri and the wait (\(question))")
-        tab3.window.performClose(nil)
+        close(tab3)
         _ = await sheet(on: tab3.window)
         await press("Don’t Save", on: tab3.window)
         _ = await wait { !exists(marker3) }
@@ -631,6 +689,10 @@ extension SelfTest {
 ///   `-NSQuitAlwaysKeepsWindows YES` (the system setting that reopens
 ///   windows): the file's window is back, once, with no empty document
 ///   beside it.
+/// - `tabs-quit` (with three files, which open as three tabs of one
+///   window) / `tabs-check`, both with `-NSQuitAlwaysKeepsWindows YES`:
+///   the window comes back with its three tabs in their order, the one
+///   that showed (the middle one) showing.
 /// - `empty-check`: a launch with nothing to restore or recover starts in
 ///   one empty document. Run after a quit with no window open, and after
 ///   the app was killed (when AppKit doesn't call the launch a default
@@ -662,6 +724,39 @@ extension SelfTest {
             case "frame-set": frameSet(textView)
             case "frame-check": frameCheck(textView)
             case "restore-check": await restoreCheck()
+            case "tabs-check": await tabsCheck()
+            case "untitled-quit":
+                // Three file tabs and a new empty one after them, showing.
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+                NSDocumentController.shared.newDocument(nil)
+                _ = await pause(3) { documents(in: DocumentWindow.all.first).count == 4 }
+                await settle(500)
+                let docs = documents(in: DocumentWindow.all.first)
+                report(DocumentWindow.all.count == 1 && docs.count == 4 && docs.last?.fileURL == nil && isShowing(docs.last),
+                       "quitting with three file tabs and an empty untitled one showing")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
+            case "untitled-check":
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count >= 3 }
+                await settle(500)
+                let names = documents(in: DocumentWindow.all.first).map { $0.fileURL?.lastPathComponent ?? "untitled" }
+                report(DocumentWindow.all.count == 1 && Array(names.prefix(3)) == ["crash.swift", "second.txt", "third.md"],
+                       "a window whose empty untitled tab showed at the quit comes back with its file tabs (\(DocumentWindow.all.count) windows, \(names))")
+            case "tabs-quit":
+                // Three tabs of one window, the middle one showing.
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+                let docs = documents(in: DocumentWindow.all.first)
+                if docs.count == 3 { show(docs[1]) }
+                await settle(500)
+                print("SELFTEST info quitting with \(DocumentWindow.all.count) windows: \(docs.map { $0.displayName ?? "" }), showing \(shownDocument(in: DocumentWindow.all.first)?.displayName ?? "none")")
+                report(DocumentWindow.all.count == 1 && docs.count == 3 && isShowing(docs[1]),
+                       "quitting with three tabs in one window, the middle one showing")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
             case "empty-check": await emptyCheck()
             case "restore-quit":
                 // A quit as the person's: the document is not closed
@@ -694,6 +789,17 @@ extension SelfTest {
                "the window that was open at the quit is back, once, and no empty document with it (\(docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }), \(windows.count) windows)")
     }
 
+    private static func tabsCheck() async {
+        _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+        await settle(500)
+        let windows = DocumentWindow.all
+        let docs = documents(in: windows.first)
+        let names = docs.map { $0.fileURL?.lastPathComponent ?? "untitled" }
+        report(windows.count == 1 && names == ["crash.swift", "second.txt", "third.md"] && docs.count == 3 && isShowing(docs[1])
+               && NSDocumentController.shared.documents.count == 3,
+               "the window comes back with its three tabs, in their order, the one that showed showing, and nothing else (\(windows.count) windows, \(names), showing \(shownDocument(in: windows.first)?.displayName ?? "none"))")
+    }
+
     private static func emptyCheck() async {
         await settle(1500)
         let docs = NSDocumentController.shared.documents
@@ -720,12 +826,12 @@ extension SelfTest {
         }
         var editors: [NSTextView] = []
         _ = await pause {
-            editors = [first, second].compactMap { doc in Editors.window(for: doc).flatMap { findTextView(in: $0.contentView) } }
+            editors = [first, second].compactMap { doc in editorText(of: doc) }
             return editors.count == 2 && editors.allSatisfy { (($0.delegate as? EditorController)?.document) != nil }
         }
         guard editors.count == 2 else { report(false, "both editors are up"); return }
-        for (editor, text) in zip(editors, [typedInFile, typedInUntitled]) {
-            editor.window?.tabGroup?.selectedWindow = editor.window
+        for (doc, (editor, text)) in zip([first, second], zip(editors, [typedInFile, typedInUntitled])) {
+            show(doc)
             await settle(200)
             editor.window?.makeFirstResponder(editor)
             editor.insertText(text, replacementRange: NSRange(location: 0, length: 0))
@@ -750,25 +856,31 @@ extension SelfTest {
         let all = NSDocumentController.shared.documents
         print("SELFTEST info documents after the relaunch: \(all.map { "\($0.fileURL?.lastPathComponent ?? "untitled") edited=\($0.isDocumentEdited) copy=\($0.autosavedContentsFileURL?.lastPathComponent ?? "none")" })")
         report(docs.count == 2 && all.count == 2, "the relaunch reopens the two documents that had unsaved changes, and nothing else (\(all.count) open)")
+        // They were two tabs of one window, the untitled one showing.
+        _ = await pause(3) { DocumentWindow.all.count == 1 && documents(in: DocumentWindow.all.first).count == 2 }
+        let order = documents(in: DocumentWindow.all.first)
+        report(DocumentWindow.all.count == 1 && order.count == 2 && order.first?.fileURL != nil && order.last?.fileURL == nil
+               && isShowing(order.last),
+               "they come back as the two tabs of one window, in their order, with the tab that showed showing (\(DocumentWindow.all.count) windows, \(order.map { $0.fileURL?.lastPathComponent ?? "untitled" }))")
         func text(_ doc: NSDocument) async -> String? {
             var found: String?
             _ = await pause(3) {
-                guard let tv = Editors.window(for: doc).flatMap({ findTextView(in: $0.contentView) }),
-                      ((tv.delegate as? EditorController)?.document) === doc else { return false }
+                guard let tv = editorText(of: doc), ((tv.delegate as? EditorController)?.document) === doc else { return false }
                 found = tv.string
                 return true
             }
             return found
         }
         func tabIsDirty(_ doc: NSDocument) -> Bool {
-            guard let w = Editors.window(for: doc), let strip = WindowTabs.model(for: w) else { return false }
+            guard let tab = documentTab(of: doc), let strip = tab.window?.tabs else { return false }
             strip.refresh()
-            return strip.items.first { $0.id == w.windowNumber }?.dirty == true
+            return strip.items.first { $0.id == tab.id }?.dirty == true
         }
         if let doc = docs.first(where: { $0.fileURL != nil }), let url = doc.fileURL {
             let shown = await text(doc)
             let onDisk = (try? String(contentsOf: url, encoding: .utf8)) ?? "?"
-            report(shown == typedInFile + onDisk && doc.isDocumentEdited && tabIsDirty(doc) && doc.windowControllers.first?.window?.isDocumentEdited == true,
+            report(shown == typedInFile + onDisk && doc.isDocumentEdited && tabIsDirty(doc)
+                   && (!isShowing(doc) || doc.windowControllers.first?.window?.isDocumentEdited == true),
                    "the file's document is back at its file (\(url.lastPathComponent)) with the typed text, edited, its tab dirty; the file itself still as it was saved")
         } else {
             report(false, "the document with a file came back")

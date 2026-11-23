@@ -110,9 +110,14 @@ struct KiriCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            // Whatever window has the keyboard: a tab, Settings, a panel.
-            Button("Close", systemImage: "xmark") { NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil) }
+            // In a document window the tab that shows; otherwise whatever
+            // window has the keyboard: Settings, a panel.
+            Button("Close", systemImage: "xmark") { FileAction.close() }
                 .keyboardShortcut(Keys.close)
+            // Every tab of the front document window, as its close button does.
+            Button("Close Window", systemImage: "xmark.square") { FileAction.closeWindow() }
+                .keyboardShortcut(Keys.closeWindow)
+                .disabled(tabs == nil)
             Button("Close All", systemImage: "xmark.rectangle") { FileAction.closeAll() }
                 .keyboardShortcut(Keys.closeAll)
             Button("Save", systemImage: "square.and.arrow.down") { document?.save(nil) }
@@ -251,6 +256,12 @@ struct KiriCommands: Commands {
                 }
             }
             Divider()
+            Divider()
+            Button("Move Tab to New Window", systemImage: "macwindow.badge.plus") { WindowAction.moveTabToNewWindow() }
+                .disabled((tabs?.items.count ?? 0) < 2)
+            Button("Merge All Windows", systemImage: "rectangle.stack") { WindowAction.mergeAllWindows() }
+                .disabled(tabs == nil || DocumentWindow.all.count < 2)
+            Divider()
             Button("Bring All to Front", systemImage: "macwindow.on.rectangle") { NSApp.arrangeInFront(nil) }
         }
 
@@ -271,8 +282,36 @@ struct KiriCommands: Commands {
     }
 }
 
+/// The Window menu's tab actions, on the front document window.
+@MainActor enum WindowAction {
+    static func moveTabToNewWindow() { FileAction.documentWindow?.moveTabToNewKiriWindow(nil) }
+    static func mergeAllWindows() { FileAction.documentWindow?.mergeAllKiriWindows(nil) }
+}
+
 /// The File menu's actions that take more than a line.
 @MainActor enum FileAction {
+    /// ⌘W: the tab that shows, in a document window; any other window
+    /// (Settings, Keyboard Shortcuts) closes.
+    static func close() {
+        if let window = documentWindow {
+            window.performCloseTab(nil)
+        } else {
+            NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+        }
+    }
+
+    /// ⇧⌘W: the front document window, every tab of it.
+    static func closeWindow() {
+        documentWindow?.performClose(nil)
+    }
+
+    /// The document window the File menu acts on: the key window, or in a
+    /// test launch (which has none) the one the menus are told is in front.
+    static var documentWindow: DocumentNSWindow? {
+        if let key = NSApp.keyWindow { return key as? DocumentNSWindow }
+        return FrontEditor.shared.tabs?.window
+    }
+
     /// ⌥⌘W: every window closes. A document with unsaved changes asks
     /// first, and Cancel there keeps all the documents open.
     static func closeAll() {

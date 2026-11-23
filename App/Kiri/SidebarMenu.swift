@@ -125,13 +125,14 @@ struct SidebarMenuItems: View {
     static func openInNewWindow(_ url: URL, isDirectory: Bool) {
         if isDirectory {
             KiriCLI.open(KiriCLI.Request(entries: [.folder(url)]))
-        } else if let open = NSDocumentController.shared.document(for: url), let window = Editors.window(for: open) {
-            PreviewTabs.keep(window)
-            if (window.tabbedWindows?.count ?? 1) > 1 {
-                window.moveTabToNewWindow(nil)
-                FolderSessions.remove(for: window)
+        } else if let open = NSDocumentController.shared.document(for: url), let tab = DocumentWindow.tab(of: open),
+                  let window = tab.window {
+            PreviewTabs.keep(tab)
+            if window.tabs.list.count > 1 {
+                DocumentWindow.moveToNewWindow(tab)
+            } else {
+                window.makeKeyAndOrderFront(nil)
             }
-            window.makeKeyAndOrderFront(nil)
         } else {
             KiriCLI.open(KiriCLI.Request(newWindow: true, entries: [.file(url, line: 0, column: 0)]))
         }

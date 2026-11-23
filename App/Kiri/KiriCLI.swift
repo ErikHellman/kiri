@@ -112,8 +112,8 @@ import KiriKit
 
     // MARK: Opening
 
-    /// Opens a request's entries one after another, so that each new window
-    /// is in front before the next tab joins it.
+    /// Opens a request's entries one after another, each tab after the one
+    /// before.
     @MainActor private final class Opener {
         let request: Request
         var queue: [Request.Entry]
@@ -123,9 +123,12 @@ import KiriKit
         /// The folder of the window being filled, for its sidebar.
         var folder: FolderSession?
         /// The window whose tabs the documents join, when it isn't
-        /// simply the front one, and the tab the next one goes after.
+        /// simply the front one, and the document the next one goes after.
         weak var target: NSWindow?
-        private weak var last: NSWindow?
+        private weak var last: NSDocument?
+        /// The window the request's first document went into: the rest
+        /// follow it there (a new window's, `kiri -n`, a folder).
+        private weak var filling: DocumentNSWindow?
         var completion: (() -> Void)?
 
         init(_ request: Request) {
@@ -166,19 +169,30 @@ import KiriKit
         private func placeNext() {
             if standalone {
                 WindowPlacement.next = .init(folder: folder)
-            } else if let target {
-                WindowPlacement.next = .init(host: target, after: last ?? target)
+                // What follows fills the new window.
+                filling = nil
+                last = nil
+            } else if let host = filling ?? (target as? DocumentNSWindow) {
+                WindowPlacement.next = .init(host: host, after: last ?? host.tabs.document)
             }
             standalone = false
+        }
+
+        /// `document` opened: the next goes after it, in its window.
+        private func opened(_ document: NSDocument) {
+            opened.append(document)
+            guard let window = DocumentWindow.window(of: document) else { return }
+            if filling == nil { filling = window }
+            if window === filling { last = document }
         }
 
         private func openUntitled(text: String?) {
             placeNext()
             do {
                 if let text {
-                    opened.append(KiriDocument.openUntitled(text: text))
+                    opened(KiriDocument.openUntitled(text: text))
                 } else {
-                    opened.append(try NSDocumentController.shared.openUntitledDocumentAndDisplay(true))
+                    opened(try NSDocumentController.shared.openUntitledDocumentAndDisplay(true))
                 }
             } catch {
                 WindowPlacement.next = nil
@@ -204,13 +218,11 @@ import KiriKit
                     if alreadyOpen { WindowPlacement.next = nil }
                     if let error { WindowPlacement.next = nil; _ = NSApp.presentError(error) }
                     if let doc {
-                        self.opened.append(doc)
-                        if alreadyOpen, let w = Editors.window(for: doc) {
-                            w.tabGroup?.selectedWindow = w
-                            w.makeKeyAndOrderFront(nil)
-                        } else if self.target != nil {
-                            // The next one goes after this one.
-                            self.last = Editors.window(for: doc)
+                        if alreadyOpen {
+                            // It comes forward where it is (`showWindows`).
+                            self.opened.append(doc)
+                        } else {
+                            self.opened(doc)
                         }
                         if line > 0 { Editors.whenReady(doc) { $0.goTo(line: line, column: max(column, 1)) } }
                     }
@@ -240,15 +252,15 @@ import KiriKit
     }
 }
 
-/// Where the next document window goes when that isn't the front
-/// window's tabs: on its own (with a folder sidebar or not), or among the
-/// tabs of `host` (a window files were dropped on), after the tab `after`.
-/// `WindowTabs.attach` takes it.
+/// Where the next document that opens goes when that isn't the front
+/// window's tabs: a window of its own (with a folder sidebar or not), or
+/// among the tabs of `host` (a window files were dropped on), after the
+/// tab of `after`. `DocumentWindow.place` takes it.
 @MainActor enum WindowPlacement {
     struct Placement {
         var folder: FolderSession?
-        weak var host: NSWindow?
-        weak var after: NSWindow?
+        weak var host: DocumentNSWindow?
+        weak var after: NSDocument?
     }
     static var next: Placement?
 
@@ -258,18 +270,17 @@ import KiriKit
     }
 }
 
-/// Finds a document's editor once its window is up.
+/// Finds a document's tab and editor.
 @MainActor enum Editors {
-    static func window(for doc: NSDocument) -> NSWindow? {
-        doc.windowControllers.compactMap(\.window).first
-            ?? NSApp.windows.first { NSDocumentController.shared.document(for: $0) === doc }
-    }
+    /// The window `doc` is a tab of.
+    static func window(for doc: NSDocument) -> NSWindow? { DocumentWindow.window(of: doc) }
 
+    /// Runs `action` on `doc`'s editor, with its tab showing, once it is
+    /// in a tab.
     static func whenReady(_ doc: NSDocument, tries: Int = 0, _ action: @escaping @MainActor (EditorController) -> Void) {
-        if let window = window(for: doc), let tv = find(in: window.contentView),
-           let controller = tv.delegate as? EditorController, controller.document != nil {
-            window.tabGroup?.selectedWindow = window
-            action(controller)
+        if let tab = DocumentWindow.tab(of: doc), let window = tab.window, tab.controller.document != nil {
+            window.tabs.select(tab)
+            action(tab.controller)
             return
         }
         guard tries < 80 else { return }
@@ -277,13 +288,6 @@ import KiriKit
             try? await Task.sleep(for: .milliseconds(25))
             whenReady(doc, tries: tries + 1, action)
         }
-    }
-
-    private static func find(in view: NSView?) -> KiriTextView? {
-        guard let view else { return nil }
-        if let tv = view as? KiriTextView { return tv }
-        for sub in view.subviews { if let tv = find(in: sub) { return tv } }
-        return nil
     }
 }
 

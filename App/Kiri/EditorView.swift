@@ -3,7 +3,7 @@ import KiriKit
 import KiriSyntax
 import SwiftUI
 
-/// What the status bar shows and the menus act on, for one window.
+/// What the status bar shows and the menus act on, for one tab.
 @MainActor @Observable final class EditorModel {
     var line = 1
     var column = 1
@@ -54,10 +54,11 @@ import SwiftUI
     }
 }
 
-/// The editor as a SwiftUI view.
+/// The editor of the tab that shows, as a SwiftUI view. Each tab has an
+/// editor of its own (`DocumentTab`); this puts the one that shows in
+/// place and keeps it up to date with the settings.
 struct EditorView: NSViewRepresentable {
-    let document: KiriDocument
-    let model: EditorModel
+    let tab: DocumentTab
     let fontScale: Double
     /// The editor's font family (`EditorFont`), "" for SF Mono.
     let fontFamily: String
@@ -66,44 +67,103 @@ struct EditorView: NSViewRepresentable {
     let isUntitled: Bool
     let wrapLines: Bool
     let animation: EditorAnimation
+    let arrival: TabEditorSlot.Arrival
 
-    func makeCoordinator() -> EditorController { EditorController(model: model) }
+    func makeNSView(context: Context) -> TabEditorSlot { TabEditorSlot(frame: .zero) }
 
-    func makeNSView(context: Context) -> EditorContainerView {
-        let view = EditorContainerView(frame: .zero)
-        // The document's own undo manager, handed over rather than found
-        // in the environment: an edit registered there is what makes the
-        // document dirty, and undoing back to the save cleans it.
-        context.coordinator.undoManager = document.undoManager
-        context.coordinator.attach(view)
-        context.coordinator.setUntitled(isUntitled)
-        context.coordinator.load(document)
-        context.coordinator.setLanguage(language)
-        view.textView.setAnimation(animation)
-        LaunchTimer.editorShown()
-        #if DEBUG || KIRI_SELFTEST
-        SelfTest.run(textView: view.textView)
-        #endif
-        return view
-    }
-
-    func updateNSView(_ view: EditorContainerView, context: Context) {
-        let c = context.coordinator
-        c.undoManager = document.undoManager
+    func updateNSView(_ slot: TabEditorSlot, context: Context) {
+        slot.arrival = arrival
+        let c = tab.controller
         c.setUntitled(isUntitled)
-        if c.document !== document { c.load(document) }
         c.setFont(family: fontFamily, scale: fontScale)
         c.setLanguage(language)
         c.setWrap(wrapLines)
-        view.textView.setAnimation(animation)
+        tab.container.textView.setAnimation(animation)
         c.setCrossfade(animation != .none)
+        slot.show(tab)
     }
+}
+
+/// Where a window shows the editor of its selected tab. Switching tabs
+/// swaps the editor in it, at once (`WindowTabs.select`), and SwiftUI's
+/// next update finds it done.
+final class TabEditorSlot: NSView {
+    private(set) weak var tab: DocumentTab?
+
+    /// How a file that arrives comes in: its text fades in on the paper,
+    /// 240 ms rising 4 pt; with reduced motion the 140 ms fade alone; with
+    /// Motion: Off at once. Done on the editor's layer, by Core Animation:
+    /// it plays whether or not SwiftUI is drawing the window, and the
+    /// editor takes clicks and drops all the while.
+    enum Arrival { case rise, fade, none }
+    var arrival = Arrival.rise
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window = window as? DocumentNSWindow else { return }
+        window.editorSlot = self
+        if let tab = window.tabs.selectedTab { show(tab) }
+    }
+
+    func show(_ tab: DocumentTab) {
+        let editor = tab.container
+        if self.tab !== tab || editor.superview !== self {
+            for view in subviews where view !== editor { view.removeFromSuperview() }
+            self.tab = tab
+            editor.frame = bounds
+            editor.autoresizingMask = [.width, .height]
+            if editor.superview !== self {
+                addSubview(editor)
+                // A text view gives up the drags it takes when it leaves
+                // its window, and doesn't take them back by itself.
+                editor.textView.updateDragTypeRegistration()
+            }
+        }
+        if tab.arriving { arrive(tab) }
+        guard !tab.installed, window != nil else { return }
+        tab.installed = true
+        LaunchTimer.editorShown()
+        #if DEBUG || KIRI_SELFTEST
+        SelfTest.run(textView: editor.textView)
+        #endif
+    }
+
+    /// `tab`'s text fades in (`Arrival`).
+    func arrive(_ tab: DocumentTab) {
+        tab.arriving = false
+        guard arrival != .none, tab.container.superview === self else { return }
+        tab.container.wantsLayer = true
+        guard let layer = tab.container.layer else { return }
+        let rise = arrival == .rise
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let move = CABasicAnimation(keyPath: "transform.translation.y")
+        // (Up is +y on the layer: it starts 4 pt low.)
+        move.fromValue = -4
+        move.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = rise ? [fade, move] : [fade]
+        group.duration = rise ? Honey.medium : Honey.quick
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(group, forKey: "kiriArrival")
+        #if DEBUG || KIRI_SELFTEST
+        arrivals += 1
+        #endif
+    }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// How many arrivals have played here, for the self-test.
+    private(set) var arrivals = 0
+    #endif
 }
 
 /// Owns the text view's behaviour: loading text, tracking lines, the caret
 /// position and the font.
 @MainActor final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     let model: EditorModel
+    /// The tab this is the editor of.
+    weak var tab: DocumentTab?
     private(set) weak var document: KiriDocument?
     private weak var container: EditorContainerView?
     private var fontScale = 1.0
@@ -148,7 +208,7 @@ struct EditorView: NSViewRepresentable {
         applyFont()
     }
 
-    /// Shows `document`'s text: in a new window, and when the document
+    /// Shows `document`'s text: in a new tab, and when the document
     /// reads its file again (File ▸ Revert to Saved), which it says here.
     func load(_ document: KiriDocument) {
         guard let textView, let storage = textView.textStorage else { return }
@@ -279,7 +339,7 @@ struct EditorView: NSViewRepresentable {
     /// pasting, a drop, undo or a command.
     private func documentEdited(_ range: NSRange) {
         // An edit keeps a preview tab: it is the person's file now.
-        PreviewTabs.keep(textView?.window)
+        PreviewTabs.keep(tab)
         // The first-run hint goes with the first character and stays gone.
         if untouched {
             untouched = false
