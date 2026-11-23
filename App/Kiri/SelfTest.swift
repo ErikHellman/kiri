@@ -13,6 +13,7 @@ import os
     private static var typedOnLaunch = false
     private static var openedFolder = false
     private static var arrangedTabs = false
+    private static var openedLater = false
     private static var renderedTabs = false
     private static var renderedFind = false
     private static var renderedChrome = false
@@ -487,6 +488,19 @@ import os
                         }
                     }
                     fflush(stdout)
+                }
+            }
+        }
+        // Screenshot helper: -KiriOpenLater <path:path:…> opens those files
+        // one after another, 1.5 s apart, as ⌘O does (which can't be used
+        // here: the Open panel needs the app in front).
+        if let later = UserDefaults.standard.string(forKey: "KiriOpenLater"), !openedLater {
+            openedLater = true
+            for (i, path) in later.split(separator: ":").enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5 * Double(i + 1)) {
+                    print("SELFTEST info opening \(path) at \(ProcessInfo.processInfo.systemUptime)")
+                    fflush(stdout)
+                    NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: String(path)), display: true) { _, _, _ in }
                 }
             }
         }
@@ -2078,8 +2092,12 @@ import os
         let windowsBefore = NSApp.windows.count, documentWindowsBefore = DocumentWindow.all.count
         let windowObjects = Set(NSApp.windows.map { ObjectIdentifier($0) })
         var counts: [Int] = []
+        let slot = (window as? DocumentNSWindow)?.editorSlot
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, _, _ in
             counts.append(NSApp.windows.count)
+            // Its text fades in on the editor's own layer, begun as it opens.
+            let fading = slot?.tab?.document === doc && slot?.tab?.container.layer?.animation(forKey: "kiriArrival") != nil
+            report(fading, "the new tab's text fades in on the paper, the fade begun as the file opens")
             NSDocumentController.shared.openDocument(withContentsOf: url2, display: true) { doc2, _, _ in
             counts.append(NSApp.windows.count)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
