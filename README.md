@@ -82,7 +82,10 @@ Needs macOS 26 and Xcode 26 or later, and XcodeGen.
 brew install xcodegen
 scripts/build.sh            # release build → build/Kiri.app (ad-hoc signed)
 scripts/build.sh --install  # …and copy it to /Applications
+scripts/dmg.sh --build      # …and pack it into build/Kiri-<version>.dmg
 ```
+
+`scripts/dmg.sh` makes the disk image people install from: a Honey window with Kiri, Applications and a bee between them (see `docs/DESIGN.md`, Disk image). It needs Python 3.10 or later and installs a pinned [dmgbuild](https://github.com/dmgbuild/dmgbuild) into `build/dmg-venv`, which writes Finder's layout without scripting Finder, so it also runs headless. `--open` mounts the result. To publish it on a website, sign and notarize it: see [docs/RELEASING.md](docs/RELEASING.md).
 
 The first build downloads the Tree-sitter grammars, about 1.4 GB of git history, which takes several minutes. SwiftPM keeps them in `~/Library/Caches/org.swift.swiftpm`, so later builds start in seconds.
 

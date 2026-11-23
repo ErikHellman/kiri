@@ -92,7 +92,10 @@ run_xcodebuild build -project "$PROJECT" -scheme Kiri -configuration Release \
 
 rm -rf "$APP"
 cp -R "$DERIVED/Build/Products/Release/Kiri.app" "$APP"
-codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP"
+# A real identity also gets a secure timestamp, which notarization needs.
+TIMESTAMP=--timestamp=none
+[ "$SIGN_IDENTITY" = "-" ] || TIMESTAMP=--timestamp
+codesign --force --deep --options runtime $TIMESTAMP --sign "$SIGN_IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP ($(du -sh "$APP" | cut -f1))"
 
