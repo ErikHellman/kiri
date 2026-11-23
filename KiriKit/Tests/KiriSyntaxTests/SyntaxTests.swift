@@ -115,7 +115,10 @@ func text(of span: SyntaxSpan, in s: String) -> String {
     }
 }
 
-@Suite struct PerformanceTests {
+/// One test at a time: run side by side on a busy CI runner, the full
+/// parses (about 1.3 s each) slowed the 4 MB JSON one past the parser's
+/// 2 s timeout (`SyntaxParser`), and it came back empty.
+@Suite(.serialized) struct PerformanceTests {
     /// The biggest new grammars (C++, Kotlin, C#): one screen of highlights
     /// in a ~1.5 MB file stays cheap, as does an incremental reparse.
     @Test(arguments: [
