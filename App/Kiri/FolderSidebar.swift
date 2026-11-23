@@ -196,7 +196,7 @@ import SwiftUI
 }
 
 /// How wide the folder sidebar is: one width for every folder window and
-/// every tab (each tab is a window with a sidebar of its own), remembered
+/// every tab (a window's tabs share its one sidebar), remembered
 /// from launch to launch (`Prefs.sidebarWidthKey`). The edge between the
 /// sidebar and the editor sets it (`SidebarEdge`).
 @MainActor @Observable final class SidebarWidth {

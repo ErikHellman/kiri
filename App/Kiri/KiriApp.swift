@@ -1,7 +1,7 @@
 import KiriKit
 import SwiftUI
 
-/// Kiri for macOS: one window per document, launching straight into an editor.
+/// Kiri for macOS: documents as tabs of a window, launching straight into an editor.
 ///
 /// The documents and their windows are AppKit's (`KiriDocument`,
 /// `DocumentWindow`), because saving is explicit and a SwiftUI

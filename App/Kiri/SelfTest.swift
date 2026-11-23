@@ -557,7 +557,7 @@ import os
             }
         }
         // Screenshot helpers for the tab strip, run once the launch's files
-        // are all up and their tab groups have stopped changing:
+        // are all up and their windows' tabs have stopped changing:
         // -KiriWindowSize 480x400 sizes the document windows, -KiriDirtyTab
         // <title> types into that tab, -KiriSelectTab <title> selects it.
         // Prints "SELFTEST arranged" when done.
@@ -2031,7 +2031,7 @@ import os
         }
 
         // Closing the tab that is showing (⌘W): its strip is watching the
-        // tab group at that moment. The untitled one is clean again after
+        // tabs at that moment. The untitled one is clean again after
         // the undo, so neither asks anything.
         let before = documents(in: original).count
         for document in [opened, doc].compactMap({ $0 }) {
@@ -2593,10 +2593,10 @@ import os
         }
         func entries(_ urls: [URL]) -> [KiriCLI.Request.Entry] { urls.map { .file($0, line: 0, column: 0) } }
         func group(_ w: NSWindow) -> Set<ObjectIdentifier> { Set(documents(in: w).map { ObjectIdentifier($0) }) }
-        /// "8 of 8 open, tab groups [9]": how many of the files have a tab,
+        /// "8 of 8 open, windows of [9] tabs": how many of the files have a tab,
         /// and how many tabs the windows they are in have.
         func shape(_ ws: [NSWindow], of count: Int) -> String {
-            "\(ws.count) of \(count) open, tab groups \(Set(ws.map(group)).map(\.count).sorted(by: >))"
+            "\(ws.count) of \(count) open, windows of \(Set(ws.map(group)).map(\.count).sorted(by: >)) tabs"
         }
         /// All of `ws` are tabs of one window.
         func together(_ ws: [NSWindow]) -> Bool { Set(ws.map(group)).count == 1 }
@@ -2768,7 +2768,7 @@ import os
     }
 
     /// The windows of the documents for `urls`, once every one of them has a
-    /// window and the tab groups have stopped changing (or after 8 s).
+    /// tab and the windows' tabs have stopped changing (or after 8 s).
     private static func settledWindows(_ urls: [URL]) async -> [NSWindow] {
         let names = Set(urls.map(\.lastPathComponent))
         func windows() -> [NSWindow] {
