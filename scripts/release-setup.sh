@@ -5,13 +5,13 @@
 #   scripts/release-setup.sh
 #
 # It, in turn:
-#   1. creates the public releases repo, if it isn't there yet;
+#   1. makes the kiri repo public, if it isn't yet: Sparkle downloads the
+#      updates from its releases without signing in;
 #   2. makes Sparkle's update signing key (kept in your login keychain),
 #      writes its public half into App/project.yml, and stores the private
 #      half as the SPARKLE_PRIVATE_KEY secret;
 #   3. stores your Developer ID (.p12) and its password;
-#   4. stores the App Store Connect API key (.p8), its key ID and issuer ID;
-#   5. stores the token that may publish to the releases repo.
+#   4. stores the App Store Connect API key (.p8), its key ID and issuer ID.
 # Each step asks first, so it can be run again for one of them. Nothing
 # secret is written into the repo or left on disk: secrets go straight to
 # `gh secret set`. Needs the GitHub CLI (brew install gh, gh auth login).
@@ -20,7 +20,6 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 REPO=${REPO:-ErikHellman/kiri}
-RELEASES_REPO=${RELEASES_REPO:-ErikHellman/kiri-releases}
 # As in .github/workflows/release.yml.
 SPARKLE_VERSION=2.10.1
 SPARKLE_SHA256=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
@@ -53,15 +52,14 @@ set_secret() { # set_secret NAME < value
 WORK=$(mktemp -d)
 trap 'stty echo 2>/dev/null; rm -rf "$WORK"' EXIT
 
-# --- 1. The public releases repo.
+# --- 1. A public repo.
 
 echo
-echo "1. $RELEASES_REPO: the public downloads and update feed"
-if gh repo view "$RELEASES_REPO" >/dev/null 2>&1; then
-    echo "   It's there."
-elif ask "   Create it, public, with a README?"; then
-    gh repo create "$RELEASES_REPO" --public --add-readme \
-        --description "Downloads and the update feed for Kiri, a quick-edit text editor for macOS"
+echo "1. $REPO is where the downloads and the update feed live: it must be public"
+if [ "$(gh repo view "$REPO" --json visibility --jq .visibility)" = PUBLIC ]; then
+    echo "   It is."
+elif ask "   Make $REPO public now? Its code and history become visible to everyone."; then
+    gh repo edit "$REPO" --visibility public --accept-visibility-change-consequences
 fi
 
 # --- 2. Sparkle's EdDSA key.
@@ -147,22 +145,6 @@ if ask "   Store a .p8 as NOTARY_KEY_P8 (and its key ID and issuer ID)?"; then
     printf '%s' "$KEY_ID" | set_secret NOTARY_KEY_ID
     printf '%s' "$ISSUER" | set_secret NOTARY_ISSUER_ID
     echo "   Stored. Keep the .p8 somewhere safe or delete it; a new key can be made any time."
-fi
-
-# --- 5. The token for the releases repo.
-
-echo
-echo "5. A token that may publish releases on $RELEASES_REPO"
-echo "   Make one: https://github.com/settings/personal-access-tokens/new"
-echo "   Repository access: Only select repositories > $(basename "$RELEASES_REPO")."
-echo "   Permissions > Repository > Contents: Read and write. Nothing else."
-if ask "   Store it as RELEASES_TOKEN?"; then
-    TOKEN=$(secret_prompt "   The token (github_pat_...)")
-    [ -n "$TOKEN" ] || { echo "   No token" >&2; exit 1; }
-    GH_TOKEN="$TOKEN" gh repo view "$RELEASES_REPO" >/dev/null 2>&1 \
-        || { echo "   That token can't see $RELEASES_REPO" >&2; exit 1; }
-    printf '%s' "$TOKEN" | set_secret RELEASES_TOKEN
-    echo "   Stored. When it expires, make a new one and run this step again."
 fi
 
 echo

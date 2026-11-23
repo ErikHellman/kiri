@@ -8,8 +8,8 @@ name: release
 # The job builds a universal Kiri.app with the tag's version, signs it with
 # the Developer ID, notarizes and staples the app and its disk image
 # (scripts/dmg.sh), signs the image for Sparkle, writes the appcast
-# (scripts/appcast.py), and publishes both as a release of the public
-# releases repo, which is where Kiri looks for updates. The secrets it needs
+# (scripts/appcast.py), and publishes both as a release of this repo,
+# which is public and where Kiri looks for updates. The secrets it needs
 # and how to make them are in docs/RELEASING.md.
 
 on:
@@ -17,16 +17,17 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  # To publish the release.
+  contents: write
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 env:
-  # The public repo the downloads and the appcast live on. It must match
-  # KIRI_FEED_URL in App/project.yml (checked below).
-  RELEASES_REPO: ${{ vars.RELEASES_REPO || 'ErikHellman/kiri-releases' }}
+  # The downloads and the appcast live on this repo's releases. It must
+  # match KIRI_FEED_URL in App/project.yml (checked below).
+  RELEASES_REPO: ${{ github.repository }}
   # Sparkle's command-line tools (sign_update), pinned to the version in
   # App/project.yml, checked against this SHA-256.
   SPARKLE_VERSION: 2.10.1
@@ -76,10 +77,10 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           missing=
-          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY RELEASES_TOKEN; do
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY; do
             eval "value=\${$name:-}"
             [ -n "$value" ] || missing="$missing $name"
           done
@@ -97,11 +98,13 @@ jobs:
             echo "::error::KIRI_FEED_URL in App/project.yml isn't $RELEASES_REPO's appcast"
             exit 1
           }
-          GH_TOKEN="$RELEASES_TOKEN" gh repo view "$RELEASES_REPO" --json visibility --jq .visibility | grep -qx PUBLIC || {
-            echo "::error::$RELEASES_REPO must exist, be public and be reachable with RELEASES_TOKEN"
+          # Sparkle downloads without signing in: a private repo's
+          # releases would answer every Mac with a 404.
+          gh repo view "$RELEASES_REPO" --json visibility --jq .visibility | grep -qx PUBLIC || {
+            echo "::error::$RELEASES_REPO must be public for Kiri to download its updates"
             exit 1
           }
-          if GH_TOKEN="$RELEASES_TOKEN" gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
             echo "::error::$RELEASES_REPO already has a release $TAG"
             exit 1
           fi
@@ -196,11 +199,11 @@ jobs:
 
       - name: publish
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # As a draft until every file is up, so .../latest/download/appcast.xml
           # never points at a release without its disk image.
-          gh release create "$TAG" "$DMG" "$DMG.sha256" build/appcast.xml \
+          gh release create "$TAG" "$DMG" "$DMG.sha256" build/appcast.xml --verify-tag \
             --repo "$RELEASES_REPO" --title "Kiri $KIRI_VERSION" --notes-file "$RUNNER_TEMP/notes.md" --draft
           gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest
           echo "Released https://github.com/$RELEASES_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

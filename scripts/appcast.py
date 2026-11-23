@@ -7,7 +7,7 @@ then always answers with the newest one. Used by
 .github/workflows/release.yml:
 
     scripts/appcast.py --version 0.2.0 --build 41 \\
-        --url https://github.com/OWNER/kiri-releases/releases/download/v0.2.0/Kiri-0.2.0.dmg \\
+        --url https://github.com/ErikHellman/kiri/releases/download/v0.2.0/Kiri-0.2.0.dmg \\
         --dmg build/Kiri-0.2.0.dmg --signature BASE64 \\
         --minimum-system 26.0 --notes notes.md --output build/appcast.xml
 

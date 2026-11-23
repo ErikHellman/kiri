@@ -85,8 +85,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri
-        # The appcast on the public releases repo (docs/RELEASING.md).
-        KIRI_FEED_URL: https://github.com/ErikHellman/kiri-releases/releases/latest/download/appcast.xml
+        # The appcast on this repo's newest release (docs/RELEASING.md).
+        KIRI_FEED_URL: https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml
         # The public half of the update signing key, as Sparkle's
         # generate_keys prints it (docs/RELEASING.md). Public, so it lives here.
         KIRI_SPARKLE_PUBLIC_KEY: ""
