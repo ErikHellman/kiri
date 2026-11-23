@@ -2118,6 +2118,7 @@ import os
                     try? FileManager.default.removeItem(at: url2)
                     Task { @MainActor in
                         await tabState(window)
+                        await moveAndMerge(window)
                         await frontWindow(window)
                         await toggleCommentStage(window)
                         await paletteStage(window)
@@ -2270,6 +2271,79 @@ import os
         model.close(t2.id)
         let closed = await time { model.items.map(\.id) == [t1.id] }
         report(closed.map { $0 <= .milliseconds(300) } ?? false, "a tab closed while another shows leaves the strip (\(ms(closed)))")
+    }
+
+    /// Window ▸ Move Tab to New Window and Merge All Windows move tabs whole
+    /// (the editor goes along), and a click on a tab in the strip selects it.
+    private static func moveAndMerge(_ original: NSWindow) async {
+        guard let window = original as? DocumentNSWindow, let first = shownDocument(in: window) else {
+            report(false, "the first window, for Move Tab and Merge"); return
+        }
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-move-test-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let urls = ["move-a.txt", "move-b.txt"].map { name -> URL in
+            let url = dir.appendingPathComponent(name)
+            try? "\(name)\n".write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(entries: urls.map { .file($0, line: 0, column: 0) })) { c.resume() }
+        }
+        let clock = ContinuousClock()
+        func wait(_ seconds: Double = 3, until done: () -> Bool) async -> Bool {
+            let start = clock.now
+            while clock.now - start < .seconds(seconds) {
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return done()
+        }
+        guard await wait(until: { documents(in: window).count == 3 }), let moved = documents(in: window).last,
+              let editor = editorText(of: moved) else {
+            report(false, "two files open as tabs for Move Tab and Merge (\(documents(in: window).count) tabs)"); return
+        }
+        defer { for url in urls { NSDocumentController.shared.document(for: url)?.close() } }
+        FrontEditor.shared.selfTestMain(window)
+        WindowAction.moveTabToNewWindow()
+        var other: NSWindow?
+        let movedOut = await wait {
+            other = DocumentWindow.window(of: moved)
+            return other.map { $0 !== window && $0.isVisible } ?? false
+        }
+        report(movedOut && documents(in: other) == [moved] && documents(in: window).count == 2 && editorText(of: moved) === editor
+               && DocumentWindow.all.count == 2,
+               "Window ▸ Move Tab to New Window gives the tab a window of its own, its editor with it, and the others stay (\(documents(in: window).count) tabs left, \(DocumentWindow.all.count) windows)")
+        show(first)
+        FrontEditor.shared.selfTestMain(window)
+        WindowAction.mergeAllWindows()
+        let merged = await wait { DocumentWindow.all.count == 1 && documents(in: window).count == 3 }
+        report(merged && documents(in: window).last === moved && isShowing(first) && editorText(of: moved) === editor
+               && other.map { !$0.isVisible } ?? false,
+               "Window ▸ Merge All Windows brings the other window's tabs in after this window's, which keeps the tab it showed, and the other window closes (\(DocumentWindow.all.count) windows, \(documents(in: window).count) tabs)")
+
+        // A click on a tab in the strip, as a mouse down and up in the
+        // window (posted to this app only; the pointer doesn't move).
+        let target = documents(in: window)[1]
+        await wakeAccessibility()
+        let tab = accessibilityElements(of: window).first {
+            $0.role == NSAccessibility.Role.button.rawValue && $0.name == target.displayName && $0.frame.minY > window.frame.maxY - 60
+        }
+        if let tab, window.occlusionState.contains(.visible) {
+            let point = window.convertPoint(fromScreen: NSPoint(x: tab.frame.midX, y: tab.frame.midY))
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                if let e = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                              pressure: type == .leftMouseDown ? 1 : 0) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+            }
+            let clicked = await wait(2) { isShowing(target) }
+            report(clicked, "a click on a tab in the strip shows it (the drag that pulls a tab out doesn't get in the way of a click)")
+        } else {
+            print("SELFTEST SKIP a click on a tab in the strip (the window is covered or the screen locked: SwiftUI isn't updating it)")
+        }
+        show(first)
     }
 
     /// Save says what the tab's dot says, by its shape and to VoiceOver:
