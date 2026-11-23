@@ -89,7 +89,7 @@ targets:
         KIRI_FEED_URL: https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml
         # The public half of the update signing key, as Sparkle's
         # generate_keys prints it (docs/RELEASING.md). Public, so it lives here.
-        KIRI_SPARKLE_PUBLIC_KEY: ""
+        KIRI_SPARKLE_PUBLIC_KEY: "B++wAVUb3kXZuhu8zgZ3TH+kUlfdEgtysqLbXkoWoWA="
         PRODUCT_NAME: Kiri
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Kiri
