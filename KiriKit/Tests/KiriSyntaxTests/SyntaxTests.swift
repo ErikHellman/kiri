@@ -154,7 +154,9 @@ func text(of span: SyntaxSpan, in s: String) -> String {
         let grammar = try #require(SyntaxGrammar.forLanguage(id: "json"))
         let row = "{\"id\": 12345, \"name\": \"Kiri editor row\", \"tags\": [\"a\", \"b\"], \"ok\": true},\n"
         let text = "[\n" + String(repeating: row, count: 50_000) + "{}]\n"
-        let parser = try #require(SyntaxParser(grammar: grammar))
+        // The full parse of 4 MB takes about 2 s on a busy CI runner, right
+        // at the app's timeout; this test measures what comes after it.
+        let parser = try #require(SyntaxParser(grammar: grammar, timeout: 10))
         let clock = ContinuousClock()
         var snap: SyntaxSnapshot?
         let parse = clock.measure { snap = parser.parse(text as NSString) }
