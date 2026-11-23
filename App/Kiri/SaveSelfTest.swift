@@ -37,6 +37,7 @@ extension SelfTest {
         let only = UserDefaults.standard.string(forKey: "KiriSaveStage")
         let stages: [(String, (URL) async -> Void)] = [
             ("recovery", periodicRecovery), ("types", anyFileSavesInPlace), ("close", closeDirty), ("tab", backgroundTab),
+            ("window", closeWindow),
             ("revert", revert), ("disk", changedOnDisk), ("untitled", untitled), ("wait", waiting), ("new", newFile),
             ("stdin", standardInput), ("recent", openRecent), ("closeAll", closeAll),
         ]
@@ -265,6 +266,59 @@ extension SelfTest {
         await press("Cancel", on: behind.window)
         behind.doc.close()
         showing.doc.close()
+    }
+
+    /// A window's close button, with tabs that have unsaved changes: the
+    /// first of them comes forward and asks, and Cancel keeps it all; Don't
+    /// Save asks the next in turn, and then every tab closes, and the window.
+    private static func closeWindow(_ dir: URL) async {
+        let urls = ["window-a.txt", "window-b.txt", "window-c.txt"].map { file($0, "\($0)\n", in: dir) }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            KiriCLI.open(KiriCLI.Request(newWindow: true, entries: urls.map { .file($0, line: 0, column: 0) })) { c.resume() }
+        }
+        var tabs: [Tab] = []
+        for url in urls { if let t = await tab(of: NSDocumentController.shared.document(for: url)) { tabs.append(t) } }
+        guard tabs.count == 3, let window = tabs[0].window as? DocumentNSWindow, tabs.allSatisfy({ $0.window === window }),
+              documents(in: window).count == 3 else {
+            report(false, "three files open as the tabs of a window of their own"); return
+        }
+        let (a, b, c) = (tabs[0], tabs[1], tabs[2])
+        await insert("typed ", in: a)
+        await insert("typed ", in: b)
+        show(c.doc)
+        await settle(200)
+        // The button itself, as a click on it goes.
+        let button = window.standardWindowButton(.closeButton)
+        button?.performClick(nil)
+        let firstAsked = await wait { window.attachedSheet != nil && isShowing(a.doc) }
+        await press("Cancel", on: window)
+        await settle(300)
+        report(firstAsked && window.isVisible && tabs.allSatisfy({ isOpen($0.doc) }) && documents(in: window).count == 3
+               && a.doc.isDocumentEdited && b.doc.isDocumentEdited,
+               "the close button of a window whose tabs have unsaved changes brings the first of them forward to ask, and Cancel keeps the window and every tab (\(documents(in: window).count) tabs)")
+        // AppKit's own action for the button, should anything give it back
+        // (it goes to the document that shows): the same question.
+        let ours = button?.action
+        button?.action = NSSelectorFromString("_close:")
+        button?.performClick(nil)
+        let askedByAppKit = await wait { window.attachedSheet != nil && isShowing(a.doc) }
+        await press("Cancel", on: window)
+        await settle(300)
+        button?.action = ours
+        report(askedByAppKit && window.isVisible && documents(in: window).count == 3 && tabs.allSatisfy({ isOpen($0.doc) }),
+               "AppKit's own close action asks the same way, and Cancel keeps the window and every tab")
+        button?.performClick(nil)
+        _ = await sheet(on: window)
+        buttons(in: window.attachedSheet?.contentView).first { $0.title == "Don’t Save" }?.performClick(nil)
+        let secondAsked = await wait { window.attachedSheet != nil && isShowing(b.doc) }
+        buttons(in: window.attachedSheet?.contentView).first { $0.title == "Don’t Save" }?.performClick(nil)
+        let closed = await wait { !window.isVisible && tabs.allSatisfy { !isOpen($0.doc) } }
+        report(secondAsked && closed && DocumentWindow.all.allSatisfy({ $0 !== window }),
+               "Don’t Save asks the next tab with changes in turn, brought forward, and then every tab closes and the window with them")
+        if !closed { for t in tabs { t.doc.close() } }
+        for url in urls where (try? String(contentsOf: url, encoding: .utf8)) != "\(url.lastPathComponent)\n" {
+            report(false, "\(url.lastPathComponent) was written to")
+        }
     }
 
     /// A file changed by something else: a document without unsaved changes

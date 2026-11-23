@@ -272,6 +272,25 @@ extension UTType {
         super.canClose(withDelegate: delegate, shouldClose: shouldCloseSelector, contextInfo: contextInfo)
     }
 
+    /// AppKit asks the document that shows when its window is to close
+    /// (the window's close button goes there, not to `performClose`):
+    /// the window has other tabs to ask about, so it is told no, and
+    /// the window closes the way Close Window does (`DocumentWindow.closeWindow`).
+    override func shouldCloseWindowController(_ windowController: NSWindowController, delegate: Any?,
+                                              shouldClose shouldCloseSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
+        guard let window = windowController.window as? DocumentNSWindow, !window.closing else {
+            super.shouldCloseWindowController(windowController, delegate: delegate, shouldClose: shouldCloseSelector,
+                                              contextInfo: contextInfo)
+            return
+        }
+        if let delegate = delegate as? NSObject, let shouldCloseSelector, delegate.responds(to: shouldCloseSelector) {
+            typealias Answer = @convention(c) (NSObject, Selector, NSDocument, Bool, UnsafeMutableRawPointer?) -> Void
+            let answer = unsafeBitCast(delegate.method(for: shouldCloseSelector), to: Answer.self)
+            answer(delegate, shouldCloseSelector, self, false, contextInfo)
+        }
+        DispatchQueue.main.async { window.performClose(nil) }
+    }
+
     /// Its tab goes first (the window with its last tab), then the
     /// document. `kiri -w` and the files `kiri` made are told.
     override func close() {

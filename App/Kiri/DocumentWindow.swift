@@ -54,6 +54,12 @@ import SwiftUI
         }
         if let folder { FolderSessions.set(folder, for: window) }
         WindowTabs.useTallTitleBar(window)
+        // The close button asks about every tab, as Close Window does
+        // (AppKit's own action would ask only the document that shows).
+        if let close = window.standardWindowButton(.closeButton) {
+            close.target = window
+            close.action = #selector(NSWindow.performClose(_:))
+        }
         window.tabs.attach(to: window)
         let controller = NSWindowController(window: window)
         // A new window steps down and right of the one before it.
