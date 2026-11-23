@@ -87,6 +87,8 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
             // Again, in case SwiftUI set up its own URL handler in between.
             KiriCLI.install()
             LaunchDocument.finishedLaunching(simplyOpened: simplyOpened)
+            // Sparkle: a check once a day, the first a moment after launch.
+            Updater.start()
         }
     }
 

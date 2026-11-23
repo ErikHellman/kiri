@@ -24,9 +24,9 @@ enum Prefs {
     static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
 }
 
-/// Kiri ▸ Settings…, in four groups: Appearance (the color theme, light
-/// or dark), Editor (font, text size, wrapping), Motion, and the command
-/// line tool.
+/// Kiri ▸ Settings…, in five groups: Appearance (the color theme, light
+/// or dark), Editor (font, text size, wrapping), Motion, Updates and the
+/// command line tool.
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -38,6 +38,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
+    @State private var updater = Updater.shared
 
     var body: some View {
         panel
@@ -70,6 +71,7 @@ struct SettingsView: View {
             ("Appearance", AnyView(appearanceGroup)),
             ("Editor", AnyView(editorGroup)),
             ("Motion", AnyView(motionGroup)),
+            ("Updates", AnyView(updatesRow)),
             ("Command line tool", AnyView(commandLineToolRow)),
         ]
         return VStack(alignment: .leading, spacing: 0) {
@@ -161,6 +163,27 @@ struct SettingsView: View {
                 .frame(width: 200)
             }
             FontSample(family: editorFont.shown, scale: textScale)
+        }
+    }
+
+    /// Sparkle's daily check (`Updater`), a button for one now, and which
+    /// version this is.
+    @ViewBuilder private var updatesRow: some View {
+        if updater.isAvailable {
+            row("Check automatically", detail: "Once a day. A new version installs when you quit Kiri. This is \(Updater.version).") {
+                HStack(spacing: 12) {
+                    Button("Check Now") { updater.checkForUpdates() }.buttonStyle(.honeyGlass)
+                        .disabled(!updater.canCheck)
+                        .accessibilityLabel("Check for Updates")
+                    Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
+                        .toggleStyle(.switch).labelsHidden()
+                }
+            }
+        } else {
+            row("Check automatically", detail: "This build of Kiri (\(Updater.version)) doesn't update itself. Downloads from the releases page do.") {
+                Toggle("Check for updates automatically", isOn: .constant(false))
+                    .toggleStyle(.switch).labelsHidden().disabled(true)
+            }
         }
     }
 

@@ -123,8 +123,7 @@ if [ "$SIGN_IDENTITY" != "-" ]; then
     # the identity too. Hardened runtime and a secure timestamp are what
     # notarization asks for; Kiri needs no entitlements (it isn't sandboxed).
     echo "==> Signing Kiri.app with $SIGN_IDENTITY"
-    codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
-    codesign --verify --deep --strict "$APP"
+    scripts/codesign-app.sh "$APP" "$SIGN_IDENTITY"
     if [ -n "$NOTARY" ]; then
         ditto -c -k --keepParent "$APP" "$WORK/Kiri.zip"
         notarize "$WORK/Kiri.zip"

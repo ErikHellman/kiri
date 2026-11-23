@@ -10,6 +10,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    # The release workflow sets both from the tag (v0.2.0 -> 0.2.0) and the
+    # number of commits, so CURRENT_PROJECT_VERSION, which Sparkle compares,
+    # only ever grows. These are what a local build gets.
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     # Set to your Apple developer team id locally to sign.
@@ -18,6 +21,10 @@ packages:
   # The Honey + Liquid Glass style kit (and, later, the editor core).
   KiriKit:
     path: ../KiriKit
+  # Updates (App/Kiri/Updater.swift, docs/RELEASING.md).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 targets:
   Kiri:
     type: application
@@ -60,6 +67,14 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: se.hellsoft.kiri.cli
             CFBundleURLSchemes: [kiri]
+        # Sparkle: where new versions are announced (the release workflow
+        # publishes it) and the EdDSA key their signatures are checked with.
+        # With either empty, Kiri doesn't update itself (see Updater.swift).
+        SUFeedURL: $(KIRI_FEED_URL)
+        SUPublicEDKey: $(KIRI_SPARKLE_PUBLIC_KEY)
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: true
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: net.daringfireball.markdown
             UTTypeDescription: Markdown Document
@@ -70,6 +85,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri
+        # The appcast on this repo's newest release (docs/RELEASING.md).
+        KIRI_FEED_URL: https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml
+        # The public half of the update signing key, as Sparkle's
+        # generate_keys prints it (docs/RELEASING.md). Public, so it lives here.
+        KIRI_SPARKLE_PUBLIC_KEY: ""
         PRODUCT_NAME: Kiri
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Kiri
@@ -94,3 +114,4 @@ targets:
         product: KiriKit
       - package: KiriKit
         product: KiriSyntax
+      - package: Sparkle

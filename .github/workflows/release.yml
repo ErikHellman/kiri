@@ -1,0 +1,215 @@
+name: release
+
+# Pushing a version tag releases Kiri:
+#
+#   git tag -a v0.2.0 -m "What's new, in Markdown (it becomes the release notes)"
+#   git push origin v0.2.0
+#
+# The job builds a universal Kiri.app with the tag's version, signs it with
+# the Developer ID, notarizes and staples the app and its disk image
+# (scripts/dmg.sh), signs the image for Sparkle, writes the appcast
+# (scripts/appcast.py), and publishes both as a release of this repo,
+# which is public and where Kiri looks for updates. The secrets it needs
+# and how to make them are in docs/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  # To publish the release.
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # The downloads and the appcast live on this repo's releases. It must
+  # match KIRI_FEED_URL in App/project.yml (checked below).
+  RELEASES_REPO: ${{ github.repository }}
+  # Sparkle's command-line tools (sign_update), pinned to the version in
+  # App/project.yml, checked against this SHA-256.
+  SPARKLE_VERSION: 2.10.1
+  SPARKLE_SHA256: 1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+
+jobs:
+  release:
+    name: release
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every commit, for the build number.
+          fetch-depth: 0
+
+      - name: version
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::Tags are vMAJOR.MINOR.PATCH, like v0.2.0, not $TAG"; exit 1 ;;
+          esac
+          VERSION="${TAG#v}"
+          # Sparkle compares CFBundleVersion: the number of commits only grows.
+          BUILD=$(git rev-list --count HEAD)
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "KIRI_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "KIRI_BUILD=$BUILD" >> "$GITHUB_ENV"
+
+          # The release notes: an annotated tag's message, else a line.
+          # (Checkout leaves the tag lightweight; fetch the real one.)
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [ "$(git cat-file -t "$TAG")" = tag ]; then
+            git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG" > "$RUNNER_TEMP/notes.md"
+          else
+            echo "Kiri $VERSION." > "$RUNNER_TEMP/notes.md"
+          fi
+          echo "Kiri $VERSION (build $BUILD), notes:"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: check the setup
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          missing=
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY; do
+            eval "value=\${$name:-}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (docs/RELEASING.md says how to make them)"
+            exit 1
+          fi
+          # Before the long build: a release without the update key could
+          # never update again.
+          if grep -Eq '^ *KIRI_SPARKLE_PUBLIC_KEY: *(""|)$' App/project.yml; then
+            echo "::error::KIRI_SPARKLE_PUBLIC_KEY in App/project.yml is empty (docs/RELEASING.md)"
+            exit 1
+          fi
+          grep -qF "github.com/$RELEASES_REPO/releases/latest/download/appcast.xml" App/project.yml || {
+            echo "::error::KIRI_FEED_URL in App/project.yml isn't $RELEASES_REPO's appcast"
+            exit 1
+          }
+          # Sparkle downloads without signing in: a private repo's
+          # releases would answer every Mac with a 404.
+          gh repo view "$RELEASES_REPO" --json visibility --jq .visibility | grep -qx PUBLIC || {
+            echo "::error::$RELEASES_REPO must be public for Kiri to download its updates"
+            exit 1
+          }
+          if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            echo "::error::$RELEASES_REPO already has a release $TAG"
+            exit 1
+          fi
+
+      - name: select Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: import the Developer ID
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          # A keychain of its own, for this job only, deleted at the end.
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" \
+            -f pkcs12 -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          # Apple's Developer ID intermediate, in case the runner lacks it.
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN" || true
+          # codesign may use the key without a prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/"Developer ID Application/ { print $2; exit }')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::DEVELOPER_ID_P12 has no valid Developer ID Application identity:"
+            security find-identity -v -p codesigning "$KEYCHAIN"
+            exit 1
+          fi
+          security find-identity -v -p codesigning "$KEYCHAIN" | grep "$IDENTITY"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: build, sign and notarize
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+          ARCH: arm64 x86_64
+        run: |
+          brew install xcodegen
+          export NOTARY_KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$NOTARY_KEY_P8" > "$NOTARY_KEY"
+          scripts/dmg.sh --build
+          rm -f "$NOTARY_KEY"
+
+          APP=build/Kiri.app
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
+          [ "$(plist CFBundleShortVersionString)" = "$KIRI_VERSION" ] || { echo "::error::The app's version is $(plist CFBundleShortVersionString), not $KIRI_VERSION"; exit 1; }
+          [ "$(plist CFBundleVersion)" = "$KIRI_BUILD" ] || { echo "::error::The app's build is $(plist CFBundleVersion), not $KIRI_BUILD"; exit 1; }
+          [ -n "$(plist SUPublicEDKey)" ] || { echo "::error::The app has no SUPublicEDKey"; exit 1; }
+          lipo -archs "$APP/Contents/MacOS/Kiri"
+          echo "SU_PUBLIC_KEY=$(plist SUPublicEDKey)" >> "$GITHUB_ENV"
+          echo "DMG=build/Kiri-$KIRI_VERSION.dmg" >> "$GITHUB_ENV"
+
+      - name: sign the update and write the appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE="$RUNNER_TEMP/sparkle"
+          mkdir -p "$SPARKLE"
+          curl -fsSL -o "$RUNNER_TEMP/Sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+          echo "$SPARKLE_SHA256  $RUNNER_TEMP/Sparkle.tar.xz" | shasum -a 256 -c -
+          tar -xf "$RUNNER_TEMP/Sparkle.tar.xz" -C "$SPARKLE"
+
+          KEY_FILE="$RUNNER_TEMP/sparkle-private-key"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          OUT=$("$SPARKLE/bin/sign_update" --ed-key-file "$KEY_FILE" "$DMG")
+          rm -f "$KEY_FILE"
+          SIGNATURE=$(printf '%s' "$OUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          [ -n "$SIGNATURE" ] || { echo "::error::sign_update gave no signature"; exit 1; }
+
+          # The check against the app's own key needs `cryptography`.
+          python3 -m venv "$RUNNER_TEMP/appcast-venv"
+          "$RUNNER_TEMP/appcast-venv/bin/pip" install --quiet --disable-pip-version-check cryptography==48.0.1
+          "$RUNNER_TEMP/appcast-venv/bin/python" scripts/appcast.py \
+            --version "$KIRI_VERSION" --build "$KIRI_BUILD" \
+            --url "https://github.com/$RELEASES_REPO/releases/download/$TAG/$(basename "$DMG")" \
+            --dmg "$DMG" --signature "$SIGNATURE" --public-key "$SU_PUBLIC_KEY" \
+            --minimum-system 26.0 --notes "$RUNNER_TEMP/notes.md" --output build/appcast.xml
+          cat build/appcast.xml
+          (cd build && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # As a draft until every file is up, so .../latest/download/appcast.xml
+          # never points at a release without its disk image.
+          gh release create "$TAG" "$DMG" "$DMG.sha256" build/appcast.xml --verify-tag \
+            --repo "$RELEASES_REPO" --title "Kiri $KIRI_VERSION" --notes-file "$RUNNER_TEMP/notes.md" --draft
+          gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest
+          echo "Released https://github.com/$RELEASES_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: clean up
+        if: always()
+        run: |
+          [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/sparkle-private-key"
