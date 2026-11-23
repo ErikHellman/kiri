@@ -171,7 +171,7 @@ public struct TextSearch: @unchecked Sendable {
         guard !query.isEmpty else { return nil }
         let source = NSString(string: text)
         let icu = icuTemplate(template)
-        let out = NSMutableString()
+        let out = NSMutableString(capacity: 0) // (Linux has only this initialiser)
         var first = -1, end = 0, count = 0
         regex.enumerateMatches(in: text, options: [], range: NSRange(location: 0, length: source.length)) { result, _, _ in
             guard let result, result.range.length > 0 else { return }
