@@ -59,8 +59,7 @@ public enum LanguageSearch {
                 best = match.score
                 hit.nameMarks = match.ranges
             }
-            if !detail.isEmpty, let match = query.match(FuzzyCandidate(detail)), match.score >= query.weakest,
-               match.score - extensionPenalty > (best ?? .min) {
+            if let match = bestExtension(query, in: detail), match.score - extensionPenalty > (best ?? .min) {
                 best = match.score - extensionPenalty
                 hit.nameMarks = []
                 hit.detailMarks = match.ranges
@@ -73,6 +72,22 @@ public enum LanguageSearch {
             if let best { found.append((best, order, hit)) }
         }
         return found.sorted { $0.score != $1.score ? $0.score > $1.score : $0.order < $1.order }.map(\.hit)
+    }
+
+    /// The best match among the extensions of a `detail`, each looked at
+    /// on its own (so the letters are never picked up across two of
+    /// them), its marks as offsets into the whole detail.
+    static func bestExtension(_ query: FuzzyQuery, in detail: String) -> FuzzyMatch? {
+        var best: FuzzyMatch?
+        var start = 0
+        for part in detail.split(separator: " ") {
+            let text = String(part)
+            if let match = query.match(FuzzyCandidate(text)), match.score >= query.weakest, match.score > (best?.score ?? .min) {
+                best = FuzzyMatch(score: match.score, ranges: match.ranges.map { ($0.lowerBound + start)..<($0.upperBound + start) })
+            }
+            start += text.utf16.count + 1
+        }
+        return best
     }
 
     /// A name, extension or file name typed in full is worth more than any

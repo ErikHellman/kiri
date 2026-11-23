@@ -60,6 +60,15 @@ struct LanguageSearchTests {
         #expect(swift?.detailMarks.isEmpty == false)
     }
 
+    @Test func lettersAreNotPickedUpAcrossTwoExtensions() {
+        // "ts" is in ".swift .swiftinterface" only as a t of one and an s of the other.
+        #expect(!LanguageSearch.search("ts").contains { $0.language == .swift })
+        let cpp = LanguageSearch.search("cxx").first { $0.language == .cpp }
+        let detail = cpp.map { Array($0.detail.utf16) } ?? []
+        let marked = cpp?.detailMarks.flatMap { Array($0) }.map { detail[$0] } ?? []
+        #expect(String(decoding: marked, as: UTF16.self) == "cxx")
+    }
+
     @Test func whatMatchesNothingFindsNothing() {
         #expect(LanguageSearch.search("zzqqxx").isEmpty)
     }
