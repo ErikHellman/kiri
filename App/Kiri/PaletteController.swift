@@ -395,6 +395,7 @@ struct PaletteRow: Equatable, Identifiable {
         if !isOpen {
             isOpen = true
             model.overlayChanged()
+            Telemetry.track("palette_open", ["kind": kind == .language ? "language" : prefill == ":" ? "go_to_line" : "palette"])
         }
         if text != prefill { text = prefill } else { textChanged() }
         focusRequest += 1

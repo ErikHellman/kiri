@@ -168,6 +168,31 @@ jobs:
           echo "SU_PUBLIC_KEY=$(plist SUPublicEDKey)" >> "$GITHUB_ENV"
           echo "DMG=build/Kiri-$KIRI_VERSION.dmg" >> "$GITHUB_ENV"
 
+      - name: upload debug symbols to Vaka
+        # Crash reports (App/Kiri/Telemetry.swift) get function names,
+        # files and lines from these. Without the VAKA_TOKEN secret (a Vaka
+        # API token with write access to kiri-macos) this only warns.
+        env:
+          VAKA_TOKEN: ${{ secrets.VAKA_TOKEN }}
+        run: |
+          if [ -z "$VAKA_TOKEN" ]; then
+            echo "::warning::No VAKA_TOKEN secret: crash reports from $KIRI_VERSION will have addresses only"
+            exit 0
+          fi
+          DSYMS=build/DerivedData/Build/Products/Release
+          found=0
+          for dwarf in "$DSYMS"/*.dSYM/Contents/Resources/DWARF/*; do
+            [ -f "$dwarf" ] || continue
+            found=1
+            echo "uploading $dwarf"
+            curl --fail-with-body -sS -H "Authorization: Bearer $VAKA_TOKEN" \
+              --form-string kind=native --form-string release="$KIRI_VERSION" \
+              -F "file=@$dwarf" \
+              https://vaka.fly.dev/api/v1/projects/kiri-macos/artifacts \
+              || echo "::warning::Uploading $dwarf to Vaka failed"
+          done
+          [ "$found" = 1 ] || echo "::warning::No dSYMs in $DSYMS"
+
       - name: sign the update and write the appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}

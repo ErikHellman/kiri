@@ -269,6 +269,9 @@ struct KiriCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("Keyboard Shortcuts") { openWindow(id: ShortcutsView.windowID) }
                 .keyboardShortcut(Keys.shortcuts)
+            Divider()
+            // Anonymous, through Vaka (`FeedbackWindow`, `Telemetry`).
+            Button("Send Feedback…", systemImage: "bubble.left") { FeedbackWindow.show() }
         }
     }
 
@@ -353,6 +356,7 @@ struct KiriCommands: Commands {
     /// without an editor (Settings, Keyboard Shortcuts) the standard action
     /// goes down the responder chain instead, to whatever text has focus.
     static func find(_ action: FindController.Action) {
+        if action == .show || action == .showReplace { Telemetry.track("find_open", ["replace": action == .showReplace]) }
         if let editor {
             editor.find.perform(action)
             return

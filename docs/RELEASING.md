@@ -89,6 +89,7 @@ Then add these as [repository secrets of kiri](https://github.com/ErikHellman/ki
 | `NOTARY_KEY_ID` | the API key's ID, like `XXXXXXXXXX` | step 4 |
 | `NOTARY_ISSUER_ID` | the issuer ID, a UUID | step 4 |
 | `SPARKLE_PRIVATE_KEY` | the exported EdDSA private key | `pbcopy < sparkle-private-key` |
+| `VAKA_TOKEN` (optional) | a Vaka API token with write access to the `kiri-macos` project, for the dSYM upload | the Vaka admin UI, https://vaka.fly.dev/ui |
 
 `KIRI_FEED_URL` in `App/project.yml` must point at this repo's releases; the job refuses to run when it doesn't (a fork, say).
 
@@ -106,3 +107,14 @@ Kiri updates itself with [Sparkle](https://sparkle-project.org) 2 (`App/Kiri/Upd
 Sparkle's helpers inside `Kiri.app` (its installer and the `Autoupdate` tool) are signed one by one, inside out, by `scripts/codesign-app.sh`, which `scripts/build.sh` and `scripts/dmg.sh` both use: `codesign --deep` would do it in no particular order, which Sparkle's documentation warns against.
 
 A release made by hand on your Mac (above) can be offered as an update too: sign the disk image with `./bin/sign_update build/Kiri-<version>.dmg`, write the feed with `scripts/appcast.py` and attach both to a release here. The workflow is simpler.
+
+## Crash reports
+
+Kiri reports crashes and hangs to [Vaka](https://vaka.hellsoft.se), project `kiri-macos` (`App/Kiri/Telemetry.swift`; what is collected is on the website's privacy page, `site/privacy.html`). Release builds are stripped, so reports arrive as addresses; the release job uploads the build's dSYMs for the tag's version, which turns them into function names, files and lines. Without the `VAKA_TOKEN` secret it only warns. For a release made by hand, upload them yourself:
+
+```sh
+for f in build/DerivedData/Build/Products/Release/*.dSYM/Contents/Resources/DWARF/*; do
+  curl -H "Authorization: Bearer $VAKA_TOKEN" --form-string kind=native --form-string release=<version> \
+    -F "file=@$f" https://vaka.fly.dev/api/v1/projects/kiri-macos/artifacts
+done
+```

@@ -16,6 +16,10 @@ enum Prefs {
     /// How wide the folder sidebar is, in points (`SidebarWidth`): set by
     /// dragging its edge, absent until then.
     static let sidebarWidthKey = "sidebarWidth"
+    /// Anonymous crash and hang reports (`Telemetry`); absent means on.
+    static let crashReportsKey = "crashReports"
+    /// Anonymous usage analytics (`Telemetry`); absent means on.
+    static let analyticsKey = "usageAnalytics"
 
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
@@ -24,9 +28,9 @@ enum Prefs {
     static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
 }
 
-/// Kiri ▸ Settings…, in five groups: Appearance (the color theme, light
-/// or dark), Editor (font, text size, wrapping), Motion, Updates and the
-/// command line tool.
+/// Kiri ▸ Settings…, in six groups: Appearance (the color theme, light
+/// or dark), Editor (font, text size, wrapping), Motion, Updates, Privacy
+/// (crash reports, analytics, feedback) and the command line tool.
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -36,12 +40,15 @@ struct SettingsView: View {
     @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
     @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
+    @AppStorage(Prefs.crashReportsKey) private var crashReports = true
+    @AppStorage(Prefs.analyticsKey) private var analytics = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
 
     var body: some View {
         panel
+            .onAppear { Telemetry.screen("Settings") }
             .padding([.horizontal, .bottom], Honey.gap)
             .honeyCanvas()
             // Honey on macOS (DESIGN.md §5): no title bar. The title sits on
@@ -72,6 +79,7 @@ struct SettingsView: View {
             ("Editor", AnyView(editorGroup)),
             ("Motion", AnyView(motionGroup)),
             ("Updates", AnyView(updatesRow)),
+            ("Privacy", AnyView(privacyGroup)),
             ("Command line tool", AnyView(commandLineToolRow)),
         ]
         return VStack(alignment: .leading, spacing: 0) {
@@ -185,6 +193,28 @@ struct SettingsView: View {
                     .toggleStyle(.switch).labelsHidden().disabled(true)
             }
         }
+    }
+
+    /// Vaka's two switches (`Telemetry`), where to read what they send,
+    /// and the feedback window.
+    private var privacyGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            row("Crash reports", detail: "When Kiri crashes or stops responding, send an anonymous report so it can be fixed.") {
+                Toggle("Send crash reports", isOn: $crashReports).toggleStyle(.switch).labelsHidden()
+            }
+            row("Usage analytics", detail: "Anonymous counts of which features, settings and languages are used. Never file names or text.") {
+                Toggle("Send usage analytics", isOn: $analytics).toggleStyle(.switch).labelsHidden()
+            }
+            HStack(spacing: 12) {
+                Link("What Kiri collects", destination: Telemetry.privacyPage)
+                    .font(.honey(.caption, weight: .bold))
+                    .tint(Color.honeyAccentInk)
+                Spacer(minLength: 12)
+                Button("Send Feedback…") { FeedbackWindow.show() }.buttonStyle(.honeyGlass)
+            }
+        }
+        .onChange(of: crashReports) { Telemetry.switchesChanged() }
+        .onChange(of: analytics) { Telemetry.switchesChanged() }
     }
 
     /// The `kiri` command: whether a terminal has it, and where; a button
