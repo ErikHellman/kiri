@@ -4,6 +4,7 @@
 [![CI](https://github.com/ErikHellman/kiri/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ErikHellman/kiri/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/github/downloads/ErikHellman/kiri/total?color=995A05)](https://github.com/ErikHellman/kiri/releases)
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-3B2A2F?logo=apple)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-6B8E23)](#license)
 
 A beautiful text editor for quick edits. **[kiri.hellsoft.se](https://kiri.hellsoft.se)** · **[Download for Mac](https://github.com/ErikHellman/kiri/releases/latest)**
 
@@ -121,5 +122,16 @@ Tests: `cd KiriKit && swift test` (the token, document-model, search, fuzzy-matc
 - `docs/DESIGN.md` the design language.
 - `site/` the website, [kiri.hellsoft.se](https://kiri.hellsoft.se), published by `.github/workflows/pages.yml` on every push to `main` that changes it.
 - `docs/promo/` promotional graphics (`hero.png`, `social.png` for GitHub's social preview, `light-dark.png`, `themes.png`), drawn by `node scripts/promo/promo.mjs` (Node and Playwright) from the app screenshots in `docs/promo/shots`, which also writes the website's images into `site/assets`.
+
+## License
+
+Kiri is free and open source, licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Kiri by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
 Nunito is licensed under the SIL Open Font License 1.1 (`KiriKit/Sources/KiriKit/Fonts/OFL.txt`). Tree-sitter grammars and queries are MIT licensed (`KiriKit/Sources/KiriSyntax/Queries/LICENSES.txt`).
