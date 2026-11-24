@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy · Kiri</title>
+  <meta name="description" content="What Kiri sends, why, and how to turn it off: anonymous crash reports, anonymous usage analytics, and feedback you choose to send. Never your files or what you type.">
+  <meta name="theme-color" content="#F5EEE1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16120E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://kiri.hellsoft.se/privacy.html">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preload" href="fonts/Nunito-800.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/Nunito-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="./" aria-label="Kiri home">
+      <img src="assets/icon.png" alt="" width="36" height="36">
+      <span>Kiri</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="./#features">Features</a>
+      <a href="./#themes">Themes</a>
+      <a href="./#cli">Command line</a>
+      <a href="https://github.com/ErikHellman/kiri">GitHub</a>
+    </nav>
+    <a class="btn btn-small" href="https://github.com/ErikHellman/kiri/releases/latest">Download</a>
+  </header>
+
+  <main id="top" class="prose">
+    <h1>Privacy</h1>
+    <p class="lead">Kiri never sends your files, their names or anything you type. To get better, it can send three things, all of them anonymous: reports when it crashes, counts of which features are used, and feedback you write yourself. The first two can be turned off with one switch each.</p>
+
+    <div class="summary">
+      <div class="card">
+        <h3>Crash reports</h3>
+        <p>On until you turn it off. Where in Kiri's code a crash or a freeze happened.</p>
+      </div>
+      <div class="card">
+        <h3>Usage analytics</h3>
+        <p>On until you turn it off. Which features, settings and languages get used.</p>
+      </div>
+      <div class="card">
+        <h3>Feedback</h3>
+        <p>Only when you send it. Your words, and a screenshot if you add one.</p>
+      </div>
+    </div>
+
+    <h2 id="turn-off">How to turn it off</h2>
+    <p>Open <strong>Kiri ▸ Settings…</strong> (⌘,) and find <strong>Privacy</strong>. Turn off <strong>Crash reports</strong>, <strong>Usage analytics</strong>, or both. It takes effect at once: Kiri stops sending that kind of data, and anything of that kind still waiting to be sent is deleted from your Mac.</p>
+    <p>On a Mac you manage from the terminal, the same switches are:</p>
+<pre class="term"><code>defaults write se.hellsoft.kiri crashReports -bool false
+defaults write se.hellsoft.kiri usageAnalytics -bool false</code></pre>
+    <p>Feedback has no switch because nothing is sent unless you write something and press Send.</p>
+
+    <h2 id="anonymous">What anonymous means here</h2>
+    <ul>
+      <li>Kiri makes a random id the first time it runs, so reports from the same Mac can be told apart from others. It is not tied to you, your Apple account, your Mac's serial number or any other app. The server stores only a scrambled version of it.</li>
+      <li>Kiri never asks for or sends a name, an email address or an account. The feedback form has no email field.</li>
+      <li>Your IP address is not stored.</li>
+      <li>Nothing contains a file's name, a folder's name, a path you opened or any text from a document.</li>
+      <li>To start over with a new random id: <code>defaults delete se.hellsoft.kiri se.hellsoft.vaka.anon_id</code>, then restart Kiri.</li>
+    </ul>
+
+    <h2 id="crash-reports">Crash reports</h2>
+    <p>When Kiri crashes, it writes a small report on your Mac and sends it the next time it starts. When Kiri stops responding for two seconds or more, it sends a report about that freeze. A report has:</p>
+    <ul>
+      <li>The kind of crash (such as <code>EXC_BAD_ACCESS</code>) and the call stack: memory addresses in Kiri and in the macOS frameworks it uses, with the names of those programs and libraries. Function names are filled in later on the server, from Kiri's own debug files.</li>
+      <li>Kiri's version and build, the macOS version, the Mac's model (such as <code>Mac15,6</code>) and processor type.</li>
+      <li>Which of Kiri's own windows were shown last (Settings, Keyboard Shortcuts, Send Feedback), and whether the session ended in a crash.</li>
+      <li>The random id described above.</li>
+    </ul>
+    <p>One thing to know: if you keep Kiri in your own <code>Applications</code> folder inside your home folder, rather than the Mac's main Applications folder, the location of Kiri in a crash report includes your Mac user name.</p>
+
+    <h2 id="analytics">Usage analytics</h2>
+    <p>Each of these is a single event with the values listed, plus Kiri's version, the macOS version, the Mac's model and the random id:</p>
+    <table>
+      <thead><tr><th>When</th><th>What it says</th></tr></thead>
+      <tbody>
+        <tr><td>Kiri starts</td><td>The color theme, light or dark, motion setting, line wrapping, typing animations, whether a custom font is set, and the text size</td></tr>
+        <tr><td>A file opens</td><td>Its language (such as Swift or Markdown) and a size range (such as 10 to 100 KB)</td></tr>
+        <tr><td>A folder opens</td><td>Only that it happened</td></tr>
+        <tr><td>The command palette, Go to Line or the language picker opens</td><td>Which of the three</td></tr>
+        <tr><td>Find opens</td><td>Whether it was Find or Find and Replace</td></tr>
+        <tr><td>Settings, Keyboard Shortcuts or Send Feedback opens</td><td>Which window</td></tr>
+        <tr><td>Feedback is sent</td><td>Whether it had a screenshot</td></tr>
+        <tr><td>A session starts and ends</td><td>How long Kiri was open, and whether it crashed</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="feedback">Feedback</h2>
+    <p><strong>Help ▸ Send Feedback…</strong> opens a short form. What you write is sent as you wrote it, along with Kiri's version, the macOS version, the Mac's model and the random id. If Kiri crashed the last time, it asks what you were doing, and your answer is linked to that crash report.</p>
+    <p>The form can attach a screenshot of the Kiri window you were in. It is off until you turn it on, it shows you the picture first (click it to see it full size), and it includes whatever text is in that window, so look before you send. Only Kiri's own window is in it, never the rest of your screen. Feedback is sent even with crash reports and analytics off, because you asked to send it.</p>
+
+    <h2 id="where">Where it goes and how long it stays</h2>
+    <p>Everything goes to <a href="https://vaka.hellsoft.se">Vaka</a>, a crash reporting and analytics service made and run by Hellman Software AB, the company behind Kiri. It is used only to find bugs and decide what to improve. It is never sold, never shared with anyone else and never used for advertising. Crash reports, analytics and feedback are deleted automatically after 90 days.</p>
+    <p>Kiri's update check is the only other thing that goes online: once a day it asks GitHub whether there is a new version (Settings ▸ Updates turns that off). It sends nothing about you.</p>
+
+    <h2 id="contact">Questions</h2>
+    <p>Write to <a href="https://hellsoft.se">Hellman Software AB</a>, or <a href="https://github.com/ErikHellman/kiri/issues">open an issue</a>. Kiri's source is <a href="https://github.com/ErikHellman/kiri">on GitHub</a>, so you can read exactly what it sends in <a href="https://github.com/ErikHellman/kiri/blob/main/App/Kiri/Telemetry.swift"><code>Telemetry.swift</code></a>.</p>
+    <p class="fine">Last updated 24 November 2026.</p>
+  </main>
+
+  <footer class="footer">
+    <p>Made with honey in Sweden by <a href="https://hellsoft.se">Hellman Software AB</a>.</p>
+    <p><a href="https://github.com/ErikHellman/kiri">Source on GitHub</a> · <a href="https://github.com/ErikHellman/kiri/issues">Report an issue</a> · <a href="privacy.html">Privacy</a> · Set in <a href="fonts/OFL.txt">Nunito</a></p>
+  </footer>
+</body>
+</html>

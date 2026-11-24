@@ -28,6 +28,7 @@ import SwiftUI
     init(root url: URL) {
         root = FileNode(url: url.standardizedFileURL, isDirectory: true)
         index = FolderIndex(root: url)
+        Telemetry.track("folder_open")
     }
 
     var name: String { root.name }

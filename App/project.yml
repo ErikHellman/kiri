@@ -25,6 +25,10 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.1
+  # Anonymous crash reports, analytics and feedback (App/Kiri/Telemetry.swift).
+  Vaka:
+    url: https://github.com/ErikHellman/vaka
+    exactVersion: 0.5.0
 targets:
   Kiri:
     type: application
@@ -115,3 +119,4 @@ targets:
       - package: KiriKit
         product: KiriSyntax
       - package: Sparkle
+      - package: Vaka

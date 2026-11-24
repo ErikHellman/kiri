@@ -12,6 +12,8 @@ struct KiriApp: App {
     @NSApplicationDelegateAdaptor private var delegate: KiriAppDelegate
 
     init() {
+        // First, so a crash anywhere after it is reported (if allowed).
+        Telemetry.start()
         Honey.registerFonts()
         ThemeController.start()
     }

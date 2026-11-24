@@ -92,8 +92,20 @@ extension UTType {
         }
         let read: TextFile
         do { read = try TextFile(data: data) } catch { throw CocoaError(.fileReadUnknownStringEncoding) }
-        MainActor.assumeIsolated { take(read) }
+        let bytes = data.count
+        MainActor.assumeIsolated {
+            take(read)
+            // The first read is the file opening (later ones are Revert):
+            // its language and rough size, once it has its name.
+            if !counted {
+                counted = true
+                DispatchQueue.main.async { Telemetry.fileOpened(language: self.detectedLanguage, bytes: bytes) }
+            }
+        }
     }
+
+    /// Whether the opening of this file was counted (`Telemetry`).
+    @ObservationIgnored private var counted = false
 
     /// The document becomes `read`: when it opens, and again on Revert,
     /// which AppKit reads into the document that is already open.

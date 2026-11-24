@@ -66,6 +66,8 @@ import os
         }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
+        // The feedback window's flags (`FeedbackSelfTest.swift`).
+        if feedbackFlags(textView) { return }
         if let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") {
             guard !started else { return }
             started = true
@@ -314,7 +316,7 @@ import os
                 print("SELFTEST rendered settings \(path)")
             }
             if path.hasSuffix(".png") {
-                let renderer = ImageRenderer(content: SettingsView().honeyRoot(HoneyAppearance()))
+                let renderer = ImageRenderer(content: SettingsView(scrolls: false).honeyRoot(HoneyAppearance()))
                 renderer.scale = 2
                 write(renderer.nsImage, path)
             } else {
@@ -324,7 +326,7 @@ import os
                     for theme in Honey.Theme.all {
                         // For this picture only; the saved theme comes back below.
                         Honey.theme = theme
-                        let renderer = ImageRenderer(content: SettingsView()
+                        let renderer = ImageRenderer(content: SettingsView(scrolls: false)
                             .environment(\.honeyOffscreen, true).environment(\.colorScheme, scheme).honeyRoot(HoneyAppearance()))
                         renderer.scale = 2
                         write(renderer.nsImage, "\(path)/settings-\(theme.id)-\(mode).png")
