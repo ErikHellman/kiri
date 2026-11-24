@@ -40,8 +40,8 @@ extension SelfTest {
         let headings = elements.filter { $0.role == "AXHeading" && $0.name != "Settings" }.map(\.name)
         let percent = "\(Int((UserDefaults.standard.double(forKey: Prefs.textScaleKey).nonZero ?? 1) * 100))%"
         let shown = elements.contains { $0.name == percent || $0.value == percent }
-        report(headings == ["Appearance", "Editor", "Motion", "Updates", "Command line tool"] && shown,
-               "Settings is in five groups, Appearance, Editor, Motion, Updates and Command line tool, and shows the text size as \(percent) (\(headings), \(shown))")
+        report(headings == ["Appearance", "Editor", "Motion", "Updates", "Privacy", "Command line tool"] && shown,
+               "Settings is in six groups, Appearance, Editor, Motion, Updates, Privacy and Command line tool, and shows the text size as \(percent) (\(headings), \(shown))")
 
         // The pointer: on a swatch its theme shows, on the next one that
         // one (entered before the last says it was left), off them the

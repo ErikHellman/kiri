@@ -206,9 +206,18 @@ struct SettingsView: View {
                 Toggle("Send usage analytics", isOn: $analytics).toggleStyle(.switch).labelsHidden()
             }
             HStack(spacing: 12) {
-                Link("What Kiri collects", destination: Telemetry.privacyPage)
+                // In the accent's ink with an arrow, so it reads as a link
+                // to the website (plain, it looked like a label).
+                Link(destination: Telemetry.privacyPage) {
+                    HStack(spacing: 3) {
+                        Text("What Kiri collects")
+                        Image(systemName: "arrow.up.right")
+                    }
                     .font(.honey(.caption, weight: .bold))
-                    .tint(Color.honeyAccentInk)
+                    .foregroundStyle(Color.honeyAccentInk)
+                }
+                .pointerStyle(.link)
+                .help(Telemetry.privacyPage.absoluteString)
                 Spacer(minLength: 12)
                 Button("Send Feedback…") { FeedbackWindow.show() }.buttonStyle(.honeyGlass)
             }

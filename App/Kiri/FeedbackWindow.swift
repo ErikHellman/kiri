@@ -22,7 +22,7 @@ import SwiftUI
 
     static let windowID = "feedback"
     private static var window: NSWindow?
-    private static var model: FeedbackModel?
+    private(set) static var model: FeedbackModel?
 
     static func show(_ mode: Mode = .general) {
         // Open already: it comes forward with what was typed. (A crash
@@ -47,6 +47,8 @@ import SwiftUI
         window.isMovableByWindowBackground = true
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
+        // At its own size before centering, so it is centered as it shows.
+        window.setContentSize(host.view.fittingSize)
         window.center()
         model.close = { [weak window] in window?.close() }
         self.window = window
@@ -70,18 +72,50 @@ struct WindowShot {
         return of(window)
     }
 
-    /// The window's frame view (its title bar band and tabs too), drawn
-    /// by the app itself: no screen recording permission, and nothing of
-    /// other apps' windows.
+    /// The window as it is on screen, glass, tabs and status bar too: the
+    /// window server's picture of this one window of Kiri's own (no screen
+    /// recording permission is needed for that, and nothing of other apps'
+    /// windows is in it). Where the window server won't give one, the
+    /// editor's text and line numbers, drawn by the app itself. (Drawing
+    /// the whole window that way leaves it blank: SwiftUI and the glass
+    /// aren't drawn through `cacheDisplay`.)
     @MainActor static func of(_ window: NSWindow) -> WindowShot? {
-        guard let view = window.contentView?.superview ?? window.contentView else { return nil }
+        guard let png = windowServerPicture(of: window) ?? editorPicture(in: window),
+              let attachment = Vaka.Attachment.image(png, maxPixels: 2400),
+              let preview = NSImage(data: attachment.data) else { return nil }
+        // In points, as the window is: the preview opens at the window's size.
+        preview.size = window.frame.size
+        return WindowShot(attachment: attachment, preview: preview)
+    }
+
+    /// `CGWindowListCreateImage` for the window alone. The SDK marks it
+    /// obsolete (for ScreenCaptureKit, which asks for screen recording
+    /// permission even for an app's own windows), so it is looked up when
+    /// needed; nil if it is gone or gives nothing.
+    @MainActor private static func windowServerPicture(of window: NSWindow) -> Data? {
+        typealias Create = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard window.windowNumber > 0, let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
+        let create = unsafeBitCast(symbol, to: Create.self)
+        let includingWindow = CGWindowListOption.optionIncludingWindow.rawValue
+        let options = CGWindowImageOption.boundsIgnoreFraming.rawValue | CGWindowImageOption.bestResolution.rawValue
+        guard let image = create(.null, includingWindow, UInt32(window.windowNumber), options)?.takeRetainedValue(),
+              image.width > 1, image.height > 1 else { return nil }
+        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+    }
+
+    /// The editor (text and line numbers: AppKit views, which draw through
+    /// `cacheDisplay`).
+    @MainActor private static func editorPicture(in window: NSWindow) -> Data? {
+        func editor(in view: NSView) -> NSView? {
+            if view is EditorContainerView { return view }
+            for child in view.subviews { if let found = editor(in: child) { return found } }
+            return nil
+        }
+        guard let root = window.contentView?.superview ?? window.contentView, let view = editor(in: root) else { return nil }
         let bounds = view.bounds
         guard bounds.width > 0, bounds.height > 0, let rep = view.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
         view.cacheDisplay(in: bounds, to: rep)
-        guard let png = rep.representation(using: .png, properties: [:]),
-              let attachment = Vaka.Attachment.image(png, maxPixels: 2400),
-              let preview = NSImage(data: attachment.data) else { return nil }
-        return WindowShot(attachment: attachment, preview: preview)
+        return rep.representation(using: .png, properties: [:])
     }
 }
 
@@ -148,11 +182,13 @@ struct FeedbackView: View {
                 form
             }
         }
-        .padding(.top, 38) // clear of the traffic lights
+        // Below the band of the hidden title bar (the top safe area), where
+        // the traffic lights are. (Drawn into it, the window kept the band's
+        // height as a strip of plain window under the canvas.)
+        .padding(.top, 6)
         .padding([.horizontal, .bottom], 22)
         .frame(width: Self.width)
         .honeyCanvas()
-        .ignoresSafeArea(.container, edges: .top)
         .animation(HoneyMotion(appearance, systemReduced: reduce).quick, value: model.state)
         .onAppear { editing = true }
     }
@@ -243,20 +279,23 @@ struct FeedbackView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
-            Image(nsImage: shot.preview)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 132, height: 84)
-                .clipShape(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
-                    .strokeBorder(Color.honeyLine, lineWidth: 1))
-                .opacity(model.includeScreenshot ? 1 : 0.45)
-                .onTapGesture { ScreenshotPreview.show(shot.preview) }
-                .help("Click to see it larger")
-                .accessibilityLabel("Screenshot of the Kiri window")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { ScreenshotPreview.show(shot.preview) }
+            // A button, so a click lands even before the window is key.
+            Button { ScreenshotPreview.show(shot.preview) } label: {
+                Image(nsImage: shot.preview)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
+                        .strokeBorder(Color.honeyLine, lineWidth: 1))
+                    .frame(width: 132, height: 84)
+                    .opacity(model.includeScreenshot ? 1 : 0.45)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("Click to see it larger")
+            .accessibilityLabel("Screenshot of the Kiri window")
             Toggle("Attach a screenshot", isOn: $model.includeScreenshot)
                 .toggleStyle(.switch).labelsHidden()
         }
@@ -287,14 +326,33 @@ struct FeedbackView: View {
         var size = image.size
         let fit = min(1, screen.width * 0.8 / size.width, screen.height * 0.8 / size.height)
         size = NSSize(width: size.width * fit, height: size.height * fit)
-        let view = NSImageView(image: image)
-        view.imageScaling = .scaleProportionallyUpOrDown
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable],
-                              backing: .buffered, defer: false)
+        // Honey like the feedback window: the canvas around the picture,
+        // the hidden title bar's band above it.
+        let host = NSHostingController(rootView: AppearanceRoot {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size.width, height: size.height)
+                .clipShape(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
+                    .strokeBorder(Color.honeyLine, lineWidth: 1))
+                .padding([.horizontal, .bottom], 16)
+                .padding(.top, 4)
+                .honeyCanvas()
+                .accessibilityLabel("Screenshot of the Kiri window")
+        })
+        host.sizingOptions = [.preferredContentSize]
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: NSSize(width: size.width + 32, height: size.height + 20)),
+                              styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.contentViewController = host
         window.title = "Screenshot"
-        window.contentView = view
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
+        window.setContentSize(host.view.fittingSize)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window

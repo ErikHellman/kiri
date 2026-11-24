@@ -66,6 +66,8 @@ import os
         }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
+        // The feedback window's flags (`FeedbackSelfTest.swift`).
+        if feedbackFlags(textView) { return }
         if let phase = UserDefaults.standard.string(forKey: "KiriRelaunchTest") {
             guard !started else { return }
             started = true
