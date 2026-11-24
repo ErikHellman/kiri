@@ -101,7 +101,7 @@ Kiri updates itself with [Sparkle](https://sparkle-project.org) 2 (`App/Kiri/Upd
 
 - Kiri ▸ **Check for Updates…** looks at once and says when Kiri is up to date.
 - Once a day, in the background, Kiri looks by itself; a new version is downloaded, checked against `SUPublicEDKey`, and installed when Kiri quits. Settings ▸ Updates turns the daily check off and shows which version this is.
-- The feed is `https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml` (`KIRI_FEED_URL`), which always answers with the newest release's `appcast.xml`. It holds just that one version (`scripts/appcast.py`); Sparkle compares build numbers (`CFBundleVersion`), so a newer release always has the larger one.
+- The feed is `https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml` (`KIRI_FEED_URL`), which always answers with the newest release's `appcast.xml`. It holds just that one version (`scripts/appcast.py`); Sparkle compares build numbers (`CFBundleVersion`), so a newer release always has the larger one. The build number is the number of commits, so tag a commit after the last release's: a second tag on the same commit gets the same build number, and copies with the earlier version never see it as an update.
 - A build without a public key or a feed, such as one from a checkout before the key was added, doesn't update itself: Check for Updates… is disabled, and Settings says so. Debug self-tests never start Sparkle.
 
 Sparkle's helpers inside `Kiri.app` (its installer and the `Autoupdate` tool) are signed one by one, inside out, by `scripts/codesign-app.sh`, which `scripts/build.sh` and `scripts/dmg.sh` both use: `codesign --deep` would do it in no particular order, which Sparkle's documentation warns against.
