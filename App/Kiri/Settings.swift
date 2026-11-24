@@ -45,9 +45,14 @@ struct SettingsView: View {
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
+    /// Off for an offscreen render (`ImageRenderer` draws no scroll view).
+    private let scrolls: Bool
+    init(scrolls: Bool = true) { self.scrolls = scrolls }
+    /// The panel's height, as laid out.
+    @State private var panelHeight: CGFloat = 0
 
     var body: some View {
-        panel
+        fittedPanel
             .onAppear { Telemetry.screen("Settings") }
             .padding([.horizontal, .bottom], Honey.gap)
             .honeyCanvas()
@@ -68,6 +73,31 @@ struct SettingsView: View {
                 }
                 .allowsHitTesting(false) // the band still drags the window
             }
+    }
+
+    /// The panel, scrolling when it is taller than the screen leaves room
+    /// for (a 13" screen: the window is as tall as its content).
+    @ViewBuilder private var fittedPanel: some View {
+        let measured = panel.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+        if scrolls, panelHeight > Self.tallestPanel {
+            ScrollView(.vertical) { measured }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: Self.tallestPanel)
+        } else {
+            measured
+        }
+    }
+
+    /// The tallest the panel may be: the screen's visible height less the
+    /// hidden title bar's band, the gap below and some air.
+    private static var tallestPanel: CGFloat {
+        var screen = NSScreen.main?.visibleFrame.height ?? .infinity
+        #if DEBUG || KIRI_SELFTEST
+        // -KiriSettingsScreenHeight 800: as on a screen that tall.
+        let forced = UserDefaults.standard.double(forKey: "KiriSettingsScreenHeight")
+        if forced > 0 { screen = forced }
+        #endif
+        return screen - 28 - Honey.gap - 24
     }
 
     /// One panel, the groups on it under quiet titles with a hairline
