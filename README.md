@@ -114,13 +114,23 @@ Tests: `cd KiriKit && swift test` (the token, document-model, search, fuzzy-matc
 - `-KiriPerfTest`: typing and scrolling cost on the open file, and what the find bar costs on it (use a big file).
 - `-KiriRelaunchTest <phase>`: what only a second launch shows. `crash` then `recover`: unsaved documents come back after `kill -9`; `frame-set` then `frame-check`: the window's frame is kept; `restore-quit` then `restore-check` (with `-NSQuitAlwaysKeepsWindows YES`): a window open at the quit comes back once; `tabs-quit` (with three files) then `tabs-check`: a window comes back with its three tabs in order, the one that showed showing; `position-quit` (with three files of 400 lines or more) then `position-check`, both with `-NSQuitAlwaysKeepsWindows YES`: the tabs come back scrolled where they were, also one that didn't show; `empty-check`: with nothing to bring back, the launch starts in one empty document. These need AppKit to reopen things, which `-ApplePersistenceIgnoreState YES` turns off, so they run only in a copy of the app with another bundle identifier and name (its recovery record and saved state are then not Kiri's), without that argument.
 
+Fake logs for testing the large-file viewer (Python 3.9 or later, nothing to install):
+
+```sh
+scripts/fake-log.py | kiri -                 # a live stream, as fast as half a core allows (--cpu, --rate)
+scripts/fake-log.py -o /tmp/app.log          # appended to a file, to follow it growing
+scripts/fake-logfile.py /tmp/huge.log -s 10G # one huge file, timestamps spread over three days (--span)
+```
+
+Both take `-f logcat|server|nginx|json|syslog` and `--help`.
+
 ## Layout
 
 - `KiriKit/` Swift package:
   - `KiriKit`: the Honey + Liquid Glass style kit (tokens, Nunito, motion, glass, components, `StyleGallery`) the document model (`TextFile`, `LineIndex`, `Language`, syntax tokens and the fallback lexer), find and replace on strings (`TextSearch`), the sidebar's file icons (`FileIcon`), the command palette's fuzzy matching (`FuzzyQuery`: letters in order, scored for standing together, starting words and path components, and a file's name over its folders), the language picker's search (`LanguageSearch`: by name, file extension or file name), the status bar's position text and indentation detection (`StatusText`, `IndentStyle`), the tab strip's arithmetic (`TabLayout`: shortening names, sharing the width, telling same-named files apart) and the folder sidebar's (`SidebarLayout`: the limits of its width, and what a narrow window shows of it; `SidebarSearch`: which files and folders a find in it finds, in its order, and the next and previous going round).
   - `KiriSyntax`: Tree-sitter parsing and highlight queries (macOS only).
 - `App/` the macOS app (XcodeGen spec in `App/project.yml`): `NSDocument` documents as tabs of windows that host SwiftUI (`DocumentWindow`, `WindowTabs`), the TextKit 2 editor, the command palette, settings and commands.
-- `scripts/` `build.sh` (release build) and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).
+- `scripts/` `build.sh` (release build), `fake-log.py` and `fake-logfile.py` (fake logs for testing), and `icon/kiri-icon.mjs` (draws the app icon: a letter in a glass envelope with a honey seal; run with Node and Playwright).
 - `docs/DESIGN.md` the design language.
 - `site/` the website, [kiri.hellsoft.se](https://kiri.hellsoft.se), published by `.github/workflows/pages.yml` on every push to `main` that changes it.
 - `docs/promo/` promotional graphics (`hero.png`, `social.png` for GitHub's social preview, `light-dark.png`, `themes.png`), drawn by `node scripts/promo/promo.mjs` (Node and Playwright) from the app screenshots in `docs/promo/shots`, which also writes the website's images into `site/assets`.
