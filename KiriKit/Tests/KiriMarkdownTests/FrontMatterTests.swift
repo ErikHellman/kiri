@@ -49,7 +49,7 @@ import Testing
         // The block's lines are left empty, so the body keeps its line numbers.
         let lines = body.components(separatedBy: "\n")
         #expect(lines.count == 22)
-        #expect(lines[0..<21].allSatisfy(\.isEmpty))
+        #expect(lines[0..<21].allSatisfy { $0.isEmpty })
         #expect(lines[21] == "# Body")
     }
 

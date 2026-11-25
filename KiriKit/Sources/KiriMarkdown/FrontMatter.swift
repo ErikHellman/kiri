@@ -77,7 +77,7 @@ public struct FrontMatter: Equatable, Sendable {
 
 /// The YAML front matter uses. Returns nil for what it doesn't know.
 enum YAMLSubset {
-    private struct Line {
+    fileprivate struct Line {
         let indent: Int
         let text: String
     }
