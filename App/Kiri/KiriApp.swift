@@ -178,6 +178,43 @@ final class KiriDocumentController: NSDocumentController {
         kept(document(for: window)?.fileURL)
     }
 
+    /// Large files open without asking whether to open them read-only:
+    /// one that is only looked at, and one AppKit reopens (a window
+    /// brought back at launch).
+    func opensQuietly(_ url: URL) -> Bool {
+        let url = url.standardizedFileURL
+        return reopening.contains(url) || glanced.contains(url) || streams.contains(url)
+    }
+
+    /// Piped input that goes on (`adb logcat | kiri -`), copied into a
+    /// file by the `kiri` script as it comes: read-only in the large-file
+    /// viewer whatever its size, following it as it grows.
+    private var streams: Set<URL> = []
+
+    func stream(_ url: URL) { streams.insert(url.standardizedFileURL) }
+    func isStream(_ url: URL?) -> Bool { url.map { streams.contains($0.standardizedFileURL) } ?? false }
+
+    /// The stream's tab closed: its file goes, with the folder the script
+    /// made for it.
+    func endStream(_ url: URL) {
+        guard streams.remove(url.standardizedFileURL) != nil else { return }
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    /// The files AppKit is reopening, until each has been read (which may
+    /// be after `reopenDocument` returns).
+    private var reopening: Set<URL> = []
+
+    override func reopenDocument(for urlOrNil: URL?, withContentsOf contentsURL: URL, display displayDocument: Bool,
+                                 completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
+        let url = contentsURL.standardizedFileURL
+        let added = reopening.insert(url).inserted
+        super.reopenDocument(for: urlOrNil, withContentsOf: contentsURL, display: displayDocument) { document, alreadyOpen, error in
+            MainActor.assumeIsolated { if added { self.reopening.remove(url) } }
+            completionHandler(document, alreadyOpen, error)
+        }
+    }
+
     /// The file at `url` did not open after all.
     func forgetGlance(at url: URL) { glanced.remove(url.standardizedFileURL) }
 

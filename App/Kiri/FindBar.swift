@@ -65,6 +65,15 @@ struct FindBar: View {
                         .toggleStyle(BarToggleStyle())
                         .help("Regular expression")
                         .accessibilityLabel("Regular Expression")
+                    if find.isReadOnly {
+                        // A large file: only the lines that match show.
+                        Toggle(isOn: $find.onlyMatchingLines) {
+                            Image(systemName: "line.3.horizontal.decrease").font(.system(size: 12, weight: .semibold))
+                        }
+                        .toggleStyle(BarToggleStyle())
+                        .help("Only matching lines")
+                        .accessibilityLabel("Only Matching Lines")
+                    }
                     Button { find.step(forward: false) } label: { Label("Previous Match", systemImage: "chevron.up") }
                         .buttonStyle(BarButtonStyle())
                         .modifier(BarFocusRing())
@@ -103,6 +112,15 @@ struct FindBar: View {
         // The chevron sits before the fields but comes after them (and the
         // other buttons) for Tab and VoiceOver.
         .overlay(alignment: .topLeading) {
+          if find.isReadOnly {
+            // A large file, read-only: nothing to replace.
+            Image(systemName: "lock")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.honeyMuted)
+                .frame(width: 26, height: Self.rowHeight)
+                .help("Read-only: large files can be searched, not changed")
+                .accessibilityLabel("Read-only")
+          } else {
             Button { find.showsReplace.toggle() } label: {
                 // The chevron turns; without motion it is simply the other one.
                 Label(find.showsReplace ? "Hide Replace" : "Show Replace",
@@ -113,6 +131,7 @@ struct FindBar: View {
             .modifier(BarFocusRing())
             .help(find.showsReplace ? "Hide replace" : "Show replace (⌥⌘F)")
             .frame(height: Self.rowHeight)
+          }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, Self.inset)

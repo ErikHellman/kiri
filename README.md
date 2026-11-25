@@ -74,6 +74,7 @@ kiri src/main.swift:42:5    # …at line 42, column 5 (or just :42)
 kiri ~/project              # a new window with a file sidebar for the folder
 kiri new.md                 # a file that doesn't exist yet opens empty; saving creates it
 git diff | kiri -           # standard input in a new untitled tab
+adb logcat | kiri -         # input that goes on: followed live, read-only, until Ctrl+C
 kiri -n file.txt            # in a new window
 kiri -w file.txt            # wait until the tab is closed (save first: closing asks if you haven't)
 ```

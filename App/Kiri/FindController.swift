@@ -87,8 +87,29 @@ import Observation
 
     private var controller: EditorController? { model?.controller }
     private var textView: KiriTextView? { controller?.textView }
+    /// The large file's viewer, when the tab shows one: it is searched in
+    /// place of the editor's text, off the main thread and on every core.
+    private var large: LargeFileViewer? { model?.large }
+    /// The file is read-only: there is nothing to replace.
+    var isReadOnly: Bool { model?.large != nil }
+
+    // The search of a large file. `matches` holds the matches it keeps
+    // (byte ranges) and this how many there are in all.
+    @ObservationIgnored private var largeTotal = 0
+    /// How far into the file the search has got.
+    @ObservationIgnored private var largeSearchedTo = 0
+    /// The query can't be used (an invalid regular expression).
+    @ObservationIgnored private var largeInvalid = false
+    /// Where the line of each of `matches` starts, in a large file.
+    @ObservationIgnored private var largeLineStarts: [Int] = []
+    /// A large file shows only the lines that match, while the bar is
+    /// open: grep, in place.
+    var onlyMatchingLines = false {
+        didSet { if onlyMatchingLines != oldValue { publish() } }
+    }
 
     private var selection: Range<Int> {
+        if let large { return large.view.selectedBytes }
         let r = textView?.selectedRange() ?? NSRange(location: 0, length: 0)
         return r.location..<(r.location + r.length)
     }
@@ -154,6 +175,10 @@ import Observation
     /// ⌘F / ⌥⌘F: opens the bar with the keyboard in the find field. A
     /// selection within one line becomes the query.
     func show(replace: Bool = false) {
+        if large != nil {
+            showLarge()
+            return
+        }
         guard let textView else { return }
         model?.goToLine.cancel(focusEditor: false)
         model?.palette.close(focusEditor: false)
@@ -183,6 +208,14 @@ import Observation
         notice = nil
         textView?.marksIfLoaded?.clearMatches()
         model?.overlayChanged()
+        if let large {
+            large.view.show(matches: [], current: nil)
+            // Every line again, at the match.
+            large.view.setRows(nil)
+            if let range { large.view.select(bytes: range) }
+            if focusEditor { controller?.focus() }
+            return
+        }
         if let range, let textView {
             settingSelection = true
             textView.setSelectedRange(NSRange(location: range.lowerBound, length: range.count))
@@ -196,6 +229,10 @@ import Observation
     func step(forward: Bool) {
         adoptBoard()
         notice = nil
+        if large != nil {
+            stepLarge(forward: forward)
+            return
+        }
         guard textView != nil else { return }
         guard !query.isEmpty else {
             if !isOpen { show() }
@@ -232,6 +269,7 @@ import Observation
     /// Replaces the current match and goes on to the next; without a
     /// current match it only finds one. One undo step.
     func replaceCurrent() {
+        guard large == nil else { return }
         notice = nil
         ensureSearched()
         guard let search, let textView, let controller else { return }
@@ -266,6 +304,7 @@ import Observation
 
     /// Replaces every match, as one undo step, and says how many.
     func replaceAll() {
+        guard large == nil else { return }
         notice = nil
         guard let textView, let controller, !query.isEmpty,
               let search = try? TextSearch(query, options: options),
@@ -420,6 +459,10 @@ import Observation
         let jumpWanted = pendingJump || jump
         let stepWanted = pendingStep
         cancelPending()
+        if large != nil {
+            refreshLarge(jump: jumpWanted, step: stepWanted)
+            return
+        }
         guard isOpen, let textView, let storage = textView.textStorage else { return }
         guard !query.isEmpty else {
             store(TextSearch.Matches(), for: nil)
@@ -470,6 +513,8 @@ import Observation
     /// The matches for the query in the text as it is now, found at once if
     /// they aren't known.
     private func ensureSearched() {
+        // A large file is only ever searched off the main thread.
+        if large != nil { return }
         guard needsSearch || !listIsForQuery else { return }
         // A long text that is being searched: the list as the edits left it
         // will do until the search is back.
@@ -524,6 +569,11 @@ import Observation
     /// Escape selects it.
     private func select(_ i: Int) {
         current = i
+        if let large {
+            large.view.select(bytes: matches[i], caretOnly: marksWithCaret)
+            publish()
+            return
+        }
         let range = NSRange(location: matches[i].lowerBound, length: matches[i].count)
         if let textView {
             settingSelection = true
@@ -544,6 +594,12 @@ import Observation
     /// The editor's selection as a query: nothing for no selection, a very
     /// long one, or (for ⌘F) one that spans lines.
     private func selectedText(oneLine: Bool) -> String? {
+        if let large {
+            let range = large.view.selectedBytes
+            guard !range.isEmpty, range.count <= 1000 else { return nil }
+            let text = String(decoding: large.file.read(range), as: UTF8.self)
+            return oneLine && text.contains(where: \.isNewline) ? nil : text
+        }
         guard let textView, let storage = textView.textStorage else { return nil }
         let range = textView.selectedRange()
         guard range.length > 0, range.length <= 1000, NSMaxRange(range) <= storage.length else { return nil }
@@ -554,6 +610,10 @@ import Observation
     /// Shows the matches and the count for the list as it is.
     private func publish() {
         guard isOpen else { return }
+        if large != nil {
+            publishLarge()
+            return
+        }
         let old = label
         status = matches.isEmpty ? (query.isEmpty ? .idle : search == nil ? .invalid : .none)
             : .found(current: current, total: matches.count, more: truncated)
@@ -581,9 +641,217 @@ import Observation
 
     /// Tells VoiceOver the count, which changes without the keyboard moving.
     private func announce() {
-        guard NSWorkspace.shared.isVoiceOverEnabled, let window = textView?.window, !label.isEmpty else { return }
+        guard NSWorkspace.shared.isVoiceOverEnabled, let window = large?.view.window ?? textView?.window,
+              !label.isEmpty else { return }
         NSAccessibility.post(element: window, notification: .announcementRequested,
                              userInfo: [.announcement: label, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+}
+
+// MARK: - Large files
+
+extension FindController {
+    /// ⌘F on a large file: the bar, without its replace row.
+    fileprivate func showLarge() {
+        model?.goToLine.cancel(focusEditor: false)
+        model?.palette.close(focusEditor: false)
+        adoptBoard()
+        if let selected = selectedText(oneLine: true) { quietly { query = selected } }
+        showsReplace = false
+        editorFocused = large?.view.window?.firstResponder === large?.view
+        if isOpen {
+            if let editor = large?.view.window?.firstResponder as? NSTextView, editor.isFieldEditor { editor.selectAll(nil) }
+        } else {
+            isOpen = true
+            model?.overlayChanged()
+        }
+        focusRequest += 1
+        refresh(jump: false)
+    }
+
+    /// ⌘G / ⇧⌘G on a large file: from the matches found so far, while the
+    /// search is still under way.
+    fileprivate func stepLarge(forward: Bool) {
+        guard !query.isEmpty else {
+            if !isOpen { show() }
+            return
+        }
+        if !isOpen {
+            pendingStep = forward
+            show()
+            if token != nil || work != nil { pendingStep = forward }
+            return
+        }
+        if matches.isEmpty, pending {
+            pendingStep = forward
+            return
+        }
+        guard let i = TextSearch.step(from: current, selection: selection, forward: forward, in: matches) else {
+            publish()
+            return
+        }
+        select(i)
+    }
+
+    /// Searches the large file for the query: all of it, or (`appending`)
+    /// what was added to it since the last search.
+    fileprivate func refreshLarge(jump: Bool, step: Bool?, appending: Bool = false) {
+        guard isOpen, let large else { return }
+        largeInvalid = false
+        guard !query.isEmpty else {
+            store(TextSearch.Matches(), for: nil)
+            largeLineStarts = []
+            largeTotal = 0
+            large.view.setRows(nil)
+            large.view.show(matches: [], current: nil)
+            status = .idle
+            return
+        }
+        guard let search = try? LargeFileSearch(query, options: options) else {
+            store(TextSearch.Matches(), for: nil)
+            largeLineStarts = []
+            largeTotal = 0
+            large.view.setRows(nil)
+            largeInvalid = true
+            large.view.show(matches: [], current: nil)
+            status = .invalid
+            announce()
+            return
+        }
+        let file = large.file
+        let end = file.currentSize
+        // From a little before where the last search ended: a match may
+        // have been cut short by the end of the file then.
+        let start = appending ? max(0, largeSearchedTo - max(0, query.utf8.count - 1) - (options.regularExpression ? 4096 : 0)) : 0
+        guard start < end || !appending else { return }
+        if !appending {
+            matches = []
+            largeLineStarts = []
+            largeTotal = 0
+            current = nil
+            truncated = false
+            needsSearch = false
+        }
+        largeSearchedTo = end
+        pendingJump = jump
+        pendingStep = step
+        let base = matches, baseStarts = largeLineStarts, baseTotal = largeTotal
+        let token = Token()
+        self.token = token
+        let queue = self.queue
+        let room = max(0, LargeFileSearch.defaultLimit - base.count)
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !token.isCancelled else { return }
+                self.work = nil
+                self.publish()
+                queue.async {
+                    let last = base.last?.upperBound ?? -1
+                    // (Matches the last search found again are left out.)
+                    func merged(_ r: LargeFileSearch.Result) -> ([Range<Int>], [Int], Int) {
+                        let skip = r.ranges.prefix { $0.lowerBound < last }.count
+                        return (base + r.ranges.dropFirst(skip), baseStarts + r.lineStarts.dropFirst(skip), baseTotal + r.count - skip)
+                    }
+                    let found = search.run(in: file, range: start..<end, limit: room, isCancelled: { token.isCancelled }) { r, _ in
+                        let (ranges, starts, total) = merged(r)
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated {
+                                self.largeFound(ranges, lineStarts: starts, total: total, done: false, token: token)
+                            }
+                        }
+                    }
+                    let (ranges, starts, total) = merged(found)
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard !found.cancelled else { return }
+                            self.largeFound(ranges, lineStarts: starts, total: total, done: true, token: token)
+                        }
+                    }
+                }
+            }
+        }
+        self.work = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.debounce, execute: work)
+    }
+
+    /// What the search has found so far (or, `done`, in all).
+    private func largeFound(_ ranges: [Range<Int>], lineStarts: [Int], total: Int, done: Bool, token: Token) {
+        guard self.token === token, !token.isCancelled else { return }
+        let currentRange = current.flatMap { matches.indices.contains($0) ? matches[$0] : nil }
+        matches = ranges
+        largeLineStarts = lineStarts
+        largeTotal = total
+        current = currentRange.flatMap { TextSearch.index(of: $0, in: matches) }
+        if done { self.token = nil }
+        if pendingJump {
+            let caret = selection.lowerBound
+            // Before the end, only a match after the caret will do.
+            if let i = TextSearch.index(startingAtOrAfter: caret, in: matches), done || matches[i].lowerBound >= caret {
+                pendingJump = false
+                select(i)
+            }
+        }
+        if let step = pendingStep, !matches.isEmpty || done {
+            pendingStep = nil
+            stepLarge(forward: step)
+        }
+        if done { pendingJump = false }
+        publish()
+    }
+
+    /// The bar's count and the marks in the viewer, for a large file.
+    fileprivate func publishLarge() {
+        guard let large else { return }
+        let old = label
+        if query.isEmpty {
+            status = .idle
+        } else if largeInvalid {
+            status = .invalid
+        } else if matches.isEmpty && !pending {
+            status = .none
+        } else {
+            status = .found(current: current, total: largeTotal, more: pending)
+        }
+        // Only the matching lines (once each), before the matches are
+        // shown on them.
+        if onlyMatchingLines, !query.isEmpty, !largeInvalid {
+            var rows: [Int] = []
+            rows.reserveCapacity(largeLineStarts.count)
+            for start in largeLineStarts where start != rows.last { rows.append(start) }
+            large.view.setRows(rows)
+        } else {
+            large.view.setRows(nil)
+        }
+        large.view.show(matches: matches, current: current.flatMap { matches.indices.contains($0) ? matches[$0] : nil })
+        if label != old, !pending { announce() }
+    }
+
+    /// The large file grew: what was added is searched too.
+    func largeFileGrew() {
+        guard isOpen, large != nil, !query.isEmpty, !pending else { return }
+        refreshLarge(jump: false, step: nil, appending: true)
+    }
+
+    /// The tab no longer shows the large file (closed, or the preview tab
+    /// went on to another file): its search ends, and its matches, which
+    /// were byte offsets, are no use to the editor.
+    func largeFileGone() {
+        cancelPending()
+        store(TextSearch.Matches(), for: nil)
+        largeLineStarts = []
+        onlyMatchingLines = false
+        largeTotal = 0
+        largeSearchedTo = 0
+        largeInvalid = false
+        needsSearch = true
+        if isOpen { refresh(jump: false) }
+    }
+
+    /// The large file was opened again: searched again from the top.
+    func largeFileReplaced() {
+        guard isOpen, large != nil else { return }
+        cancelPending()
+        refreshLarge(jump: false, step: nil)
     }
 }
 
@@ -613,6 +881,8 @@ import Observation
 
     /// Where the editor was when Go to Line opened.
     @ObservationIgnored private var before: (selection: [NSValue], origin: NSPoint)?
+    /// Where the large file's viewer was then.
+    @ObservationIgnored private var largeBefore: (anchor: LargePosition, caret: LargePosition, top: Double)?
     @ObservationIgnored private var previewing = false
 
     private var controller: EditorController? { model?.controller }
@@ -643,6 +913,7 @@ import Observation
         isInvalid = false
         previewing = false
         before = (textView.selectedRanges, controller.scrollOrigin)
+        largeBefore = model?.large?.view.place
         isOpen = true
         model?.overlayChanged()
     }
@@ -685,8 +956,10 @@ import Observation
     private func end() {
         isOpen = false
         before = nil
+        largeBefore = nil
         previewing = false
         controller?.textView?.marksIfLoaded?.showLine(false)
+        model?.large?.view.mark(line: nil)
         model?.overlayChanged()
     }
 
@@ -707,6 +980,12 @@ import Observation
     }
 
     private func restore() {
+        if let large = model?.large?.view, previewing, let largeBefore {
+            previewing = false
+            large.mark(line: nil)
+            large.restore(largeBefore)
+            return
+        }
         guard previewing, let before, let controller, let textView = controller.textView else { return }
         previewing = false
         textView.marksIfLoaded?.showLine(false)

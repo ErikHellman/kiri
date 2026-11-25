@@ -97,6 +97,21 @@ import os
             }
             return
         }
+        // -KiriLargeFileTest YES: large files' checks
+        // (`LargeFileSelfTest.swift`), in a launch with any small file.
+        if UserDefaults.standard.bool(forKey: "KiriLargeFileTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                Task { @MainActor in
+                    await largeFileStage()
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE large-file")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
         // The feedback window's flags (`FeedbackSelfTest.swift`).

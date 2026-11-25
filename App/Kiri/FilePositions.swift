@@ -104,7 +104,8 @@ extension EditorController {
 
     /// Notes where the document is, for the next time it opens.
     func rememberPosition() {
-        guard let url = document?.fileURL, let position = currentPosition() else { return }
+        // (A large file shows in its own viewer: the editor has nothing of it.)
+        guard document?.isLargeFile != true, let url = document?.fileURL, let position = currentPosition() else { return }
         FilePositions.set(position, for: url)
     }
 
@@ -112,7 +113,7 @@ extension EditorController {
     /// selection goes back where it was the last time it was open, now,
     /// and the scroll once the editor has its size (`applyPendingPosition`).
     func restorePosition() {
-        guard let url = document?.fileURL, let position = FilePositions.position(for: url),
+        guard document?.isLargeFile != true, let url = document?.fileURL, let position = FilePositions.position(for: url),
               let textView else { return }
         let index = currentLineIndex
         let sel = position.selection(in: index)
