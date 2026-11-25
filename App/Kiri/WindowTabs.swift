@@ -59,6 +59,8 @@ import SwiftUI
         model.language = document.detectedLanguage
         controller.setLanguage(model.language)
         updateLargeViewer()
+        // Where the file was the last time it was open (`FilePositions`).
+        controller.restorePosition()
         trackLocation()
         if arriving { arrive() }
     }
@@ -89,12 +91,15 @@ import SwiftUI
     }
 
     /// Another file takes this tab (the preview tab going from file to
-    /// file): its editor shows it from the first line.
+    /// file): its editor shows it where it was the last time it was open,
+    /// or from the first line. The file before keeps its place for next time.
     func replaceDocument(with new: KiriDocument) {
         guard new !== document else { return }
+        controller.rememberPosition()
         document = new
         controller.show(new)
         updateLargeViewer()
+        controller.restorePosition()
         languageFor = new.location
         trackLocation()
         arrive()

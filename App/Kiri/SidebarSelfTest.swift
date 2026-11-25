@@ -171,11 +171,14 @@ extension SelfTest {
         goToLine.open()
         palette.text = ":3"
         let previewed = await f.wait { controller.model.line == 3 }
+        // (a.swift comes back where it was when h.txt took its place: `FilePositions`.)
+        let keptA = FilePositions.position(for: f.file("a.swift"))?.selection(in: LineIndex(f.onDisk("a.swift"))) ?? 0..<0
         _ = await f.open("a.swift", from: first)
         let goToLineClosed = !goToLine.isOpen && !palette.isOpen
         palette.cancel() // Escape, late: nothing of the other file's to go back to
-        report(previewed && goToLineClosed && ktv.selectedRange() == NSRange(location: 0, length: 0) && ktv.string == f.onDisk("a.swift"),
-               "Go to Line (the palette, on a line of one file) closes when the next file is clicked, and the caret is at its start (open: \(goToLine.isOpen), selection \(ktv.selectedRange()))")
+        report(previewed && goToLineClosed && ktv.selectedRange() == NSRange(location: keptA.lowerBound, length: keptA.count)
+               && ktv.string == f.onDisk("a.swift"),
+               "Go to Line (the palette, on a line of one file) closes when the next file is clicked, and the caret is where that file was left, not on the line asked for in the other (open: \(goToLine.isOpen), selection \(ktv.selectedRange()), kept \(keptA))")
 
         // Kept by an edit, in the tab that went from file to file; and the
         // menus act on the file it shows now.

@@ -20,6 +20,12 @@ import Testing
         #expect(SidebarSearch.matches("Greeter.swift", query: "EETER.S"))
         #expect(SidebarSearch.matches("Café.md", query: "cafe"))
         #expect(SidebarSearch.matches("Cafe.md", query: "café"))
+        // A name as an older Mac disk keeps it, the accent a mark of its own.
+        #expect(SidebarSearch.matches("Cafe\u{301}.md", query: "café"))
+        #expect(SidebarSearch.matches("Cafe\u{301}.md", query: "CAFE.MD"))
+        #expect(SidebarSearch.matches("a.txt", query: "a.txt"))
+        #expect(!SidebarSearch.matches("a.tx", query: "a.txt"))
+        #expect(SidebarSearch.find("ÉE", in: [file("x/greet.swift")]).count == 1)
         #expect(!SidebarSearch.matches("Greeter.swift", query: "greets"))
         #expect(!SidebarSearch.matches("Greeter.swift", query: ""))
     }
