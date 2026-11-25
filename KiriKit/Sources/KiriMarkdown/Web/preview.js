@@ -20,7 +20,8 @@
     for (const el of blocks()) {
       const r = el.getBoundingClientRect();
       if (r.height === 0) continue;
-      if (r.top <= 8) best = Number(el.dataset.line) || best;
+      // (`scrollToLine` leaves its block 12 px below the top: that one counts.)
+      if (r.top <= 16) best = Number(el.dataset.line) || best;
       else break;
     }
     return best;

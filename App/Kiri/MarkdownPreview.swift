@@ -346,6 +346,9 @@ extension DocumentTab {
             Telemetry.track("markdown_preview")
             let preview = markdownPreview ?? MarkdownPreview(tab: self)
             markdownPreview = preview
+            // The page is laid out and scrolled at the size it will show at:
+            // at another width the same scroll offset is another part of it.
+            if preview.webView.superview == nil, container.bounds.width > 0 { preview.webView.frame = container.frame }
             let line = (controller.currentPosition()?.topLine ?? 0) + 1
             preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line) { [weak self] in
                 guard let self, self.showsMarkdownPreview else { return }
