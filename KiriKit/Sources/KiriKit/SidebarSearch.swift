@@ -52,7 +52,18 @@ public enum SidebarSearch {
     /// then looked through byte by byte, which is many times quicker than
     /// a localized search at every key.
     static func folded<S: StringProtocol>(_ text: S) -> [UInt8] {
-        Array(String(text).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).utf8)
+        // Most names are plain ASCII, where folding is lowering the
+        // letters: done here, it costs nothing next to Foundation's.
+        var ascii: [UInt8] = []
+        ascii.reserveCapacity(text.utf8.count)
+        for byte in text.utf8 {
+            guard byte < 0x80 else {
+                return Array(String(text).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                                                  locale: nil).utf8)
+            }
+            ascii.append(byte >= 0x41 && byte <= 0x5A ? byte + 0x20 : byte)
+        }
+        return ascii
     }
 
     /// Whether `needle` is somewhere in `haystack`. An empty needle is not.
