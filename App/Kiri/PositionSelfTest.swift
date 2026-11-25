@@ -171,6 +171,13 @@ extension SelfTest {
             report(false, "the preview test's second file")
         }
         await close(preview)
+
+        // Kept under a hash of the path, the same however the path is written.
+        let key = FilePositions.key(for: a)
+        let roundabout = URL(fileURLWithPath: dir.path + "/./sub/../again.txt")
+        report(key.count == 64 && key.allSatisfy(\.isHexDigit) && FilePositions.key(for: roundabout) == key
+               && key != FilePositions.key(for: b) && !key.contains("again"),
+               "a file's position is kept under a SHA-256 hash of its path, the same for another spelling of it (\(key.prefix(12))…)")
         FilePositions.forgetAll()
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import KiriKit
 
 /// Where each file was when it was last open (`FilePositionStore`): the
@@ -21,15 +22,19 @@ import KiriKit
         return FilePositionStore.decoded(UserDefaults.standard.data(forKey: key))
     }()
 
-    /// The key a file's position is kept under: its path, the same however
-    /// it was reached.
-    static func path(of url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+    /// The key a file's position is kept under: a SHA-256 hash of its path
+    /// (the same however it was reached), so the preferences hold no list
+    /// of the files opened.
+    static func key(for url: URL) -> String {
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        return SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
-    static func position(for url: URL) -> FilePosition? { store.position(for: path(of: url)) }
+    static func position(for url: URL) -> FilePosition? { store.position(for: key(for: url)) }
 
     static func set(_ position: FilePosition, for url: URL) {
         start()
-        if store.set(position, for: path(of: url)) { save() }
+        if store.set(position, for: key(for: url)) { save() }
     }
 
     private static func save() {

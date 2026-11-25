@@ -83,7 +83,8 @@ public struct FilePosition: Codable, Equatable, Sendable {
     }
 }
 
-/// The positions of the files opened lately, by path, for the next time
+/// The positions of the files opened lately, by a key for each file (the
+/// app uses a hash of its path), for the next time
 /// each opens (also after a relaunch). Only so many are kept: the ones
 /// used longest ago go first.
 public struct FilePositionStore: Codable, Equatable, Sendable {
@@ -105,28 +106,28 @@ public struct FilePositionStore: Codable, Equatable, Sendable {
 
     public var count: Int { entries.count }
 
-    public func position(for path: String) -> FilePosition? { entries[path]?.position }
+    public func position(for key: String) -> FilePosition? { entries[key]?.position }
 
-    /// Keeps `position` for `path`, as the latest used; the head of the
+    /// Keeps `position` for `key`, as the latest used; the head of the
     /// file needs no keeping, so that forgets it. True if what is kept for
-    /// `path` changed.
+    /// `key` changed.
     @discardableResult
-    public mutating func set(_ position: FilePosition, for path: String) -> Bool {
-        let old = entries[path]?.position
+    public mutating func set(_ position: FilePosition, for key: String) -> Bool {
+        let old = entries[key]?.position
         if position.isTop {
-            entries[path] = nil
+            entries[key] = nil
             return old != nil
         }
         clock += 1
-        entries[path] = Entry(position: position, stamp: clock)
+        entries[key] = Entry(position: position, stamp: clock)
         if entries.count > limit {
             let oldest = entries.sorted { $0.value.stamp < $1.value.stamp }.prefix(entries.count - limit)
-            for (path, _) in oldest { entries[path] = nil }
+            for (key, _) in oldest { entries[key] = nil }
         }
         return old != position
     }
 
-    public mutating func remove(_ path: String) { entries[path] = nil }
+    public mutating func remove(_ key: String) { entries[key] = nil }
 
     /// As saved between launches.
     public func encoded() -> Data { (try? JSONEncoder().encode(self)) ?? Data() }
