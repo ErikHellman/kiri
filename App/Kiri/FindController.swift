@@ -100,6 +100,13 @@ import Observation
     @ObservationIgnored private var largeSearchedTo = 0
     /// The query can't be used (an invalid regular expression).
     @ObservationIgnored private var largeInvalid = false
+    /// Where the line of each of `matches` starts, in a large file.
+    @ObservationIgnored private var largeLineStarts: [Int] = []
+    /// A large file shows only the lines that match, while the bar is
+    /// open: grep, in place.
+    var onlyMatchingLines = false {
+        didSet { if onlyMatchingLines != oldValue { publish() } }
+    }
 
     private var selection: Range<Int> {
         if let large { return large.view.selectedBytes }
@@ -203,6 +210,8 @@ import Observation
         model?.overlayChanged()
         if let large {
             large.view.show(matches: [], current: nil)
+            // Every line again, at the match.
+            large.view.setRows(nil)
             if let range { large.view.select(bytes: range) }
             if focusEditor { controller?.focus() }
             return
@@ -691,14 +700,18 @@ extension FindController {
         largeInvalid = false
         guard !query.isEmpty else {
             store(TextSearch.Matches(), for: nil)
+            largeLineStarts = []
             largeTotal = 0
+            large.view.setRows(nil)
             large.view.show(matches: [], current: nil)
             status = .idle
             return
         }
         guard let search = try? LargeFileSearch(query, options: options) else {
             store(TextSearch.Matches(), for: nil)
+            largeLineStarts = []
             largeTotal = 0
+            large.view.setRows(nil)
             largeInvalid = true
             large.view.show(matches: [], current: nil)
             status = .invalid
@@ -713,6 +726,7 @@ extension FindController {
         guard start < end || !appending else { return }
         if !appending {
             matches = []
+            largeLineStarts = []
             largeTotal = 0
             current = nil
             truncated = false
@@ -721,7 +735,7 @@ extension FindController {
         largeSearchedTo = end
         pendingJump = jump
         pendingStep = step
-        let base = matches, baseTotal = largeTotal
+        let base = matches, baseStarts = largeLineStarts, baseTotal = largeTotal
         let token = Token()
         self.token = token
         let queue = self.queue
@@ -734,21 +748,23 @@ extension FindController {
                 queue.async {
                     let last = base.last?.upperBound ?? -1
                     // (Matches the last search found again are left out.)
-                    func merged(_ r: LargeFileSearch.Result) -> ([Range<Int>], Int) {
-                        let fresh = r.ranges.drop { $0.lowerBound < last }
-                        return (base + fresh, baseTotal + r.count - (r.ranges.count - fresh.count))
+                    func merged(_ r: LargeFileSearch.Result) -> ([Range<Int>], [Int], Int) {
+                        let skip = r.ranges.prefix { $0.lowerBound < last }.count
+                        return (base + r.ranges.dropFirst(skip), baseStarts + r.lineStarts.dropFirst(skip), baseTotal + r.count - skip)
                     }
                     let found = search.run(in: file, range: start..<end, limit: room, isCancelled: { token.isCancelled }) { r, _ in
-                        let (ranges, total) = merged(r)
+                        let (ranges, starts, total) = merged(r)
                         DispatchQueue.main.async {
-                            MainActor.assumeIsolated { self.largeFound(ranges, total: total, done: false, token: token) }
+                            MainActor.assumeIsolated {
+                                self.largeFound(ranges, lineStarts: starts, total: total, done: false, token: token)
+                            }
                         }
                     }
-                    let (ranges, total) = merged(found)
+                    let (ranges, starts, total) = merged(found)
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
                             guard !found.cancelled else { return }
-                            self.largeFound(ranges, total: total, done: true, token: token)
+                            self.largeFound(ranges, lineStarts: starts, total: total, done: true, token: token)
                         }
                     }
                 }
@@ -759,10 +775,11 @@ extension FindController {
     }
 
     /// What the search has found so far (or, `done`, in all).
-    private func largeFound(_ ranges: [Range<Int>], total: Int, done: Bool, token: Token) {
+    private func largeFound(_ ranges: [Range<Int>], lineStarts: [Int], total: Int, done: Bool, token: Token) {
         guard self.token === token, !token.isCancelled else { return }
         let currentRange = current.flatMap { matches.indices.contains($0) ? matches[$0] : nil }
         matches = ranges
+        largeLineStarts = lineStarts
         largeTotal = total
         current = currentRange.flatMap { TextSearch.index(of: $0, in: matches) }
         if done { self.token = nil }
@@ -795,6 +812,16 @@ extension FindController {
         } else {
             status = .found(current: current, total: largeTotal, more: pending)
         }
+        // Only the matching lines (once each), before the matches are
+        // shown on them.
+        if onlyMatchingLines, !query.isEmpty, !largeInvalid {
+            var rows: [Int] = []
+            rows.reserveCapacity(largeLineStarts.count)
+            for start in largeLineStarts where start != rows.last { rows.append(start) }
+            large.view.setRows(rows)
+        } else {
+            large.view.setRows(nil)
+        }
         large.view.show(matches: matches, current: current.flatMap { matches.indices.contains($0) ? matches[$0] : nil })
         if label != old, !pending { announce() }
     }
@@ -811,6 +838,8 @@ extension FindController {
     func largeFileGone() {
         cancelPending()
         store(TextSearch.Matches(), for: nil)
+        largeLineStarts = []
+        onlyMatchingLines = false
         largeTotal = 0
         largeSearchedTo = 0
         largeInvalid = false

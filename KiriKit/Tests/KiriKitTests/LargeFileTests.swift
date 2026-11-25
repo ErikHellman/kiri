@@ -183,4 +183,25 @@ import Testing
             #expect(LargeFile.newlines(in: word) == bytes.filter { $0 == 0x0A }.count)
         }
     }
+
+    @Test func searchKnowsTheLineOfEachMatch() throws {
+        let f = try file("one error\ntwo\nerror and error\nend")
+        let r = try search("error", in: f)
+        #expect(r.ranges == [4..<9, 14..<19, 24..<29])
+        #expect(r.lineStarts == [0, 14, 14])
+        let re = try search("err\\w+", SearchOptions(regularExpression: true), in: f)
+        #expect(re.lineStarts == [0, 14, 14])
+        #expect(f.lineStart(before: 20) == 14)
+        #expect(f.line(startingAt: 14).text == "error and error")
+        #expect(f.line(startingAt: 30).text == "end")
+    }
+
+    @Test func aMatchFarIntoALongLineKnowsWhereItStarts() throws {
+        // The line starts in the block before the match's.
+        var bytes = [UInt8](repeating: UInt8(ascii: "a"), count: LargeFile.blockSize + 50)
+        bytes[5] = 0x0A
+        bytes.replaceSubrange((LargeFile.blockSize + 10)..<(LargeFile.blockSize + 16), with: Array("needle".utf8))
+        let f = try file(Data(bytes))
+        #expect(try search("needle", in: f).lineStarts == [6])
+    }
 }

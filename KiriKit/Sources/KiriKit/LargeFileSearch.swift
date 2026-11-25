@@ -55,6 +55,9 @@ public struct LargeFileSearch: @unchecked Sendable {
         /// The matches, in the order they stand in the file, at most the
         /// limit asked for.
         public var ranges: [Range<Int>] = []
+        /// Where the line of each of `ranges` starts (a byte offset): for
+        /// showing only the lines that match.
+        public var lineStarts: [Int] = []
         /// How many matches there are in all.
         public var count = 0
         /// The search was stopped before the end.
@@ -62,8 +65,9 @@ public struct LargeFileSearch: @unchecked Sendable {
 
         public var truncated: Bool { count > ranges.count }
 
-        public init(ranges: [Range<Int>] = [], count: Int = 0, cancelled: Bool = false) {
+        public init(ranges: [Range<Int>] = [], lineStarts: [Int] = [], count: Int = 0, cancelled: Bool = false) {
             self.ranges = ranges
+            self.lineStarts = lineStarts
             self.count = count
             self.cancelled = cancelled
         }
@@ -86,15 +90,15 @@ public struct LargeFileSearch: @unchecked Sendable {
         while b < blocks.count {
             if isCancelled() { result.cancelled = true; return result }
             let these = Array(blocks[b..<min(b + batch, blocks.count)])
-            var found = [[Range<Int>]](repeating: [], count: these.count)
+            var found = [([Range<Int>], [Int])](repeating: ([], []), count: these.count)
             var counts = [Int](repeating: 0, count: these.count)
             let room = max(0, limit - result.ranges.count)
             found.withUnsafeMutableBufferPointer { f in
                 counts.withUnsafeMutableBufferPointer { c in
                     let f = UnsafeSendable(f), c = UnsafeSendable(c)
                     DispatchQueue.concurrentPerform(iterations: these.count) { i in
-                        let (ranges, n) = self.search(these[i], of: whole, in: file, keep: room)
-                        f.value[i] = ranges
+                        let (ranges, starts, n) = self.search(these[i], of: whole, in: file, keep: room)
+                        f.value[i] = (ranges, starts)
                         c.value[i] = n
                     }
                 }
@@ -102,7 +106,10 @@ public struct LargeFileSearch: @unchecked Sendable {
             for i in found.indices {
                 result.count += counts[i]
                 let room = limit - result.ranges.count
-                if room > 0 { result.ranges.append(contentsOf: found[i].prefix(room)) }
+                if room > 0 {
+                    result.ranges.append(contentsOf: found[i].0.prefix(room))
+                    result.lineStarts.append(contentsOf: found[i].1.prefix(room))
+                }
             }
             b += these.count
             progress(result, these.last!.upperBound)
@@ -138,7 +145,8 @@ public struct LargeFileSearch: @unchecked Sendable {
 
     /// The matches that start in `block`: those kept (at most `keep`) and
     /// how many there are.
-    private func search(_ block: Range<Int>, of whole: Range<Int>, in file: LargeFile, keep: Int) -> ([Range<Int>], Int) {
+    private func search(_ block: Range<Int>, of whole: Range<Int>, in file: LargeFile,
+                        keep: Int) -> ([Range<Int>], [Int], Int) {
         // A plain match that starts in the block may end past it.
         let over = regex == nil ? max(0, needle.count - 1) : 0
         let span = block.lowerBound..<min(block.upperBound + over, whole.upperBound)
@@ -146,9 +154,41 @@ public struct LargeFileSearch: @unchecked Sendable {
         defer { buffer.deallocate() }
         let got = file.read(into: buffer, at: span.lowerBound)
         let bytes = UnsafeMutableBufferPointer(start: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), count: got)
-        if let regex { return matches(of: regex, in: UnsafeBufferPointer(bytes), at: block.lowerBound, keep: keep) }
-        if !options.matchCase { Self.lowercase(bytes) }
-        return find(in: UnsafeBufferPointer(bytes), startsBefore: block.count, at: block.lowerBound, keep: keep)
+        let (ranges, count): ([Range<Int>], Int)
+        if let regex {
+            (ranges, count) = matches(of: regex, in: UnsafeBufferPointer(bytes), at: block.lowerBound, keep: keep)
+        } else {
+            if !options.matchCase { Self.lowercase(bytes) }
+            (ranges, count) = find(in: UnsafeBufferPointer(bytes), startsBefore: block.count, at: block.lowerBound, keep: keep)
+        }
+        return (ranges, Self.lineStarts(of: ranges, in: UnsafeBufferPointer(bytes), at: block.lowerBound, file: file), count)
+    }
+
+    /// Where the line of each of `ranges` starts, looked for back from
+    /// each in `bytes` (which start at `base` in the file): back to the
+    /// match before it, which is on the same line when no "\n" is between.
+    static func lineStarts(of ranges: [Range<Int>], in bytes: UnsafeBufferPointer<UInt8>, at base: Int,
+                           file: LargeFile) -> [Int] {
+        var out: [Int] = []
+        out.reserveCapacity(ranges.count)
+        var previous = 0, previousStart: Int?
+        for r in ranges {
+            var i = r.lowerBound - base
+            var start: Int?
+            while i > previous {
+                if bytes[i - 1] == 0x0A { start = base + i; break }
+                i -= 1
+            }
+            if start == nil { start = previousStart }
+            if start == nil {
+                // The line began before these bytes.
+                start = base == 0 ? 0 : file.lineStart(before: base)
+            }
+            out.append(start!)
+            previousStart = start
+            previous = r.lowerBound - base
+        }
+        return out
     }
 
     /// Where the needle is in `bytes`, for matches that start before

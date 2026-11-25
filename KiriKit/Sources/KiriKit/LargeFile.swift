@@ -298,6 +298,41 @@ public final class LargeFile: @unchecked Sendable {
         String(decoding: read(range.lowerBound..<min(range.upperBound, range.lowerBound + limit)), as: UTF8.self)
     }
 
+    /// Where the line that byte `offset` is on starts: after the last "\n"
+    /// before it, or 0.
+    public func lineStart(before offset: Int) -> Int {
+        var end = min(max(0, offset), size)
+        let chunk = 16 << 10
+        while end > 0 {
+            let from = max(0, end - chunk)
+            let bytes = read(from..<end)
+            if bytes.isEmpty { return 0 }
+            if let nl = bytes.lastIndex(of: 0x0A) { return from + nl + 1 }
+            end = from
+        }
+        return 0
+    }
+
+    /// The line that starts at byte `start`: its bytes (without "\n" or a
+    /// "\r" before it) and its text, cut at `displayLimit`.
+    public func line(startingAt start: Int) -> (bytes: Range<Int>, text: String) {
+        let end = indexedLength
+        var at = start
+        let chunk = 16 << 10
+        var lineEnd = end
+        while at < end {
+            let bytes = read(at..<min(at + chunk, end))
+            if bytes.isEmpty { break }
+            if let nl = bytes.firstIndex(of: 0x0A) { lineEnd = at + nl; break }
+            at += bytes.count
+        }
+        var range = start..<max(start, lineEnd)
+        if !range.isEmpty, read((range.upperBound - 1)..<range.upperBound) == [0x0D] {
+            range = range.lowerBound..<(range.upperBound - 1)
+        }
+        return (range, text(of: range))
+    }
+
     /// The 0-based line that byte `offset` is on.
     public func line(containing offset: Int) -> Int {
         let end = indexedLength

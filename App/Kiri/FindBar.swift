@@ -65,6 +65,15 @@ struct FindBar: View {
                         .toggleStyle(BarToggleStyle())
                         .help("Regular expression")
                         .accessibilityLabel("Regular Expression")
+                    if find.isReadOnly {
+                        // A large file: only the lines that match show.
+                        Toggle(isOn: $find.onlyMatchingLines) {
+                            Image(systemName: "line.3.horizontal.decrease").font(.system(size: 12, weight: .semibold))
+                        }
+                        .toggleStyle(BarToggleStyle())
+                        .help("Only matching lines")
+                        .accessibilityLabel("Only Matching Lines")
+                    }
                     Button { find.step(forward: false) } label: { Label("Previous Match", systemImage: "chevron.up") }
                         .buttonStyle(BarButtonStyle())
                         .modifier(BarFocusRing())

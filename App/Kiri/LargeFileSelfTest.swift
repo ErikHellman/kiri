@@ -132,7 +132,22 @@ extension SelfTest {
         find.options = SearchOptions()
         find.query = "needle"
         for _ in 0..<200 where find.isSearching { await settle(25) }
+
+        // Only the matching lines: one row each, with its own line number;
+        // the bar closed, every line again, at the match.
+        find.onlyMatchingLines = true
+        await settle(50)
+        report(viewer.view.rows?.count == expected && viewer.view.number(ofRow: 1) == 1001
+               && viewer.view.number(ofRow: expected - 1) == (expected - 1) * 1000 + 1,
+               "only matching lines shows one row per matching line, with its line number (\(viewer.view.rows?.count ?? -1))")
+        find.step(forward: true)
+        find.step(forward: true)
         find.close()
+        await settle(50)
+        // (A needle is on every 1000th line, from line 1.)
+        report(viewer.view.rows == nil && model.line % 1000 == 1 && viewer.view.caret.line == model.line - 1
+               && String(decoding: viewer.file.read(viewer.view.selectedBytes), as: UTF8.self) == "needle",
+               "closing find shows every line again, at the match (line \(model.line))")
 
         // Go to Line.
         tab.controller.goTo(line: 750_000)

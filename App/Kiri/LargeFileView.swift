@@ -89,6 +89,8 @@ struct LargePosition: Comparable, Hashable {
     /// The file was opened again (it was truncated or rotated): from the top.
     func replaceFile(_ new: LargeFile) {
         file = new
+        rows = nil
+        rowNumbers = [:]
         cache = [:]
         topLine = 0
         scrollX = 0
@@ -103,12 +105,74 @@ struct LargePosition: Comparable, Hashable {
     /// More lines were counted (the count is under way, or the file grew).
     /// At the end, the view stays at the end, as `tail -f` does.
     func linesAdded(previousCount: Int) {
+        model?.lineCount = file.lineCount
+        // Only the lines that match show: find adds those it finds.
+        guard rows == nil else { return }
         let wasAtEnd = topLine >= maxTop(lineCount: previousCount) - 0.5 && previousCount > visibleLineCount
         // The last line may have been cut short while it was being written.
         cache.removeValue(forKey: previousCount - 1)
         if wasAtEnd { topLine = maxTop() }
         model?.lineCount = file.lineCount
         needsDisplay = true
+    }
+
+    // MARK: Only the lines that match
+
+    /// Where each line shown starts, when only the lines with matches show
+    /// (find's "Only matching lines"); nil when every line does. A row is
+    /// then one of these, and `LargePosition.line` a row.
+    private(set) var rows: [Int]?
+    /// The line numbers of rows, as they are looked up.
+    private var rowNumbers: [Int: Int] = [:]
+
+    /// How many rows show: the lines, or only those that match.
+    var rowCount: Int { rows.map { max(1, $0.count) } ?? file.lineCount }
+
+    /// The 1-based line number of `row`.
+    func number(ofRow row: Int) -> Int {
+        guard let rows else { return row + 1 }
+        guard rows.indices.contains(row) else { return 0 }
+        if let n = rowNumbers[row] { return n }
+        let n = file.line(containing: rows[row]) + 1
+        rowNumbers[row] = n
+        return n
+    }
+
+    /// The row byte `offset` is on: its line, or the last matching line
+    /// that starts at or before it.
+    private func row(ofByte offset: Int) -> Int {
+        guard let rows else { return file.line(containing: offset) }
+        var lo = 0, hi = rows.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if rows[mid] <= offset { lo = mid + 1 } else { hi = mid }
+        }
+        return max(0, lo - 1)
+    }
+
+    /// Shows only the lines that start at `new` (sorted), or every line
+    /// (nil). The caret stays on the text it is on. Lines found later are
+    /// added at the end without moving the view.
+    func setRows(_ new: [Int]?) {
+        if let rows, let new, new.count >= rows.count, new.starts(with: rows) {
+            if new.count == rows.count { return }
+            self.rows = new
+            needsDisplay = true
+            return
+        }
+        guard new != nil || rows != nil else { return }
+        let anchorByte = byte(of: anchor), caretByte = byte(of: caret)
+        rows = new
+        rowNumbers = [:]
+        cache = [:]
+        widest = 0
+        scrollX = 0
+        let a = row(ofByte: anchorByte), c = row(ofByte: caretByte)
+        anchor = LargePosition(line: a, column: column(ofByte: anchorByte, line: a))
+        caret = LargePosition(line: c, column: column(ofByte: caretByte, line: c))
+        topLine = min(maxTop(), max(0, Double(c) - Double(visibleLineCount) / 2))
+        needsDisplay = true
+        caretMoved()
     }
 
     // MARK: Fonts and colors
@@ -143,7 +207,7 @@ struct LargePosition: Comparable, Hashable {
 
     /// The top line that shows the last line just above the status bar.
     private func maxTop(lineCount: Int? = nil) -> Double {
-        let count = Double(lineCount ?? file.lineCount)
+        let count = Double(lineCount ?? rowCount)
         return max(0, count - Double(bounds.height - topInset - bottomInset) / Double(lineHeight))
     }
 
@@ -160,7 +224,7 @@ struct LargePosition: Comparable, Hashable {
 
     private func line(atY y: CGFloat) -> Int {
         let line = Int(floor(Double((y - topInset) / lineHeight) + topLine))
-        return min(max(0, line), file.lineCount - 1)
+        return min(max(0, line), rowCount - 1)
     }
 
     private func setTop(_ value: Double) {
@@ -188,11 +252,18 @@ struct LargePosition: Comparable, Hashable {
 
     /// The lines `range`, read now if they aren't at hand.
     private func lines(_ range: Range<Int>) -> [Int: Line] {
-        let wanted = max(0, range.lowerBound)..<min(range.upperBound, file.lineCount)
+        let wanted = max(0, range.lowerBound)..<min(range.upperBound, rowCount)
         guard !wanted.isEmpty else { return [:] }
-        if wanted.contains(where: { cache[$0] == nil }) {
+        if let rows, wanted.contains(where: { cache[$0] == nil }) {
+            // Only the lines that match: each read where it starts.
+            if cache.count > 4000 { cache = [:] }
+            for i in wanted where cache[i] == nil && i < rows.count {
+                let l = file.line(startingAt: rows[i])
+                cache[i] = Line(bytes: l.bytes, text: l.text)
+            }
+        } else if wanted.contains(where: { cache[$0] == nil }) {
             // Some to spare above and below, for scrolling.
-            let read = max(0, wanted.lowerBound - 64)..<min(file.lineCount, wanted.upperBound + 64)
+            let read = max(0, wanted.lowerBound - 64)..<min(rowCount, wanted.upperBound + 64)
             if cache.count > 4000 { cache = [:] }
             for (i, l) in file.textLines(read).enumerated() where cache[read.lowerBound + i] == nil {
                 cache[read.lowerBound + i] = Line(bytes: l.bytes, text: l.text)
@@ -294,8 +365,8 @@ struct LargePosition: Comparable, Hashable {
         // The line numbers.
         let muted: [NSAttributedString.Key: Any] = [.font: gutterFont, .foregroundColor: NSColor.honey(Honey.gutter)]
         let current: [NSAttributedString.Key: Any] = [.font: gutterFont, .foregroundColor: NSColor.honey(Honey.fg)]
-        for i in first..<min(first + count, file.lineCount) {
-            let s = String(i + 1) as NSString
+        for i in first..<min(first + count, rows?.count ?? rowCount) {
+            let s = String(number(ofRow: i)) as NSString
             let attrs = i == caret.line ? current : muted
             let size = s.size(withAttributes: attrs)
             let baseline = y(of: i) + (lineHeight - (font.ascender - font.descender)) / 2 + ascent
@@ -510,9 +581,9 @@ struct LargePosition: Comparable, Hashable {
 
     /// Selects the bytes `range` (a match) and brings it into sight.
     func select(bytes range: Range<Int>, caretOnly: Bool = false) {
-        let line = file.line(containing: range.lowerBound)
+        let line = row(ofByte: range.lowerBound)
         let from = LargePosition(line: line, column: column(ofByte: range.lowerBound, line: line))
-        let endLine = file.line(containing: range.upperBound)
+        let endLine = row(ofByte: range.upperBound)
         let to = caretOnly ? from : LargePosition(line: endLine, column: column(ofByte: range.upperBound, line: endLine))
         self.anchor = from
         self.caret = to
@@ -522,7 +593,7 @@ struct LargePosition: Comparable, Hashable {
 
     private func caretMoved() {
         guard let model else { return }
-        model.line = caret.line + 1
+        model.line = number(ofRow: caret.line)
         model.column = caret.column + 1
         let selected = anchor == caret ? 0 : selectedBytes.count
         model.selectedLength = selected
@@ -545,6 +616,7 @@ struct LargePosition: Comparable, Hashable {
 
     /// The caret to 0-based `line` and `column`, in sight.
     func goTo(line: Int, column: Int) {
+        if rows != nil { setRows(nil) }
         let i = min(max(0, line), file.lineCount - 1)
         let p = LargePosition(line: i, column: min(max(0, column), self.line(i)?.text.utf16.count ?? 0))
         setSelection(anchor: p, caret: p)
@@ -593,7 +665,7 @@ struct LargePosition: Comparable, Hashable {
     }
 
     private func moveCaret(lines: Int, extend: Bool) {
-        let target = min(max(0, caret.line + lines), file.lineCount - 1)
+        let target = min(max(0, caret.line + lines), rowCount - 1)
         let p = LargePosition(line: target, column: min(caret.column, line(target)?.text.utf16.count ?? 0))
         setSelection(anchor: extend ? anchor : p, caret: p)
         reveal(line: target)
@@ -606,7 +678,7 @@ struct LargePosition: Comparable, Hashable {
         if p.column < 0 {
             if p.line > 0 { p.line -= 1; p.column = line(p.line)?.text.utf16.count ?? 0 } else { p.column = 0 }
         } else if p.column > length {
-            if p.line < file.lineCount - 1 { p.line += 1; p.column = 0 } else { p.column = length }
+            if p.line < rowCount - 1 { p.line += 1; p.column = 0 } else { p.column = length }
         }
         setSelection(anchor: extend ? anchor : p, caret: p)
         reveal(line: p.line, column: p.column)
@@ -628,10 +700,10 @@ struct LargePosition: Comparable, Hashable {
     override func scrollToEndOfDocument(_ sender: Any?) { setTop(maxTop()) }
     override func scrollLineUp(_ sender: Any?) { setTop(topLine - 1) }
     override func scrollLineDown(_ sender: Any?) { setTop(topLine + 1) }
-    override func moveToBeginningOfDocument(_ sender: Any?) { moveCaret(lines: -file.lineCount, extend: false) }
-    override func moveToEndOfDocument(_ sender: Any?) { moveCaret(lines: file.lineCount, extend: false) }
-    override func moveToBeginningOfDocumentAndModifySelection(_ sender: Any?) { moveCaret(lines: -file.lineCount, extend: true) }
-    override func moveToEndOfDocumentAndModifySelection(_ sender: Any?) { moveCaret(lines: file.lineCount, extend: true) }
+    override func moveToBeginningOfDocument(_ sender: Any?) { moveCaret(lines: -rowCount, extend: false) }
+    override func moveToEndOfDocument(_ sender: Any?) { moveCaret(lines: rowCount, extend: false) }
+    override func moveToBeginningOfDocumentAndModifySelection(_ sender: Any?) { moveCaret(lines: -rowCount, extend: true) }
+    override func moveToEndOfDocumentAndModifySelection(_ sender: Any?) { moveCaret(lines: rowCount, extend: true) }
     override func moveToBeginningOfLine(_ sender: Any?) {
         let p = LargePosition(line: caret.line, column: 0)
         setSelection(anchor: p, caret: p)
@@ -646,7 +718,7 @@ struct LargePosition: Comparable, Hashable {
     override func moveToRightEndOfLine(_ sender: Any?) { moveToEndOfLine(sender) }
 
     override func selectAll(_ sender: Any?) {
-        let last = file.lineCount - 1
+        let last = rowCount - 1
         setSelection(anchor: LargePosition(line: 0, column: 0),
                      caret: LargePosition(line: last, column: line(last)?.text.utf16.count ?? 0))
     }
