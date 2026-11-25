@@ -90,13 +90,14 @@ struct EditorView: NSViewRepresentable {
 final class TabEditorSlot: NSView {
     private(set) weak var tab: DocumentTab?
 
-    /// How a file that arrives comes in: its text fades in on the paper,
-    /// 240 ms rising 4 pt; with reduced motion the 140 ms fade alone; with
-    /// Motion: Off at once. Done on the editor's layer, by Core Animation:
-    /// it plays whether or not SwiftUI is drawing the window, and the
-    /// editor takes clicks and drops all the while.
-    enum Arrival { case rise, fade, none }
-    var arrival = Arrival.rise
+    /// How a file that arrives comes in: the text on screen line by line,
+    /// a word at a time (`TextReveal`); with reduced motion a 140 ms fade
+    /// of the whole editor; with Motion: Off at once. Both are Core
+    /// Animation on the editor's layers: they play whether or not SwiftUI
+    /// is drawing the window, and the editor takes clicks and drops all
+    /// the while.
+    enum Arrival { case reveal, fade, none }
+    var arrival = Arrival.reveal
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -108,6 +109,8 @@ final class TabEditorSlot: NSView {
     func show(_ tab: DocumentTab) {
         let editor = tab.container
         if self.tab !== tab || editor.superview !== self {
+            // Another tab shows: what was coming in there is simply in.
+            if let old = self.tab, old !== tab { old.container.finishReveal() }
             for view in subviews where view !== editor { view.removeFromSuperview() }
             self.tab = tab
             editor.frame = bounds
@@ -128,28 +131,23 @@ final class TabEditorSlot: NSView {
         #endif
     }
 
-    /// `tab`'s text fades in (`Arrival`).
+    /// `tab`'s text comes in (`Arrival`).
     func arrive(_ tab: DocumentTab) {
         tab.arriving = false
+        tab.container.finishReveal()
         guard arrival != .none, tab.container.superview === self else { return }
-        tab.container.wantsLayer = true
-        guard let layer = tab.container.layer else { return }
-        let rise = arrival == .rise
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        let move = CABasicAnimation(keyPath: "transform.translation.y")
-        // (Up is +y on the layer: it starts 4 pt low.)
-        move.fromValue = -4
-        move.toValue = 0
-        let group = CAAnimationGroup()
-        group.animations = rise ? [fade, move] : [fade]
-        group.duration = rise ? Honey.medium : Honey.quick
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        layer.add(group, forKey: "kiriArrival")
         #if DEBUG || KIRI_SELFTEST
         arrivals += 1
         #endif
+        if arrival == .reveal { return tab.container.beginReveal() }
+        tab.container.wantsLayer = true
+        guard let layer = tab.container.layer else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = Honey.quick
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(fade, forKey: "kiriArrival")
     }
 
     #if DEBUG || KIRI_SELFTEST
@@ -283,6 +281,7 @@ final class TabEditorSlot: NSView {
 
     private func applyFont() {
         guard let textView, let storage = textView.textStorage else { return }
+        container?.revealLayoutChanged()
         let attrs = textAttributes
         textView.font = font
         textView.typingAttributes = attrs
@@ -408,6 +407,7 @@ final class TabEditorSlot: NSView {
     func setWrap(_ wrap: Bool) {
         guard let textView, let container = textView.textContainer, let scroll = textView.enclosingScrollView,
               container.widthTracksTextView != wrap else { return }
+        self.container?.revealLayoutChanged()
         container.widthTracksTextView = wrap
         textView.isHorizontallyResizable = !wrap
         scroll.hasHorizontalScroller = !wrap

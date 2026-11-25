@@ -116,7 +116,7 @@ private struct TabScreen: View {
                    isUntitled: fileURL == nil, wrapLines: wrapLines,
                    animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
                                                       typingAnimations: typingAnimations),
-                   arrival: motion.off ? .none : motion.reduced ? .fade : .rise)
+                   arrival: motion.off ? .none : motion.reduced ? .fade : .reveal)
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it. (Not
             // while the palette is open: its list would lie over the

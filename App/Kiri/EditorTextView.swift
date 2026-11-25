@@ -342,6 +342,8 @@ final class EditorContainerView: NSView {
     let scrollView = NSScrollView()
     let textView: KiriTextView
     let gutter = LineNumberGutter()
+    /// The text coming into view word by word, while it does.
+    var reveal: TextReveal?
     private var gutterWidth: NSLayoutConstraint!
     nonisolated(unsafe) private var themeObserver: NSObjectProtocol?
 

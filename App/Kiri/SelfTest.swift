@@ -2097,11 +2097,31 @@ import os
         let slot = (window as? DocumentNSWindow)?.editorSlot
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, _, _ in
             counts.append(NSApp.windows.count)
-            // Its text fades in on the editor's own layer, begun as it opens.
-            let fading = slot?.tab?.document === doc && slot?.tab?.container.layer?.animation(forKey: "kiriArrival") != nil
-            report(fading, "the new tab's text fades in on the paper, the fade begun as the file opens")
+            // Its text comes in on the editor's own layers, begun as it opens:
+            // covered by the word reveal's mask, or (reduced motion) fading.
+            let container = slot?.tab?.container
+            let covered = container?.reveal?.active == true && container?.textView.layer?.mask != nil
+            let fading = container?.layer?.animation(forKey: "kiriArrival") != nil
+            report(slot?.tab?.document === doc && (covered || fading),
+                   "the new tab's text comes in on the paper, begun as the file opens (\(covered ? "word reveal" : "fade"))")
             NSDocumentController.shared.openDocument(withContentsOf: url2, display: true) { doc2, _, _ in
             counts.append(NSApp.windows.count)
+            // The tab that gave way mid-reveal shows all of its text.
+            let gaveWay = doc.flatMap { DocumentWindow.tab(of: $0)?.container }
+            report(gaveWay?.reveal == nil && gaveWay?.textView.layer?.mask == nil && gaveWay?.gutter.layer?.mask == nil,
+                   "a tab that gives way while its text comes in shows all of it")
+            // A key in the editor stops the reveal and shows everything.
+            let arriving = slot?.tab?.container
+            if arriving?.reveal?.active == true,
+               let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                          windowNumber: window.windowNumber, context: nil, characters: "\u{F710}",
+                                          charactersIgnoringModifiers: "\u{F710}", isARepeat: false, keyCode: 105) {
+                NSApp.postEvent(key, atStart: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    report(arriving?.reveal == nil && arriving?.textView.layer?.mask == nil,
+                           "a key in the editor while the text comes in shows all of it at once")
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 let count = documents(in: window).count
                 report(count == 3, "two more documents open as tabs (\(count) tabs)")
