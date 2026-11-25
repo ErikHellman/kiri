@@ -22,12 +22,15 @@ import SwiftUI
     /// Why the name typed can't be used, shown under the field until it changes.
     var editProblem: String?
 
-    /// Every file under the folder, for the command palette.
+    /// Every file under the folder, for the command palette and find.
     @ObservationIgnored let index: FolderIndex
+    /// Find in the sidebar (⌘F while it has the keyboard).
+    @ObservationIgnored private(set) var find: SidebarFind!
 
     init(root url: URL) {
         root = FileNode(url: url.standardizedFileURL, isDirectory: true)
         index = FolderIndex(root: url)
+        find = SidebarFind(session: self)
         Telemetry.track("folder_open")
     }
 
@@ -336,13 +339,13 @@ struct SidebarEdge: View {
 
     /// Hidden files show (quick edits often target dotfiles), except the
     /// noise nobody edits by hand.
-    private static let skipped: Set<String> = [".git", ".DS_Store", ".build", "node_modules", "DerivedData", ".svn", ".hg"]
+    static let hidden: Set<String> = [".git", ".DS_Store", ".build", "node_modules", "DerivedData", ".svn", ".hg"]
 
     private static func list(_ url: URL) -> [FileNode] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey]
         let items = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys)) ?? []
         return items
-            .filter { !skipped.contains($0.lastPathComponent) }
+            .filter { !hidden.contains($0.lastPathComponent) }
             .map { item in
                 let values = try? item.resourceValues(forKeys: Set(keys))
                 let dir = (values?.isDirectory ?? false) && !(values?.isPackage ?? false)
@@ -378,6 +381,9 @@ struct FolderSidebar: View {
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
+        let motion = HoneyMotion(appearance, systemReduced: reduce)
+        // The find field pops in as the find bar does; with Reduce Motion it fades.
+        let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill").foregroundStyle(Color.honeyAccentInk)
@@ -404,6 +410,14 @@ struct FolderSidebar: View {
             .frame(height: 38)
             .help(session.root.url.path)
 
+            // Find (⌘F while the sidebar has the keyboard): above the rows,
+            // wherever they are scrolled to.
+            if session.find.isOpen(in: tabs.window) {
+                SidebarFindField(find: session.find)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 4)
+                    .transition(arrive)
+            }
             // New File… in the folder itself: its field stays above the
             // rows, wherever they are scrolled to (a row of the list is
             // not made while it is out of view, and would never get the
@@ -429,6 +443,20 @@ struct FolderSidebar: View {
                     guard let url, focused else { return }
                     withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { proxy.scrollTo(url) }
                 }
+                // Find moved the row: into view, wherever it is.
+                .onChange(of: session.find.scrollRequest) {
+                    guard let url = session.cursor, session.find.belongs(to: tabs.window) else { return }
+                    scrollToMatch(url, proxy)
+                }
+                // ⌘F with the last query goes to its match as the field
+                // comes in, while the list is still making room for it:
+                // again once it has.
+                .onChange(of: findShown) { _, shown in
+                    guard shown else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if findShown, let url = session.cursor { scrollToMatch(url, proxy) }
+                    }
+                }
                 // New File… in a folder of the list: its field comes into view.
                 .onChange(of: session.editing(in: tabs.window)) { _, editing in
                     guard case .newFile(let folder) = editing, folder != session.root.url else { return }
@@ -436,6 +464,7 @@ struct FolderSidebar: View {
                 }
             }
         }
+        .animation(motion.shape, value: findShown)
         .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
         // The header and the empty area below the rows: the folder itself.
@@ -461,8 +490,11 @@ struct FolderSidebar: View {
         .onKeyPress(.space) { typing ? .ignored : activate(thenEdit: false) }
         .onKeyPress(.escape) {
             // (A name's field takes Escape itself; should the keyboard not
-            // be in it, Escape still gives the name up.)
-            if typing {
+            // be in it, Escape still gives the name up. The find field's
+            // Escape puts the row back.)
+            if session.find.fieldHasFocus {
+                session.find.cancel()
+            } else if typing {
                 session.cancelEdit()
             } else {
                 model.controller?.focus()
@@ -479,13 +511,21 @@ struct FolderSidebar: View {
             if model.sidebarShowsKeyboard != now { model.sidebarShowsKeyboard = now }
         }
         .onChange(of: focused) { _, now in
-            model.sidebarHasFocus = now
+            updateHasFocus()
             if now, session.cursor == nil || !rows.contains(where: { $0.node.url == session.cursor }) {
                 session.cursor = rows.first(where: { $0.node.url == currentFile })?.node.url ?? rows.first?.node.url
             }
         }
+        // The find field is the sidebar's too: ⌘G there is the sidebar's,
+        // not the editor's.
+        .onChange(of: session.find.fieldHasFocus) { updateHasFocus() }
+        // Return or Escape in the find field: the rows have the keyboard again.
+        .onChange(of: session.find.treeFocusRequest) {
+            if session.find.belongs(to: tabs.window) { focused = true }
+        }
         .onChange(of: model.sidebarFocusRequest, initial: true) {
-            guard model.sidebarFocusRequest > 0, !focused else { return }
+            // (The find field is the sidebar's: it keeps the keyboard.)
+            guard model.sidebarFocusRequest > 0, !focused, !session.find.fieldHasFocus else { return }
             focused = true
         }
         .accessibilityElement(children: .contain)
@@ -496,19 +536,58 @@ struct FolderSidebar: View {
 
     private var rows: [FolderSession.Row] { session.visibleRows() }
 
+    /// The sidebar has the keyboard: its rows, or its find field.
+    private func updateHasFocus() {
+        let now = focused || session.find.fieldHasFocus
+        if model.sidebarHasFocus != now { model.sidebarHasFocus = now }
+    }
+
+    /// The find field shows in this window's sidebar.
+    private var findShown: Bool { session.find.isOpen(in: tabs.window) }
+
+    /// Scrolls the row at `url` into view. A match may be deep in a folder
+    /// that has only now opened: its row is there a turn later, and the
+    /// list knows it once the top-level row it is in has been made. Far
+    /// down a long list the first scroll lands where the rows not yet made
+    /// were guessed to be; once they are made, a second lands on the row.
+    private func scrollToMatch(_ url: URL, _ proxy: ScrollViewProxy) {
+        let top = topLevelRow(of: url)
+        DispatchQueue.main.async {
+            if top != url { proxy.scrollTo(top) }
+            DispatchQueue.main.async { proxy.scrollTo(url) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                if session.cursor == url { proxy.scrollTo(url) }
+            }
+        }
+    }
+
+    /// The row at the top of the tree that `url` is in (or is).
+    private func topLevelRow(of url: URL) -> URL {
+        let root = session.root.url.pathComponents, parts = url.pathComponents
+        guard parts.count > root.count + 1, Array(parts.prefix(root.count)) == root else { return url }
+        return session.root.url.appendingPathComponent(parts[root.count]).standardizedFileURL
+    }
+
     /// The keyboard's row shows the Honey focus ring: only while the
     /// sidebar really has the keyboard, which it has only in the key
     /// window. Otherwise the current file's capsule is all a row shows.
+    /// While the find field is up the ring is on the match, so it is
+    /// clear where the keyboard will be.
     private var showsKeyboard: Bool {
         #if DEBUG || KIRI_SELFTEST
-        focused && (appearsActive || Self.drawsAsKey)
+        (focused || findShown) && (appearsActive || Self.drawsAsKey)
         #else
-        focused && appearsActive
+        (focused || findShown) && appearsActive
         #endif
     }
 
-    /// A name is being typed in place (Rename…, New File…).
-    private var typing: Bool { session.editing(in: tabs.window) != nil }
+    /// A name is being typed in place (Rename…, New File…), or one is
+    /// being found: the keys are the field's.
+    private var typing: Bool {
+        session.editing(in: tabs.window) != nil || session.find.fieldHasFocus
+            // (The field can have AppKit's keyboard a moment before SwiftUI says so.)
+            || findShown && (tabs.window?.firstResponder as? NSTextView)?.isFieldEditor == true
+    }
 
     private var cursorIndex: Int? { rows.firstIndex { $0.node.url == session.cursor } }
 

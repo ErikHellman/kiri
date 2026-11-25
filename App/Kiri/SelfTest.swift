@@ -561,9 +561,25 @@ import os
             // File… field in that folder; -KiriSidebarName <name> then gives
             // that name (one that is taken shows the reason; pictures only
             // use such a name, so nothing is made or renamed).
+            // -KiriSidebarFind <query> then opens find in the sidebar on that
+            // query, as ⌘F with the keyboard in the sidebar does
+            // (-KiriSidebarFindNext <n> goes on n matches).
             func name() {
                 guard let window = NSApp.windows.first(where: { $0.isVisible && FolderSessions.session(for: $0)?.root.url == root }),
                       let session = FolderSessions.session(for: window) else { return }
+                if let query = UserDefaults.standard.string(forKey: "KiriSidebarFind") {
+                    FrontEditor.shared.editor(in: window)?.sidebarFocusRequest += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        session.find.open(in: window)
+                        session.find.query = query
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            for _ in 0..<UserDefaults.standard.integer(forKey: "KiriSidebarFindNext") { session.find.step(forward: true) }
+                            print("SELFTEST info sidebar find “\(query)”: \(session.find.label), on \(session.cursor?.lastPathComponent ?? "none")")
+                            fflush(stdout)
+                        }
+                    }
+                    return
+                }
                 if let path = UserDefaults.standard.string(forKey: "KiriSidebarRename") {
                     session.beginRename(URL(fileURLWithPath: path).standardizedFileURL, in: window)
                 } else if let path = UserDefaults.standard.string(forKey: "KiriSidebarNewFile") {
