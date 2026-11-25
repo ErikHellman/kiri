@@ -2,8 +2,11 @@ name: release
 
 # Pushing a version tag releases Kiri:
 #
-#   git tag -a v0.2.0 -m "What's new, in Markdown (it becomes the release notes)"
-#   git push origin v0.2.0
+#   git tag -a v0.3.2 -m "Kiri 0.3.2"
+#   git push origin v0.3.2
+#
+# The tagged commit must have the release notes, docs/release-notes/0.3.2.md
+# (scripts/release-notes.sh); without them the job stops before building.
 #
 # The job builds a universal Kiri.app with the tag's version, signs it with
 # the Developer ID, notarizes and staples the app and its disk image
@@ -58,13 +61,11 @@ jobs:
           echo "KIRI_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "KIRI_BUILD=$BUILD" >> "$GITHUB_ENV"
 
-          # The release notes: an annotated tag's message, else a line.
-          # (Checkout leaves the tag lightweight; fetch the real one.)
-          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
-          if [ "$(git cat-file -t "$TAG")" = tag ]; then
-            git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG" > "$RUNNER_TEMP/notes.md"
-          else
-            echo "Kiri $VERSION." > "$RUNNER_TEMP/notes.md"
+          # The release notes, written before tagging: every release has
+          # them (docs/RELEASING.md, Release notes).
+          if ! scripts/release-notes.sh "$VERSION" > "$RUNNER_TEMP/notes.md"; then
+            echo "::error::No release notes for $VERSION in docs/release-notes/$VERSION.md on the tagged commit"
+            exit 1
           fi
           echo "Kiri $VERSION (build $BUILD), notes:"
           cat "$RUNNER_TEMP/notes.md"
