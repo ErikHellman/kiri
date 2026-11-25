@@ -53,6 +53,7 @@ extension SelfTest {
         await markChecks(first, f)
         await edgeChecks(first, f)
         await menuChecks(first, f)
+        await findChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
         first.performClose(nil)
@@ -548,6 +549,185 @@ extension SelfTest {
         // Back to the folder window, for what comes after.
         first.makeKeyAndOrderFront(nil)
         report(SidebarFiles.revealed.isEmpty, "nothing was shown in Finder (\(SidebarFiles.revealed.count))")
+    }
+
+    /// Find in the sidebar: ⌘F, ⌘G and ⇧⌘G are the sidebar's while it has
+    /// the keyboard and the editor's when not; a match in a closed folder
+    /// opens it; files and folders are found in the sidebar's order and
+    /// round at both ends; Escape puts the row back, Return leaves the
+    /// keyboard on the match. The keys go through the menu bar as a key
+    /// press does where AppKit takes them; the field's own keys are typed
+    /// where the window is drawn, and otherwise called as they call.
+    private static func findChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        guard let session = FolderSessions.session(for: first), let editor = FrontEditor.shared.editor(in: first),
+              let ktv = findTextView(in: first.contentView) else {
+            report(false, "the folder window's session and editor for the find checks"); return
+        }
+        let find = session.find!
+        // A folder of the check's own, closed, two deep; an empty folder in
+        // one that is open (no file in it, so only its row can be found);
+        // a file at the top. None of the fixture's names has "needle" in it.
+        // And for "git": a `.git` file, as a worktree has (the tree never
+        // shows it), and a file that will be gone after the folder is read.
+        let made = ["nest/inner/a-needle.txt", "nest/inner/Needle.md", "nest/haystack.txt", "needle-root.txt",
+                    "nest/.git", "nest/inner/.gitkeep", "vanish/a.git.txt"]
+        for name in made {
+            try? FileManager.default.createDirectory(at: f.file(name).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? "\(name)\n".write(to: f.file(name), atomically: true, encoding: .utf8)
+        }
+        try? FileManager.default.createDirectory(at: f.file("sub/needles"), withIntermediateDirectories: true)
+        defer {
+            for name in ["nest", "vanish", "needle-root.txt", "sub/needles"] { try? FileManager.default.removeItem(at: f.file(name)) }
+            session.refresh()
+        }
+        if !session.expanded.contains(f.file("sub")), let sub = session.root.children.first(where: { $0.name == "sub" }) { session.toggle(sub) }
+        session.refresh()
+        editor.find.board = NSPasteboard.withUniqueName()
+        FrontEditor.shared.selfTestMain(first)
+        let top = session.visibleRows().first?.node.url
+        let closedBefore = !session.expanded.contains(f.file("nest")) && !session.visibleRows().contains { $0.node.url == f.file("nest/inner/a-needle.txt") }
+
+        /// The Edit ▸ Find item with that key, chosen (a test launch in the
+        /// background has no key window for a key press to go to).
+        func press(_ key: String, shift: Bool = false) async {
+            guard let main = NSApp.mainMenu, let menu = main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Find")?.submenu else {
+                report(false, "the Edit ▸ Find menu"); return
+            }
+            updateMenu(main)
+            let mods: NSEvent.ModifierFlags = shift ? [.shift, .command] : .command
+            guard let i = menu.items.firstIndex(where: {
+                $0.keyEquivalent == key && $0.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == mods
+            }) else { report(false, "an Edit ▸ Find item on \(shift ? "⇧" : "")⌘\(key.uppercased())"); return }
+            menu.performActionForItem(at: i)
+            await settle(120)
+        }
+        /// The sidebar has the keyboard: by ⇧⌘E where the window is drawn;
+        /// otherwise SwiftUI moves no focus, and the model is told so.
+        func giveSidebarTheKeyboard() async {
+            if !editor.sidebarHasFocus { editor.sidebarFocusRequest += 1 }
+            if !(await f.wait(f.drawn(first) ? 1.5 : 0.3) { editor.sidebarHasFocus }) { editor.sidebarHasFocus = true }
+        }
+        func at(_ name: String) -> Bool { session.cursor == f.file(name) }
+        let drawn = f.drawn(first)
+        // As in the key window, where the rows show the keyboard's ring.
+        FolderSidebar.drawsAsKey = true
+        defer { FolderSidebar.drawsAsKey = false }
+
+        // ⌘F with the keyboard in the sidebar: its field, not the find bar.
+        session.cursor = top
+        await giveSidebarTheKeyboard()
+        await press("f")
+        let opened = await f.wait(1) { find.isOpen }
+        let fieldHasKeys = drawn ? await f.wait(1.5) { find.fieldHasFocus && fieldEditor(of: first) != nil } : false
+        report(opened && !editor.find.isOpen && closedBefore,
+               "⌘F with the keyboard in the sidebar opens the sidebar's find field, not the editor's find bar (sidebar \(find.isOpen), find bar \(editor.find.isOpen))")
+        if drawn {
+            report(fieldHasKeys && editor.sidebarHasFocus, "the field has the keyboard, and the window still counts it as the sidebar's (\(find.fieldHasFocus), \(editor.sidebarHasFocus))")
+        }
+
+        // Typing: the first match at or after the row the find began on, in
+        // a folder that was closed. The folder is read in the background.
+        let textBefore = ktv.string
+        if fieldHasKeys {
+            await typeKeys("needle", in: first)
+        } else {
+            find.query = "needle"
+        }
+        let wanted = ["nest/inner/a-needle.txt", "nest/inner/Needle.md", "sub/needles", "needle-root.txt"]
+        let all = await f.wait(4) { find.found.map(\.path) == wanted }
+        let expanded = session.expanded.contains(f.file("nest")) && session.expanded.contains(f.file("nest/inner"))
+        let shown = session.visibleRows().contains { $0.node.url == f.file("nest/inner/a-needle.txt") }
+        report(find.query == "needle" && all && at("nest/inner/a-needle.txt") && expanded && shown && find.label == "1 of 4",
+               "typing “needle” finds the files and the empty folder in the sidebar's order and goes to the first, in a closed folder that opens, two deep (\(find.found.map(\.path)), \(find.label), \(fieldHasKeys ? "typed as keys" : "given without keys"))")
+        report(!editor.find.isOpen && ktv.string == textBefore && editor.find.query != "needle",
+               "typing in the sidebar's field leaves the editor's find bar and the text alone")
+        if drawn {
+            report(editor.sidebarShowsKeyboard, "the match's row shows the keyboard's ring while the field is up")
+        }
+
+        // ⌘G and ⇧⌘G, round at both ends.
+        var path: [String] = []
+        for _ in 0..<4 {
+            await press("g")
+            path.append(session.cursor?.lastPathComponent ?? "nil")
+        }
+        let wrappedDown = at("nest/inner/a-needle.txt") && find.label == "1 of 4"
+        await press("g", shift: true)
+        let wrappedUp = at("needle-root.txt") && find.label == "4 of 4"
+        report(path == ["Needle.md", "needles", "needle-root.txt", "a-needle.txt"] && wrappedDown && wrappedUp && !editor.find.isOpen,
+               "⌘G goes to each match in turn and from the last round to the first, ⇧⌘G from the first round to the last (\(path), then \(session.cursor?.lastPathComponent ?? "nil"))")
+        if fieldHasKeys {
+            // ↑ and ↓ in the field.
+            await typeKeys("\u{F701}", in: first) // ↓: round to the first again
+            let down = at("nest/inner/a-needle.txt")
+            await typeKeys("\u{F700}", in: first) // ↑
+            report(down && at("needle-root.txt"), "↓ and ↑ in the field go to the next and previous match")
+        }
+
+        // A folder found by its name, from the index's paths; and nothing found.
+        find.query = "inner"
+        let folderFound = await f.wait(1) { find.found == [SidebarSearch.Entry(path: "nest/inner", isFolder: true)] && at("nest/inner") }
+        find.query = "zzq-nothing"
+        let nothing = find.found.isEmpty && find.label == "No matches" && at("nest/inner")
+        report(folderFound && nothing, "a folder is found by its name, and a query that finds nothing says so and leaves the row where it is (\(find.label))")
+
+        // What the tree never shows, or no longer has, is not gone to: the
+        // `.git` file is not found, and the file deleted since the folder
+        // was read is let go of when ⌘G comes to it, without opening its folder.
+        try? FileManager.default.removeItem(at: f.file("vanish/a.git.txt"))
+        find.query = "git"
+        let gitFound = find.found.map(\.path)
+        await press("g")
+        report(gitFound == ["nest/inner/.gitkeep", "vanish/a.git.txt"] && at("nest/inner/.gitkeep") && find.found.map(\.path) == ["nest/inner/.gitkeep"]
+               && find.label == "1 of 1" && !session.expanded.contains(f.file("vanish")),
+               "a hidden .git file is never found, and a match deleted since the folder was read is passed over by ⌘G, its folder left closed (\(gitFound) → \(find.found.map(\.path)), \(find.label))")
+
+        // Escape: the field closes and the row is the one before ⌘F.
+        find.query = "needle"
+        if fieldHasKeys, fieldEditor(of: first) != nil {
+            await typeKeys("\u{1b}", in: first)
+        } else {
+            find.cancel()
+        }
+        let escaped = await f.wait(1) { !find.isOpen }
+        let backInTree = drawn ? await f.wait(1.5) { editor.sidebarHasFocus && !find.fieldHasFocus && fieldEditor(of: first) == nil } : true
+        report(escaped && session.cursor == top && backInTree,
+               "Escape closes the field and puts the keyboard back on the row it was on before ⌘F (\(session.cursor?.lastPathComponent ?? "nil"))")
+
+        // ⌘F again: the last query is there; Return leaves the keyboard on the match.
+        await giveSidebarTheKeyboard()
+        await press("f")
+        let reopened = await f.wait(1) { find.isOpen && at("nest/inner/a-needle.txt") }
+        await press("g")
+        let typedAgain = drawn ? await f.wait(1.5) { fieldEditor(of: first) != nil } : false
+        if typedAgain {
+            await typeKeys("\r", in: first)
+        } else {
+            find.commit()
+        }
+        let returned = await f.wait(1) { !find.isOpen }
+        let keysInTree = drawn ? await f.wait(1.5) { editor.sidebarHasFocus && !find.fieldHasFocus && fieldEditor(of: first) == nil } : true
+        await settle(300)
+        let stillHere = FrontEditor.shared.editor === editor && editor.sidebarHasFocus
+        report(reopened && find.query == "needle" && returned && at("nest/inner/Needle.md") && keysInTree && stillHere,
+               "⌘F again has the last query and goes to its first match; Return closes the field and leaves the keyboard on the match in the tree, opening nothing (\(session.cursor?.lastPathComponent ?? "nil"), \(f.strip(first)), same tab \(FrontEditor.shared.editor === editor), first responder \(first.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+
+        // ⌘G in the tree, the field closed: the next match, and the keyboard stays.
+        if !drawn { editor.sidebarHasFocus = true }
+        await press("g")
+        report(at("sub/needles") && !find.isOpen && editor.sidebarHasFocus && !editor.find.isOpen,
+               "with the field closed, ⌘G in the sidebar goes to the next match of the last query and the field stays closed (\(session.cursor?.lastPathComponent ?? "nil"))")
+        await press("g", shift: true)
+        report(at("nest/inner/Needle.md") && !find.isOpen, "and ⇧⌘G to the one before")
+
+        // With the keyboard in the editor, ⌘F is the editor's again.
+        editor.controller?.focus()
+        if !(await f.wait(1) { !editor.sidebarHasFocus }) { editor.sidebarHasFocus = false }
+        await press("f")
+        let editorFind = await f.wait(1) { editor.find.isOpen }
+        report(editorFind && !find.isOpen, "with the keyboard in the editor, ⌘F opens the editor's find bar and not the sidebar's field")
+        editor.find.close()
+        _ = await f.wait(1) { !editor.find.isOpen }
     }
 
     /// The edge between the sidebar and the editor: what a drag, a
