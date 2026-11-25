@@ -340,6 +340,8 @@ final class TabEditorSlot: NSView {
     private func documentEdited(_ range: NSRange) {
         // An edit keeps a preview tab: it is the person's file now.
         PreviewTabs.keep(tab)
+        // What's new goes with it too, as the hint does.
+        WhatsNew.shared.edited(model)
         // The first-run hint goes with the first character and stays gone.
         if untouched {
             untouched = false

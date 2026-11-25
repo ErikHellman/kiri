@@ -62,6 +62,8 @@ final class KiriTextView: NSTextView {
             model.palette.cancel()
         } else if let model, model.goToLine.isOpen {
             model.goToLine.cancel()
+        } else if let model, WhatsNew.shared.shows(in: model) {
+            WhatsNew.shared.close()
         } else {
             super.cancelOperation(sender)
         }

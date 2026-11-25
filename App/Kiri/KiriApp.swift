@@ -75,6 +75,8 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
             // after an edit (AppKit's default is never).
             NSDocumentController.shared.autosavingDelay = KiriDocumentController.recoveryDelay
             LaunchDocument.watchRestoration()
+            // Before Sparkle starts (it leaves keys of its own behind).
+            WhatsNew.launch()
         }
     }
 

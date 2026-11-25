@@ -24,6 +24,7 @@ private struct TabScreen: View {
     private var model: EditorModel { tab.model }
     private var document: KiriDocument { tab.document }
     @State private var commandLineTool = CommandLineTool.shared
+    @State private var whatsNew = WhatsNew.shared
     @State private var saveState = HoneyTaskState.idle
     @State private var saver = SaveObserver()
     /// What the layout shows: follows `folder.sidebarVisible`, animated
@@ -101,6 +102,8 @@ private struct TabScreen: View {
         // going from file to file): a Save that was under way was the
         // other one's.
         .onChange(of: tab.id) { saveState = .idle }
+        // The first tab to show after an update has What's new.
+        .onChange(of: tab.id, initial: true) { whatsNew.offer(model, document: document) }
         .onChange(of: ObjectIdentifier(document)) { saveState = .idle }
     }
 
@@ -120,9 +123,15 @@ private struct TabScreen: View {
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it. (Not
             // while the palette is open: its list would lie over the
-            // hint's lines, glass over words.)
+            // hint's lines, glass over words.) After an update, What's new
+            // takes its place until it is closed, in its look; over text,
+            // on a panel of its own. (Neither under the find bar either.)
             .overlay {
-                if model.showsStartHint, !model.palette.isOpen {
+                if whatsNew.shows(in: model), !model.palette.isOpen, !model.find.isOpen {
+                    WhatsNewNotice(notes: whatsNew.notes, onPaper: model.showsStartHint)
+                        .padding(.bottom, StartHint.bottomClearance)
+                        .transition(.opacity)
+                } else if model.showsStartHint, !model.palette.isOpen {
                     StartHint(commandLineTool: commandLineTool.status) { model.palette.open() }
                         .padding(.bottom, StartHint.bottomClearance)
                         .transition(.opacity)
@@ -148,6 +157,7 @@ private struct TabScreen: View {
             .animation(motion.shape, value: model.palette.isOpen)
             // The hint fades out; with reduced motion it is simply gone.
             .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint && !model.palette.isOpen)
+            .animation(motion.reduced ? nil : motion.quick, value: whatsNew.shows(in: model))
     }
 
     /// The toolbar row on the canvas, level with the traffic lights: in a
