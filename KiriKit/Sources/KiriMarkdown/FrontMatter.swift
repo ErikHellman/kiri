@@ -49,6 +49,9 @@ public struct FrontMatter: Equatable, Sendable {
     /// after it keeps its line numbers (which the preview's scroll
     /// matching uses).
     public static func split(_ text: String) -> (frontMatter: FrontMatter?, body: String) {
+        // (Swift's Linux Foundation doesn't split "\r\n", one Character, at
+        // "\n": CRLF goes to LF first, which keeps the line numbers.)
+        let text = text.contains("\r\n") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
         var lines = text.components(separatedBy: "\n")
         guard let first = lines.first else { return (nil, text) }
         let opener = first.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "\r", with: "")
