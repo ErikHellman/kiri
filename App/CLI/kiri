@@ -18,6 +18,8 @@ Opens files and folders in Kiri. With no paths, opens or brings up Kiri.
   kiri ~/project           open a folder in a new window with a file sidebar
   kiri new.txt             a file that doesn't exist yet opens empty; saving creates it
   git diff | kiri -        open standard input in a new untitled tab
+  adb logcat | kiri -      input that goes on is followed live, read-only,
+                           until Ctrl+C or the command ends
 
 Options:
   -n, --new-window  open in a new window instead of the front one
@@ -132,10 +134,38 @@ chmod 700 "$dir"
 request=$(mktemp "$dir/request.XXXXXXXX")
 id=$(basename "$request")
 
+stream=
+reader=
 if [ $read_stdin = yes ]; then
     input="$dir/$id.stdin"
-    cat >"$input"
-    add "stdin $input"
+    if [ -t 0 ]; then
+        # Typed at the terminal: up to Ctrl+D, as always.
+        cat >"$input"
+    else
+        # Input that ends within a second (git diff) opens as text to
+        # edit. Input that goes on (adb logcat, tail -f) is copied into a
+        # file as it comes, and Kiri follows that file read-only while
+        # this waits for the input to end or for Ctrl+C.
+        exec 3<&0
+        cat <&3 >"$input" &
+        reader=$!
+        waited=0
+        while kill -0 "$reader" 2>/dev/null && [ $waited -lt 10 ]; do
+            sleep 0.1
+            waited=$((waited + 1))
+        done
+        if kill -0 "$reader" 2>/dev/null; then
+            folder="$dir/$id.stream"
+            mkdir -p "$folder"
+            stream="$folder/Piped input.log"
+            # (The copy goes on into the moved file.)
+            mv "$input" "$stream"
+        else
+            wait "$reader" || true
+            reader=
+        fi
+    fi
+    if [ -n "$stream" ]; then add "stream $stream"; else add "stdin $input"; fi
 fi
 # Waiting with nothing to open (kiri -w) waits for a new untitled tab.
 [ -n "$entries" ] || add "untitled"
@@ -153,6 +183,14 @@ mv "$request.tmp" "$request.req"
 rm -f "$request"
 
 launch "kiri://open?id=$id"
+
+if [ -n "$reader" ]; then
+    # Copy until the input ends; Ctrl+C stops the copy (the copy itself
+    # ignores it, as a job in the background of a script does).
+    trap 'kill "$reader" 2>/dev/null; exit 130' INT TERM HUP
+    wait "$reader" || true
+    trap - INT TERM HUP
+fi
 
 [ $wait = yes ] || exit 0
 

@@ -104,11 +104,13 @@ struct LargePosition: Comparable, Hashable {
 
     /// More lines were counted (the count is under way, or the file grew).
     /// At the end, the view stays at the end, as `tail -f` does.
-    func linesAdded(previousCount: Int) {
+    func linesAdded(previousCount: Int, following: Bool) {
         model?.lineCount = file.lineCount
         // Only the lines that match show: find adds those it finds.
         guard rows == nil else { return }
-        let wasAtEnd = topLine >= maxTop(lineCount: previousCount) - 0.5 && previousCount > visibleLineCount
+        // (While the file as it opened is still being counted, the view
+        // stays where it is.)
+        let wasAtEnd = following && topLine >= maxTop(lineCount: previousCount) - 0.5
         // The last line may have been cut short while it was being written.
         cache.removeValue(forKey: previousCount - 1)
         if wasAtEnd { topLine = maxTop() }

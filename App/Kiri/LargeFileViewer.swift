@@ -33,6 +33,8 @@ struct LargeFileStatus: Equatable {
     private weak var model: EditorModel?
     private var counting: Token?
     private var lastCount = 1
+    /// The whole file as it opened has been counted.
+    private var countedOnce = false
     private var watch: Timer?
     private let queue = DispatchQueue(label: "se.hellsoft.kiri.large-file", qos: .userInitiated)
 
@@ -53,9 +55,9 @@ struct LargeFileStatus: Equatable {
         document.largeViewer = self
         lastCount = file.lineCount
         count()
-        // The size is looked at once a second: a log that is written to
+        // The size is looked at four times a second: a log that is written to
         // isn't always reported as changed.
-        watch = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+        watch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
             nonisolated(unsafe) let timer = timer
             MainActor.assumeIsolated {
                 guard let self else { timer.invalidate(); return }
@@ -104,6 +106,7 @@ struct LargeFileStatus: Equatable {
                     guard let self, self.counting === token else { return }
                     self.counting = nil
                     self.linesAdded()
+                    self.countedOnce = true
                     self.publish(counting: nil)
                     // It grew while it was being counted. (The once-a-second
                     // look may have seen the new size already.)
@@ -118,7 +121,9 @@ struct LargeFileStatus: Equatable {
         guard now != lastCount else { return }
         let before = lastCount
         lastCount = now
-        view.linesAdded(previousCount: before)
+        // Once counted, lines that come are the file growing: a view at
+        // the end follows them.
+        view.linesAdded(previousCount: before, following: countedOnce)
         model?.find.largeFileGrew()
     }
 

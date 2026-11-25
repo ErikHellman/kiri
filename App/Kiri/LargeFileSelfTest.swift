@@ -240,6 +240,41 @@ extension SelfTest {
         }
         KiriDocument.largeFileThresholdForTests = nil
 
+        // Piped input that goes on (`adb logcat | kiri -`): the file the
+        // script copies it into opens read-only at once, whatever its
+        // size, and follows it; its tab closed, the file and its folder go.
+        LargeFileAnswer.forTests = false
+        let streamFolder = KiriCLI.requestDirectory.appendingPathComponent("request.selftest\(UInt32.random(in: 0...UInt32.max)).stream")
+        try? FileManager.default.createDirectory(at: streamFolder, withIntermediateDirectories: true)
+        let streamFile = streamFolder.appendingPathComponent("Piped input.log")
+        try? Data("first line\n".utf8).write(to: streamFile)
+        KiriCLI.open(KiriCLI.Request(entries: [.stream(streamFile)]))
+        var streamDoc: KiriDocument?
+        for _ in 0..<60 where streamDoc == nil {
+            await settle(50)
+            streamDoc = NSDocumentController.shared.document(for: streamFile.standardizedFileURL) as? KiriDocument
+        }
+        if let streamDoc, let streamTab = DocumentWindow.tab(of: streamDoc), let streamViewer = streamTab.largeViewer {
+            await settle(200)
+            if let handle = try? FileHandle(forWritingTo: streamFile) {
+                try? handle.seekToEnd()
+                for i in 0..<200 { try? handle.write(contentsOf: Data("streamed line \(i)\n".utf8)) }
+                try? handle.close()
+            }
+            for _ in 0..<40 where streamViewer.file.lineCount < 202 { await settle(50) }
+            await settle(100)
+            let lastShown = streamViewer.view.topLine + 30 >= Double(streamViewer.file.lineCount)
+            report(streamDoc.isLargeFile && streamViewer.file.lineCount == 202 && lastShown,
+                   "piped input that goes on opens read-only and follows what comes, at its end (\(streamViewer.file.lineCount), top \(streamViewer.view.topLine))")
+            streamDoc.close()
+            await settle(100)
+            report(!FileManager.default.fileExists(atPath: streamFolder.path), "closing piped input deletes its file and folder")
+        } else {
+            report(false, "piped input that goes on opens in the read-only viewer")
+            try? FileManager.default.removeItem(at: streamFolder)
+        }
+        LargeFileAnswer.forTests = true
+
         // Under the limit: the editor, as always.
         let small = folder.appendingPathComponent("small.log")
         try? Data("small\n".utf8).write(to: small)

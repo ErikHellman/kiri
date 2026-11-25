@@ -141,7 +141,8 @@ extension UTType {
     override nonisolated func read(from url: URL, ofType typeName: String) throws {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         let large = MainActor.assumeIsolated { () -> Bool? in
-            guard size >= Self.largeFileThreshold || isLargeFile else { return nil }
+            let stream = (NSDocumentController.shared as? KiriDocumentController)?.isStream(url) == true
+            guard size >= Self.largeFileThreshold || isLargeFile || stream else { return nil }
             return openLargeFile(at: url, size: size)
         }
         switch large {
@@ -434,6 +435,7 @@ extension UTType {
     /// document. `kiri -w` and the files `kiri` made are told.
     override func close() {
         largeViewer?.stop()
+        if let fileURL { (NSDocumentController.shared as? KiriDocumentController)?.endStream(fileURL) }
         DocumentWindow.documentWillClose(self)
         super.close()
         DispatchQueue.main.async {

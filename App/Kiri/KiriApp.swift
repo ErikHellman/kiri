@@ -183,7 +183,22 @@ final class KiriDocumentController: NSDocumentController {
     /// brought back at launch).
     func opensQuietly(_ url: URL) -> Bool {
         let url = url.standardizedFileURL
-        return reopening.contains(url) || glanced.contains(url)
+        return reopening.contains(url) || glanced.contains(url) || streams.contains(url)
+    }
+
+    /// Piped input that goes on (`adb logcat | kiri -`), copied into a
+    /// file by the `kiri` script as it comes: read-only in the large-file
+    /// viewer whatever its size, following it as it grows.
+    private var streams: Set<URL> = []
+
+    func stream(_ url: URL) { streams.insert(url.standardizedFileURL) }
+    func isStream(_ url: URL?) -> Bool { url.map { streams.contains($0.standardizedFileURL) } ?? false }
+
+    /// The stream's tab closed: its file goes, with the folder the script
+    /// made for it.
+    func endStream(_ url: URL) {
+        guard streams.remove(url.standardizedFileURL) != nil else { return }
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }
 
     /// The files AppKit is reopening, until each has been read (which may

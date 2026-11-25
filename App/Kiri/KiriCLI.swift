@@ -14,6 +14,9 @@ import KiriKit
 ///     file <line> <column> <path> (0 for no position; a missing file opens empty)
 ///     folder <path>               (a new window with a file sidebar)
 ///     stdin <path>                (a new untitled tab with this text; the file is deleted)
+///     stream <path>               (input that goes on, `adb logcat | kiri -`: the file the
+///                                  script copies it into, followed read-only as it grows;
+///                                  deleted, with its folder, when the tab closes)
 ///     untitled                    (a new untitled tab)
 @MainActor enum KiriCLI {
     static let scheme = "kiri"
@@ -27,6 +30,7 @@ import KiriKit
             case file(URL, line: Int, column: Int)
             case folder(URL)
             case stdin(URL)
+            case stream(URL)
             case untitled
         }
 
@@ -51,6 +55,7 @@ import KiriKit
                 case "wait": waitMarker = URL(fileURLWithPath: rest)
                 case "folder": entries.append(.folder(URL(fileURLWithPath: rest, isDirectory: true)))
                 case "stdin": entries.append(.stdin(URL(fileURLWithPath: rest)))
+                case "stream": entries.append(.stream(URL(fileURLWithPath: rest)))
                 case "untitled": entries.append(.untitled)
                 case "file":
                     let (l, r1) = Self.split(rest)
@@ -162,6 +167,12 @@ import KiriKit
                 try? FileManager.default.removeItem(at: url)
                 let text = (try? TextFile(data: data))?.text ?? String(decoding: data, as: UTF8.self)
                 openUntitled(text: text)
+            case .stream(let url):
+                // Only a file the script made, in its folder.
+                guard url.standardizedFileURL.path.hasPrefix(requestDirectory.standardizedFileURL.path + "/"),
+                      FileManager.default.fileExists(atPath: url.path) else { run(); return }
+                (NSDocumentController.shared as? KiriDocumentController)?.stream(url)
+                openFile(url, line: 0, column: 0)
             case .untitled, .folder: openUntitled(text: nil)
             }
         }
