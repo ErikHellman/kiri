@@ -29,6 +29,11 @@ import SwiftUI
     var sidebarFocusRequest = 0
     /// Set by the editor once it exists.
     @ObservationIgnored weak var controller: EditorController?
+    /// The read-only viewer, when the tab shows a large file: find and Go
+    /// to Line work on it instead of the editor.
+    @ObservationIgnored weak var large: LargeFileViewer?
+    /// What the status bar says of a large file, while the tab shows one.
+    var largeStatus: LargeFileStatus?
     /// Find and replace (⌘F) and the command palette (⌘K): the glass bars
     /// that float over the top of the editor, one at a time (opening one
     /// closes the other). Go to Line (⌘L) is the palette's `:` mode, and
@@ -80,6 +85,7 @@ struct EditorView: NSViewRepresentable {
         c.setWrap(wrapLines)
         tab.container.textView.setAnimation(animation)
         c.setCrossfade(animation != .none)
+        tab.largeViewer?.view.applyFont(family: fontFamily, scale: fontScale)
         slot.show(tab)
     }
 }
@@ -106,6 +112,10 @@ final class TabEditorSlot: NSView {
     }
 
     func show(_ tab: DocumentTab) {
+        if let large = tab.largeViewer {
+            showLarge(tab, large.view)
+            return
+        }
         let editor = tab.container
         if self.tab !== tab || editor.superview !== self {
             for view in subviews where view !== editor { view.removeFromSuperview() }
@@ -128,9 +138,29 @@ final class TabEditorSlot: NSView {
         #endif
     }
 
+    /// A large file's viewer goes in the editor's place. Its text doesn't
+    /// fade in: nothing of a large file animates.
+    private func showLarge(_ tab: DocumentTab, _ view: LargeFileView) {
+        tab.arriving = false
+        guard self.tab !== tab || view.superview !== self else { return }
+        for other in subviews where other !== view { other.removeFromSuperview() }
+        self.tab = tab
+        view.frame = bounds
+        view.autoresizingMask = [.width, .height]
+        if view.superview !== self { addSubview(view) }
+        if !tab.installed, window != nil {
+            tab.installed = true
+            LaunchTimer.editorShown()
+            #if DEBUG || KIRI_SELFTEST
+            SelfTest.largeFileShown(tab)
+            #endif
+        }
+    }
+
     /// `tab`'s text fades in (`Arrival`).
     func arrive(_ tab: DocumentTab) {
         tab.arriving = false
+        guard tab.largeViewer == nil else { return }
         guard arrival != .none, tab.container.superview === self else { return }
         tab.container.wantsLayer = true
         guard let layer = tab.container.layer else { return }
@@ -422,7 +452,7 @@ final class TabEditorSlot: NSView {
         highlighter?.visibleRangeChanged()
     }
 
-    var lineCount: Int { lineIndex.lineCount }
+    var lineCount: Int { tab?.largeViewer?.file.lineCount ?? lineIndex.lineCount }
 
     /// Where a 1-based line (and column) is in the text.
     private func caret(line: Int, column: Int) -> NSRange {
@@ -433,6 +463,12 @@ final class TabEditorSlot: NSView {
 
     /// Moves the caret to a 1-based line (and column) and scrolls to it.
     func goTo(line: Int, column: Int = 1) {
+        if let large = tab?.largeViewer?.view {
+            large.mark(line: nil)
+            large.goTo(line: line - 1, column: column - 1)
+            large.window?.makeFirstResponder(large)
+            return
+        }
         guard let textView else { return }
         let r = caret(line: line, column: column)
         textView.setSelectedRange(r)
@@ -444,6 +480,11 @@ final class TabEditorSlot: NSView {
     /// and marked (a pulse, or a steady band without motion), while the
     /// keyboard stays in the Go to Line field.
     func previewLine(_ line: Int, column: Int = 1) {
+        if let large = tab?.largeViewer?.view {
+            large.goTo(line: line - 1, column: column - 1)
+            large.mark(line: line - 1)
+            return
+        }
         guard let textView else { return }
         let r = caret(line: line, column: column)
         textView.setSelectedRange(r)
@@ -543,6 +584,10 @@ final class TabEditorSlot: NSView {
     }
 
     func focus() {
+        if let large = tab?.largeViewer?.view {
+            large.window?.makeFirstResponder(large)
+            return
+        }
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
     }

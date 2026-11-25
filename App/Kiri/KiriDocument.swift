@@ -84,6 +84,76 @@ extension UTType {
         return document
     }
 
+    // MARK: Large files
+
+    /// Files at least this large open in the read-only viewer
+    /// (`LargeFileView`), after asking: the editor would hold the whole
+    /// text in memory, several times over.
+    static let largeFileThreshold = 100 << 20
+
+    /// The file, when it opened read-only for being too large for the
+    /// editor. `text` is empty then, and nothing saves.
+    private(set) var largeFile: LargeFile?
+    /// The document is a large file, shown read-only: no editor, no
+    /// syntax colors, no animations of its text, and no saving.
+    var isLargeFile: Bool { largeFile != nil }
+    /// The viewer that shows it, while a tab does.
+    @ObservationIgnored weak var largeViewer: LargeFileViewer?
+
+    /// The viewer opened the file again (it got shorter on disk).
+    func largeFileReopened(_ new: LargeFile) { largeFile = new }
+
+    /// A file of `size` bytes at `url` is too large for the editor: whether
+    /// to open it read-only, asking first unless it is reopened as it was
+    /// (Revert, a restored window) or only looked at (the folder
+    /// sidebar's preview). False is Cancel.
+    private func openLargeFile(at url: URL, size: Int) -> Bool {
+        if isLargeFile { return true }
+        let controller = NSDocumentController.shared as? KiriDocumentController
+        if controller?.opensQuietly(url) == true { return true }
+        #if DEBUG || KIRI_SELFTEST
+        if let answer = LargeFileAnswer.forTests { return answer }
+        #endif
+        let alert = NSAlert()
+        let name = url.lastPathComponent
+        let bytes = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+        alert.messageText = "“\(name)” is \(bytes)"
+        alert.informativeText = "Files this large open read-only, for reading and searching. Lines show as they "
+            + "are needed, and search runs on the whole file."
+        alert.addButton(withTitle: "Open Read-Only")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    override nonisolated func read(from url: URL, ofType typeName: String) throws {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let large = MainActor.assumeIsolated { () -> Bool? in
+            guard size >= Self.largeFileThreshold || isLargeFile else { return nil }
+            return openLargeFile(at: url, size: size)
+        }
+        switch large {
+        case nil:
+            try super.read(from: url, ofType: typeName)
+        case false?:
+            throw CocoaError(.userCancelled)
+        case true?:
+            let opened = try LargeFile(url: url)
+            MainActor.assumeIsolated {
+                largeFile = opened
+                file = TextFile()
+                text = ""
+                encoding = .utf8
+                lineEnding = .lf
+                hasBOM = false
+                if let largeViewer, largeViewer.file !== opened { largeViewer.fileMayHaveChanged() }
+                if !counted {
+                    counted = true
+                    DispatchQueue.main.async { Telemetry.fileOpened(language: .plainText, bytes: size) }
+                }
+            }
+        }
+    }
+
     // MARK: Reading
 
     override nonisolated func read(from fileWrapper: FileWrapper, ofType typeName: String) throws {
@@ -121,6 +191,8 @@ extension UTType {
     // MARK: Writing
 
     override func data(ofType typeName: String) throws -> Data {
+        // A large file is never written: its text is not here.
+        if isLargeFile { throw CocoaError(.fileWriteNoPermission) }
         do { return try contents().data() } catch { throw CocoaError(.fileWriteInapplicableStringEncoding) }
     }
 
@@ -158,6 +230,12 @@ extension UTType {
     /// being worked on. (A recovery copy is no save.)
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
                        completionHandler: @escaping (Error?) -> Void) {
+        // A large file is read-only. (Cancelled, so no alert says so:
+        // Save is off in the menus and on the toolbar already.)
+        if isLargeFile {
+            completionHandler(CocoaError(.userCancelled))
+            return
+        }
         super.save(to: url, ofType: typeName, for: saveOperation) { error in
             if error == nil, saveOperation != .autosaveElsewhereOperation {
                 MainActor.assumeIsolated { PreviewTabs.keep(self) }
@@ -204,6 +282,7 @@ extension UTType {
 
     /// The language the file's name, or its first line, says it is in.
     var detectedLanguage: Language {
+        if isLargeFile { return .plainText }
         let firstLine = file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         return Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
     }
@@ -220,6 +299,11 @@ extension UTType {
     }
 
     private func reloadIfChangedOnDisk() {
+        // A large file follows its file itself (`LargeFileViewer`).
+        if isLargeFile {
+            largeViewer?.fileMayHaveChanged()
+            return
+        }
         // The document's own save is not news: it sets `fileModificationDate`.
         guard !isDocumentEdited, let fileURL, let fileType,
               let onDisk = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date,
@@ -233,7 +317,7 @@ extension UTType {
     /// undoable edit, so the document turns dirty.
     func change<V: Equatable>(_ keyPath: ReferenceWritableKeyPath<KiriDocument, V>, to new: V, actionName: String) {
         let old = self[keyPath: keyPath]
-        guard old != new else { return }
+        guard old != new, !isLargeFile else { return }
         self[keyPath: keyPath] = new
         // Unsaved changes, so no longer a preview.
         PreviewTabs.keep(self)
@@ -246,6 +330,21 @@ extension UTType {
     func setEncoding(_ new: TextEncoding) { change(\.encoding, to: new, actionName: "Change Encoding") }
     func setLineEnding(_ new: LineEnding) { change(\.lineEnding, to: new, actionName: "Change Line Endings") }
     func setByteOrderMark(_ new: Bool) { change(\.hasBOM, to: new, actionName: "Change Byte Order Mark") }
+
+    /// A large file has nothing to save, whatever happens to the (empty,
+    /// unseen) editor behind it.
+    override func updateChangeCount(_ change: NSDocument.ChangeType) {
+        if isLargeFile { return }
+        super.updateChangeCount(change)
+    }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if isLargeFile, let action = item.action,
+           [#selector(save(_:)), #selector(saveAs(_:)), #selector(saveTo(_:)), #selector(duplicate(_:))].contains(action) {
+            return false
+        }
+        return super.validateUserInterfaceItem(item)
+    }
 
     // MARK: Tabs and panels
 
@@ -306,6 +405,7 @@ extension UTType {
     /// Its tab goes first (the window with its last tab), then the
     /// document. `kiri -w` and the files `kiri` made are told.
     override func close() {
+        largeViewer?.stop()
         DocumentWindow.documentWillClose(self)
         super.close()
         DispatchQueue.main.async {

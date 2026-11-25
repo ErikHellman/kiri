@@ -178,6 +178,24 @@ final class KiriDocumentController: NSDocumentController {
         kept(document(for: window)?.fileURL)
     }
 
+    /// Large files open without asking whether to open them read-only:
+    /// one that is only looked at, and one AppKit reopens (a window
+    /// brought back at launch).
+    func opensQuietly(_ url: URL) -> Bool {
+        reopening > 0 || glanced.contains(url.standardizedFileURL)
+    }
+
+    private var reopening = 0
+
+    override func reopenDocument(for urlOrNil: URL?, withContentsOf contentsURL: URL, display displayDocument: Bool,
+                                 completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
+        reopening += 1
+        super.reopenDocument(for: urlOrNil, withContentsOf: contentsURL, display: displayDocument) { document, alreadyOpen, error in
+            completionHandler(document, alreadyOpen, error)
+        }
+        reopening -= 1
+    }
+
     /// The file at `url` did not open after all.
     func forgetGlance(at url: URL) { glanced.remove(url.standardizedFileURL) }
 

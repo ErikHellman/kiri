@@ -208,7 +208,8 @@ private struct TabScreen: View {
             }
             Spacer(minLength: 0)
             HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, pending: tabs.dirty, action: save)
-                .help("Save (⌘S)")
+                .help(document.isLargeFile ? "Read-only: large files open for reading and searching" : "Save (⌘S)")
+                .disabled(document.isLargeFile)
         }
         // The whole row moves with Save's outline, on the same spring: the
         // strip takes up or gives back the width without a jump.
@@ -223,7 +224,7 @@ private struct TabScreen: View {
     }
 
     private func save() {
-        guard saveState == .idle, let doc = tabs.document else { return }
+        guard saveState == .idle, let doc = tabs.document, !document.isLargeFile else { return }
         saveState = .busy
         saver.save(doc) { saved in
             saveState = saved ? .done : .idle

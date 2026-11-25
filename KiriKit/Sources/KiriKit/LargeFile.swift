@@ -274,7 +274,10 @@ public final class LargeFile: @unchecked Sendable {
     /// The text of lines `lines`, as `lineRanges` finds them: a line
     /// longer than `displayLimit` bytes is cut there. Bytes that aren't
     /// UTF-8 show as U+FFFD.
-    public func lines(_ lines: Range<Int>) -> [String] {
+    public func lines(_ lines: Range<Int>) -> [String] { textLines(lines).map(\.text) }
+
+    /// Lines `lines`: their bytes in the file and their text, as `lines`.
+    public func textLines(_ lines: Range<Int>) -> [(bytes: Range<Int>, text: String)] {
         let ranges = lineRanges(lines)
         guard let first = ranges.first, let last = ranges.last else { return [] }
         let span = first.lowerBound..<min(last.upperBound, first.lowerBound + 64 << 20)
@@ -282,8 +285,8 @@ public final class LargeFile: @unchecked Sendable {
         return ranges.map { r in
             let lo = r.lowerBound - span.lowerBound
             let hi = min(r.upperBound, r.lowerBound + Self.displayLimit) - span.lowerBound
-            guard lo >= 0, lo <= hi, hi <= bytes.count else { return text(of: r) }
-            return String(decoding: bytes[lo..<hi], as: UTF8.self)
+            guard lo >= 0, lo <= hi, hi <= bytes.count else { return (r, text(of: r)) }
+            return (r, String(decoding: bytes[lo..<hi], as: UTF8.self))
         }
     }
 

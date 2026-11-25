@@ -58,12 +58,32 @@ struct EditorStatusBar: View {
 
     private func bar(_ items: Set<Item>, _ resting: Bool) -> some View {
         HoneyStatusBar(resting: resting) {
-            if items.contains(.language) { language }
-            position
-            if items.contains(.indent) { indent }
-            if items.contains(.encoding) { encodingMenu }
-            if items.contains(.lineEnding) { lineEndingMenu }
+            if let large = model.largeStatus {
+                // A large file: where the caret is, and the file itself.
+                position
+                if items.contains(.encoding) { largeFile(large) }
+            } else {
+                if items.contains(.language) { language }
+                position
+                if items.contains(.indent) { indent }
+                if items.contains(.encoding) { encodingMenu }
+                if items.contains(.lineEnding) { lineEndingMenu }
+            }
         }
+    }
+
+    /// "Read-only · 3.7 GB", and how far the line count has got while it
+    /// is still under way.
+    private func largeFile(_ status: LargeFileStatus) -> some View {
+        let counting = status.counting.map { "Counting lines \(Int($0 * 100))%" }
+        let text = ["Read-only", status.size, counting].compactMap { $0 }.joined(separator: " · ")
+        // While counting, room for "100%" so the bar keeps its width.
+        let widest = status.counting == nil ? [] : [["Read-only", status.size, "Counting lines 100%"].joined(separator: " · ")]
+        return HoneyStatusItem(text, systemImage: "lock", reserving: widest)
+            .help("Large files open read-only, for reading and searching")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(.isStaticText)
     }
 
     private func highlight(_ item: Item) -> HoneyStatusHighlight? {

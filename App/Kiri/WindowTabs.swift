@@ -39,6 +39,9 @@ import SwiftUI
     @ObservationIgnored private var languageFor: URL?
     /// Its place in the list it was restored from (`TabRestoration`).
     @ObservationIgnored var restoreIndex: Int?
+    /// The read-only viewer that shows a large file in the editor's place
+    /// (`KiriDocument.isLargeFile`).
+    @ObservationIgnored private(set) var largeViewer: LargeFileViewer?
 
     init(document: KiriDocument, arriving: Bool) {
         Self.lastID += 1
@@ -55,8 +58,21 @@ import SwiftUI
         languageFor = document.location
         model.language = document.detectedLanguage
         controller.setLanguage(model.language)
+        updateLargeViewer()
         trackLocation()
         if arriving { arrive() }
+    }
+
+    /// A large file shows in a viewer of its own; any other in the editor.
+    private func updateLargeViewer() {
+        if let file = document.largeFile {
+            guard largeViewer?.document !== document else { return }
+            largeViewer?.stop()
+            largeViewer = LargeFileViewer(document: document, file: file, model: model)
+        } else if let viewer = largeViewer {
+            viewer.stop()
+            largeViewer = nil
+        }
     }
 
     /// The text fades in: now, if the tab shows, or when it next does.
@@ -71,6 +87,7 @@ import SwiftUI
         guard new !== document else { return }
         document = new
         controller.show(new)
+        updateLargeViewer()
         languageFor = new.location
         trackLocation()
         arrive()
