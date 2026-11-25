@@ -199,6 +199,9 @@ final class TabEditorSlot: NSView {
     var pendingPosition: FilePosition?
     /// `EditorView` has given the editor the settings' font and wrapping.
     var configured = false
+    /// `restorePosition` is putting the selection back (any other change
+    /// of the selection wins over the scroll still to be put back).
+    var restoringSelection = false
     private var rememberWork: DispatchWorkItem?
 
     var currentLineIndex: LineIndex { lineIndex }
@@ -407,6 +410,7 @@ final class TabEditorSlot: NSView {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        if !restoringSelection, !loading { pendingPosition = nil }
         updateCaret()
         model.find.selectionChanged()
         positionChanged()

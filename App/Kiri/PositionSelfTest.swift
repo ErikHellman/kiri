@@ -89,6 +89,33 @@ extension SelfTest {
                "opened again, the file is back where it was: the caret on line \(again.model.line), line \(back.map { $0.topLine + 1 } ?? 0) at the top")
         await close(again)
 
+        // Lines that wrap, of very different lengths: the line at the top
+        // comes back at the top, also once the text around it is laid out.
+        let w = dir.appendingPathComponent("wrapped.txt")
+        let words = (1...300).map { i in
+            "\(i): " + String(repeating: "a word or two ", count: i % 7 == 0 ? 60 : i % 3 == 0 ? 12 : 1)
+        }
+        try? Data(words.joined(separator: "\n").utf8).write(to: w)
+        if let wrapped = await open(w), await shown(wrapped) {
+            let wraps = wrapped.container.textView.textContainer?.widthTracksTextView == true
+            scroll(wrapped, topLine: 222, select: NSRange(location: wrapped.controller.currentLineIndex.starts[230], length: 0))
+            await settle(100)
+            let before = wrapped.controller.currentPosition()
+            await close(wrapped)
+            if let reopened = await open(w), await shown(reopened) {
+                let at = reopened.controller.currentPosition()?.topLine
+                await settle(300)
+                let later = reopened.controller.currentPosition()?.topLine
+                report(wraps && before?.topLine == 222 && at == 222 && later == 222,
+                       "a file of wrapped lines of every length comes back with the same line at the top, and it stays there (wrapping \(wraps); \([before?.topLine, at, later].map { ($0 ?? -1) + 1 }))")
+                await close(reopened)
+            } else {
+                report(false, "the wrapped file opens again")
+            }
+        } else {
+            report(false, "the wrapped file opens")
+        }
+
         // `kiri file:12` wins over the kept position.
         let cliDoc: NSDocument? = await withCheckedContinuation { c in
             NSDocumentController.shared.openDocument(withContentsOf: a, display: true) { d, _, _ in

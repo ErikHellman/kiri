@@ -111,7 +111,9 @@ extension EditorController {
               let textView else { return }
         let index = currentLineIndex
         let sel = position.selection(in: index)
+        restoringSelection = true
         textView.setSelectedRange(NSRange(location: sel.lowerBound, length: sel.count))
+        restoringSelection = false
         pendingPosition = position.scrolledToTop ? nil : position
         applyPendingPosition()
     }
