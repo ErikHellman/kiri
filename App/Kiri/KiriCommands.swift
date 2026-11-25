@@ -136,7 +136,9 @@ struct KiriCommands: Commands {
         // Substitutions and Speech: prose tools that a code editor with
         // spell checking and smart quotes off has no use for. The Find
         // items drive the front document's own find bar (`FindController`),
-        // whichever has the keyboard, the editor or a field of the bar. The
+        // whichever has the keyboard, the editor or a field of the bar; Find…
+        // and Find Next and Previous find a file instead while the folder
+        // sidebar has the keyboard (`SidebarFind`). The
         // Transformations send the standard action down the responder
         // chain, as AppKit's own items do. None is ever disabled: with
         // nothing to act on, the action goes nowhere.
@@ -352,10 +354,17 @@ struct KiriCommands: Commands {
 
     private static var editor: EditorModel? { FrontEditor.shared.editor }
 
-    /// A find command, for the front document's find bar. In a window
-    /// without an editor (Settings, Keyboard Shortcuts) the standard action
-    /// goes down the responder chain instead, to whatever text has focus.
+    /// A find command, for the front document's find bar. While the folder
+    /// sidebar has the keyboard (its rows or its find field), Find…, Find
+    /// Next and Find Previous find a file or folder there instead
+    /// (`SidebarFind`). In a window without an editor (Settings, Keyboard
+    /// Shortcuts) the standard action goes down the responder chain
+    /// instead, to whatever text has focus.
     static func find(_ action: FindController.Action) {
+        if let editor, editor.sidebarHasFocus, let folder = FrontEditor.shared.folder, folder.sidebarVisible,
+           folder.find.perform(action, in: FrontEditor.shared.tabs?.window) {
+            return
+        }
         if action == .show || action == .showReplace { Telemetry.track("find_open", ["replace": action == .showReplace]) }
         if let editor {
             editor.find.perform(action)
