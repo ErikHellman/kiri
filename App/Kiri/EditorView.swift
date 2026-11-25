@@ -86,6 +86,7 @@ struct EditorView: NSViewRepresentable {
         tab.container.textView.setAnimation(animation)
         c.setCrossfade(animation != .none)
         tab.largeViewer?.view.applyFont(family: fontFamily, scale: fontScale)
+        if tab.showsMarkdownPreview { tab.markdownPreview?.restyle() }
         // (Now its font and wrapping are the settings', a position kept
         // for the file can be put back: in `show`.)
         c.configured = true
@@ -117,6 +118,10 @@ final class TabEditorSlot: NSView {
     func show(_ tab: DocumentTab) {
         if let large = tab.largeViewer {
             showLarge(tab, large.view)
+            return
+        }
+        if tab.showsMarkdownPreview, let preview = tab.markdownPreview, preview.isReady {
+            showPreview(tab, preview.webView)
             return
         }
         let editor = tab.container
@@ -164,6 +169,17 @@ final class TabEditorSlot: NSView {
             SelfTest.largeFileShown(tab)
             #endif
         }
+    }
+
+    /// The Markdown preview goes in the editor's place (`MarkdownPreview`).
+    private func showPreview(_ tab: DocumentTab, _ view: PreviewWebView) {
+        tab.arriving = false
+        guard self.tab !== tab || view.superview !== self else { return }
+        for other in subviews where other !== view { other.removeFromSuperview() }
+        self.tab = tab
+        view.frame = bounds
+        view.autoresizingMask = [.width, .height]
+        if view.superview !== self { addSubview(view) }
     }
 
     /// `tab`'s text fades in (`Arrival`).
@@ -291,6 +307,7 @@ final class TabEditorSlot: NSView {
         container?.updateGutterWidth()
         highlighter?.textReplaced()
         updateCaret()
+        tab?.markdownTextChanged()
     }
 
     /// Another document takes this editor (the preview tab going from
@@ -396,6 +413,9 @@ final class TabEditorSlot: NSView {
     private func documentEdited(_ range: NSRange) {
         // An edit keeps a preview tab: it is the person's file now.
         PreviewTabs.keep(tab)
+        // An edit made while the Markdown preview shows (a menu command,
+        // undo) shows the text it changed.
+        if tab?.showsMarkdownPreview == true { tab?.setMarkdownPreview(false) }
         // What's new goes with it too, as the hint does.
         WhatsNew.shared.edited(model)
         // The first-run hint goes with the first character and stays gone.
@@ -628,6 +648,10 @@ final class TabEditorSlot: NSView {
     func focus() {
         if let large = tab?.largeViewer?.view {
             large.window?.makeFirstResponder(large)
+            return
+        }
+        if let tab, tab.showsMarkdownPreview, let web = tab.markdownPreview?.webView, web.window != nil {
+            web.window?.makeFirstResponder(web)
             return
         }
         guard let textView else { return }

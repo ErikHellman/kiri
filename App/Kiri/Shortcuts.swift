@@ -32,6 +32,9 @@ enum Keys {
     static let smaller = KeyboardShortcut("-", modifiers: .command)
     static let actualSize = KeyboardShortcut("0", modifiers: .command)
     static let wrapLines = KeyboardShortcut("w", modifiers: [.control, .command])
+    /// The Markdown preview: P for preview, with the Control of the other
+    /// "how this document shows" keys. (⌘P is Go to File.)
+    static let markdownPreview = KeyboardShortcut("p", modifiers: [.control, .command])
     static let nextTab = KeyboardShortcut("]", modifiers: [.shift, .command])
     static let previousTab = KeyboardShortcut("[", modifiers: [.shift, .command])
     static let toggleComment = KeyboardShortcut("/", modifiers: .command)
@@ -229,6 +232,7 @@ struct ShortcutGroup: Identifiable {
             Item("Smaller text", Keys.smaller),
             Item("Actual size", Keys.actualSize),
             Item("Wrap lines", Keys.wrapLines),
+            Item("Markdown preview / text", Keys.markdownPreview),
             Item("Full screen", "⌃⌘F"),
             Item("Keyboard shortcuts", Keys.shortcuts),
         ]),

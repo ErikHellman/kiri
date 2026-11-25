@@ -16,6 +16,11 @@ public extension Honey {
         for url in urls { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
     }
 
+    /// The bundled Nunito files, for pages that draw with them in a web
+    /// view (the Markdown preview), which fonts registered for the app
+    /// don't reach.
+    static var fontURLs: [URL] { Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? [] }
+
     /// In-app text size, 1 = 100%. macOS has no Dynamic Type, so the app sets
     /// this from its settings and rebuilds its views.
     nonisolated(unsafe) static var textScale: CGFloat = 1

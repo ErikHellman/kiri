@@ -25,6 +25,11 @@ import SwiftUI
     @ObservationIgnored let container = EditorContainerView(frame: .zero)
     /// The folder sidebar's preview tab (`PreviewTabs`).
     var preview = false
+    /// The tab shows its Markdown rendered, in the editor's place
+    /// (`setMarkdownPreview`).
+    var showsMarkdownPreview = false
+    /// Made the first time the tab shows its Markdown rendered.
+    @ObservationIgnored var markdownPreview: MarkdownPreview?
     /// The file arrived (a new tab, or the preview tab taking another
     /// file) and its text is to fade in when it next shows
     /// (`TabEditorSlot.arrive`).
@@ -68,6 +73,8 @@ import SwiftUI
     /// The document's file grew past the limit while it was open, and it
     /// was read again read-only: the viewer takes the editor's place.
     func documentBecameLarge() {
+        // (Large files are read-only, and have no preview.)
+        showsMarkdownPreview = false
         updateLargeViewer()
         if let slot = window?.editorSlot, window?.tabs.selectedTab === self { slot.show(self) }
     }

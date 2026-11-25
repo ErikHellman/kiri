@@ -909,6 +909,8 @@ extension FindController {
     /// Escape goes back to.
     func begin() {
         guard !isOpen, let controller, let textView = controller.textView else { return }
+        // Lines are the text's: a Markdown preview shows it.
+        controller.tab?.setMarkdownPreview(false)
         text = ""
         isInvalid = false
         previewing = false

@@ -46,9 +46,12 @@ let package = Package(
     products: [
         .library(name: "KiriKit", targets: ["KiriKit"]),
         .library(name: "KiriSyntax", targets: ["KiriSyntax"]),
+        .library(name: "KiriMarkdown", targets: ["KiriMarkdown"]),
     ],
     dependencies: [
         .package(url: "https://github.com/tree-sitter/swift-tree-sitter", exact: "0.10.0"),
+        // CommonMark + GitHub tables, task lists and strikethrough (cmark-gfm), for the Markdown preview.
+        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
     ] + grammars.map { .package(url: $0.url, exact: $0.version) },
     targets: [
         .target(name: "KiriKit", resources: [
@@ -64,7 +67,16 @@ let package = Package(
                 .copy("Queries"),
             ]
         ),
+        // The Markdown preview: Markdown and front matter to HTML, and the
+        // page's stylesheet and scripts (Mermaid among them), which the app
+        // shows in a web view. Plain Foundation, so it tests on Linux.
+        .target(
+            name: "KiriMarkdown",
+            dependencies: ["KiriKit", .product(name: "Markdown", package: "swift-markdown")],
+            resources: [.copy("Web")]
+        ),
         .testTarget(name: "KiriKitTests", dependencies: ["KiriKit"]),
+        .testTarget(name: "KiriMarkdownTests", dependencies: ["KiriMarkdown"]),
         .testTarget(name: "KiriSyntaxTests", dependencies: ["KiriSyntax"]),
     ]
 )
