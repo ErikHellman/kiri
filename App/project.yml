@@ -38,6 +38,11 @@ targets:
       # The `kiri` command (Contents/Resources/kiri).
       - path: CLI/kiri
         buildPhase: resources
+      # What's new (WhatsNew.swift): each version's notes, the files the
+      # release workflow publishes too, as Contents/Resources/release-notes.
+      - path: ../docs/release-notes
+        type: folder
+        buildPhase: resources
     info:
       path: Kiri/Info.plist
       properties:

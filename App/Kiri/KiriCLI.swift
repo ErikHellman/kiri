@@ -321,6 +321,8 @@ import KiriKit
 
     func add(marker: URL, documents: [NSDocument]) {
         waits.append(Wait(marker: marker, documents: documents.map { WeakDocument(doc: $0) }))
+        // Not in the middle of a commit message: What's new waits.
+        WhatsNew.shared.waiting(on: documents)
         check()
     }
 

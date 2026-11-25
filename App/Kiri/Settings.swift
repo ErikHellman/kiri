@@ -20,6 +20,11 @@ enum Prefs {
     static let crashReportsKey = "crashReports"
     /// Anonymous usage analytics (`Telemetry`); absent means on.
     static let analyticsKey = "usageAnalytics"
+    /// What's new after an update (`WhatsNew`); absent means on.
+    static let whatsNewKey = "whatsNewAfterUpdates"
+    /// The version whose notes What's new last showed, or that last
+    /// launched with none to show ("0.3.2").
+    static let whatsNewSeenKey = "whatsNewSeenVersion"
 
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
@@ -42,6 +47,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.crashReportsKey) private var crashReports = true
     @AppStorage(Prefs.analyticsKey) private var analytics = true
+    @AppStorage(Prefs.whatsNewKey) private var whatsNew = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
@@ -108,7 +114,7 @@ struct SettingsView: View {
             ("Appearance", AnyView(appearanceGroup)),
             ("Editor", AnyView(editorGroup)),
             ("Motion", AnyView(motionGroup)),
-            ("Updates", AnyView(updatesRow)),
+            ("Updates", AnyView(updatesGroup)),
             ("Privacy", AnyView(privacyGroup)),
             ("Command line tool", AnyView(commandLineToolRow)),
         ]
@@ -201,6 +207,16 @@ struct SettingsView: View {
                 .frame(width: 200)
             }
             FontSample(family: editorFont.shown, scale: textScale)
+        }
+    }
+
+    /// Updates, and what Kiri shows after one.
+    private var updatesGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            updatesRow
+            row("What's new", detail: "After an update, the first editor shows what changed, once. Help ▸ What's New in Kiri shows it any time.") {
+                Toggle("Show what's new after updates", isOn: $whatsNew).toggleStyle(.switch).labelsHidden()
+            }
         }
     }
 
