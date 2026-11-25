@@ -1,0 +1,344 @@
+/* Kiri's Markdown preview: Honey on paper (docs/DESIGN.md). The colors are
+   the theme's tokens, set by the app in #kiri-style (MarkdownPage.Style). */
+
+* { box-sizing: border-box; }
+
+html {
+  /* 15 pt Nunito at 100 %, the Honey body size; the editor's text size scales it. */
+  font-size: calc(15px * var(--scale, 1));
+  -webkit-text-size-adjust: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  /* The editor's panel shows through: the page has no background of its own. */
+  background: transparent;
+}
+
+body {
+  color: var(--fg);
+  font-family: "Nunito", -apple-system, system-ui, sans-serif;
+  font-weight: 400;
+  line-height: 1.6;
+  font-feature-settings: "kern", "liga";
+  overflow-wrap: break-word;
+}
+
+::selection { background: var(--selection); }
+
+.page {
+  max-width: 50rem;
+  margin: 0 auto;
+  /* Clear of the status bar that floats over the panel's bottom edge. */
+  padding: 2rem 2.75rem 5rem;
+}
+
+.page > :first-child { margin-top: 0 !important; }
+
+p, ul, ol, dl, table, pre, blockquote, figure, details, .code, .table, .alert { margin: 0 0 1rem; }
+
+/* MARK: Headings */
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 800;
+  line-height: 1.25;
+  margin: 1.8em 0 0.6em;
+  letter-spacing: -0.005em;
+  scroll-margin-top: 1rem;
+}
+h1 { font-size: 1.75rem; letter-spacing: -0.015em; }
+h2 { font-size: 1.36rem; padding-bottom: 0.35em; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; }
+h5, h6 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); }
+h1 + p, h2 + p, h3 + p { margin-top: 0; }
+
+/* MARK: Text */
+
+strong { font-weight: 800; }
+em { font-style: italic; }
+del { color: var(--fg-muted); }
+small { font-size: 0.85em; }
+mark { background: var(--accent-soft); color: inherit; border-radius: 4px; padding: 0 0.15em; }
+sup, sub { font-size: 0.75em; line-height: 0; }
+abbr[title] { text-decoration: underline dotted; }
+
+a {
+  color: var(--accent-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 0.18em;
+  transition: text-decoration-color 140ms ease;
+}
+a:hover { text-decoration-color: var(--accent); }
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+  margin: 2rem 0;
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  padding: 0.1em 0.45em;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+}
+
+img, video { max-width: 100%; height: auto; border-radius: 8px; }
+img:not([src]) { display: none; }
+
+/* MARK: Code */
+
+code, pre {
+  font-family: var(--mono);
+  font-size: calc(13px * var(--scale, 1));
+  font-variant-ligatures: none;
+}
+
+:not(pre) > code {
+  font-size: 0.86em;
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  background: var(--surface-2);
+  white-space: break-spaces;
+}
+
+.code {
+  position: relative;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.code pre { margin: 0; padding: 0.95rem 1.1rem; overflow-x: auto; line-height: 1.5; tab-size: 4; }
+.code pre code { background: none; padding: 0; }
+
+/* The language, then the copy button in its place on hover. */
+.code[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0.55rem;
+  right: 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.code:hover::before { opacity: 0; }
+
+.code .copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.45rem;
+  font: 700 0.72rem "Nunito", system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  cursor: default;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease;
+}
+.code:hover .copy, .code .copy:focus-visible { opacity: 1; }
+.code .copy:hover { background: var(--surface-3); }
+.code .copy.done { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+.syn-keyword { color: var(--syn-keyword); }
+.syn-string, .syn-code { color: var(--syn-string); }
+.syn-number { color: var(--syn-number); }
+.syn-comment { color: var(--syn-comment); font-style: italic; }
+.syn-function, .syn-link { color: var(--syn-function); }
+.syn-type { color: var(--syn-type); }
+.syn-property { color: var(--syn-property); }
+.syn-tag { color: var(--syn-tag); }
+.syn-attribute { color: var(--syn-attribute); }
+.syn-punctuation { color: var(--syn-punctuation); }
+.syn-heading { color: var(--syn-heading); font-weight: 700; }
+.syn-escape { color: var(--syn-escape); }
+.syn-strong { font-weight: 700; }
+.syn-emphasis { font-style: italic; }
+
+/* MARK: Lists */
+
+ul, ol { padding-left: 1.6em; }
+li { margin: 0.2em 0; }
+li > p { margin: 0.25em 0; }
+li > ul, li > ol { margin: 0.2em 0 0.3em; }
+ul > li::marker { color: var(--accent); }
+ol > li::marker { color: var(--fg-muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+ul.tasks { list-style: none; padding-left: 0.3em; }
+ul.tasks ul.tasks { padding-left: 1.6em; }
+li.task { position: relative; padding-left: 1.75em; }
+li.task > p:first-of-type { display: inline; }
+li.task .check {
+  position: absolute;
+  left: 0;
+  top: 0.32em;
+  width: 1.05em;
+  height: 1.05em;
+  border-radius: 5px;
+  border: 1.5px solid var(--fg-muted);
+}
+li.task.done .check { background: var(--accent); border-color: var(--accent); }
+li.task.done .check::after {
+  content: "";
+  position: absolute;
+  left: 0.31em;
+  top: 0.1em;
+  width: 0.27em;
+  height: 0.55em;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+dt { font-weight: 800; }
+dd { margin: 0 0 0.5em 1.4em; }
+
+/* MARK: Quotes and alerts */
+
+blockquote {
+  padding: 0.1rem 0 0.1rem 1.1rem;
+  border-left: 3px solid var(--accent);
+  color: var(--fg-muted);
+}
+blockquote > :last-child, .alert > :last-child { margin-bottom: 0; }
+
+.alert {
+  --tone: var(--syn-function);
+  padding: 0.75rem 1.1rem 0.8rem;
+  border-left: 3px solid var(--tone);
+  border-radius: 0 12px 12px 0;
+  background: color-mix(in srgb, var(--tone) 9%, var(--surface));
+}
+.alert-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  margin: 0 0 0.3rem;
+  font-weight: 800;
+  color: var(--tone);
+}
+.alert-title::before {
+  content: "";
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
+  background: var(--tone);
+  -webkit-mask: var(--icon) center / contain no-repeat;
+}
+.alert-note { --tone: var(--syn-function); --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 6.5a1 1 0 0 0-1 1V12a1 1 0 1 0 2 0V7.5a1 1 0 0 0-1-1ZM8 3a1.1 1.1 0 1 0 0 2.2A1.1 1.1 0 0 0 8 3Z'/%3E%3C/svg%3E"); }
+.alert-tip { --tone: var(--ok); --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0a5.5 5.5 0 0 1 3.3 9.9c-.5.4-.8.9-.8 1.5V12H5.5v-.6c0-.6-.3-1.1-.8-1.5A5.5 5.5 0 0 1 8 0ZM5.5 13.5h5V14a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-.5Z'/%3E%3C/svg%3E"); }
+.alert-important { --tone: var(--syn-type); --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 0h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7l-4 3v-3H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2Zm6 2.5a1 1 0 0 0-1 1v3.5a1 1 0 1 0 2 0V3.5a1 1 0 0 0-1-1ZM8 8.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z'/%3E%3C/svg%3E"); }
+.alert-warning { --tone: var(--accent-ink); --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.3 1a2 2 0 0 1 3.4 0l6 10.4A2 2 0 0 1 14 14.5H2a2 2 0 0 1-1.7-3.1ZM8 4.5a1 1 0 0 0-1 1V9a1 1 0 1 0 2 0V5.5a1 1 0 0 0-1-1Zm0 6a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z'/%3E%3C/svg%3E"); }
+.alert-caution { --tone: var(--danger); --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.7 0h6.6L16 4.7v6.6L11.3 16H4.7L0 11.3V4.7Zm3.3 3.5a1 1 0 0 0-1 1V8a1 1 0 1 0 2 0V4.5a1 1 0 0 0-1-1Zm0 6a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z'/%3E%3C/svg%3E"); }
+
+/* MARK: Tables */
+
+.table { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.table table { margin: 0; }
+table { border-collapse: collapse; border-spacing: 0; min-width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 0.5rem 0.85rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.table th + th, .table td + td { border-left: 1px solid var(--line); }
+.table thead th { background: var(--surface-2); font-weight: 800; }
+.table tbody tr:last-child td { border-bottom: 0; }
+
+/* MARK: Front matter */
+
+.front-matter {
+  margin: 0 0 1.75rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.front-matter > table { width: 100%; min-width: 0; }
+.front-matter th {
+  width: 1%;
+  white-space: nowrap;
+  padding: 0.62rem 1.2rem 0.55rem 1.1rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  line-height: 1.9;
+}
+.front-matter td { padding: 0.5rem 1.1rem 0.5rem 0; }
+.front-matter tr:last-child > th, .front-matter tr:last-child > td { border-bottom: 0; }
+.front-matter td table { margin: 0; min-width: 0; }
+.front-matter td table th { padding: 0.2rem 0.9rem 0.2rem 0; line-height: 1.95; font-size: 0.7rem; }
+.front-matter td table td { padding: 0.15rem 0; border: 0; }
+.front-matter td table th { border: 0; }
+.front-matter .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; list-style: none; margin: 0.1rem 0; padding: 0; }
+.front-matter .chips li {
+  margin: 0;
+  padding: 0.05rem 0.65rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.front-matter .items { margin: 0; padding-left: 1.3em; }
+.front-matter .empty { color: var(--fg-muted); }
+.front-matter .bool { font-weight: 700; }
+.front-matter .bool.yes { color: var(--ok); }
+.front-matter .bool.no { color: var(--fg-muted); }
+.front-matter .multiline { white-space: pre-wrap; }
+.front-matter.raw { padding: 0; }
+.front-matter.raw pre { margin: 0; padding: 0.9rem 1.1rem; overflow-x: auto; }
+
+/* MARK: Mermaid */
+
+figure.mermaid {
+  margin: 0 0 1rem;
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  text-align: center;
+  overflow-x: auto;
+}
+figure.mermaid svg { max-width: 100%; height: auto; }
+/* Honey's softer corners on boxes. */
+figure.mermaid .node rect, figure.mermaid rect.actor, figure.mermaid .cluster rect { rx: 8px; ry: 8px; }
+/* Until Mermaid has drawn it: the source, quiet. */
+.mermaid-source {
+  margin: 0;
+  text-align: left;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+figure.mermaid.drawn .mermaid-source { display: none; }
+figure.mermaid.failed { text-align: left; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.mermaid-error {
+  margin: 0 0 0.6rem;
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+/* MARK: HTML in the file */
+
+details {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.5rem 1rem;
+}
+details[open] > summary { margin-bottom: 0.5rem; }
+summary { font-weight: 700; cursor: default; }
+details > :last-child { margin-bottom: 0.3rem; }
+
+p[align="center"], div[align="center"] { text-align: center; }

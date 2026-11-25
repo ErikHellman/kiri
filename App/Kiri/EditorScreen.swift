@@ -110,6 +110,8 @@ private struct TabScreen: View {
             whatsNew.offer(model, document: document)
         }
         .onChange(of: ObjectIdentifier(document)) { saveState = .idle }
+        // Picking another language leaves the preview (Markdown only).
+        .onChange(of: model.language) { if !tab.canPreviewMarkdown { tab.setMarkdownPreview(false) } }
     }
 
 
@@ -207,6 +209,9 @@ private struct TabScreen: View {
                 }
             }
             Spacer(minLength: 0)
+            if tab.canPreviewMarkdown {
+                MarkdownSwitch(tab: tab).transition(.opacity)
+            }
             HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, pending: tabs.dirty, action: save)
                 .help(document.isLargeFile ? "Read-only: large files open for reading and searching" : "Save (⌘S)")
                 .disabled(document.isLargeFile)
@@ -246,6 +251,18 @@ private struct TabScreen: View {
         Binding(get: { document.hasBOM }, set: { document.setByteOrderMark($0) })
     }
 
+}
+
+/// Text or Preview, for a Markdown file (View ▸ Markdown Preview, ⌃⌘P).
+private struct MarkdownSwitch: View {
+    let tab: DocumentTab
+
+    var body: some View {
+        HoneySegmentedPicker([(value: false, label: "Text"), (value: true, label: "Preview")],
+                             selection: Binding(get: { tab.showsMarkdownPreview }, set: { tab.setMarkdownPreview($0) }))
+            .accessibilityLabel("Show Markdown as")
+            .help("Show the text or the rendered Markdown (\(Keys.markdownPreview.glyphs))")
+    }
 }
 
 extension LineEnding {

@@ -123,5 +123,8 @@ targets:
         product: KiriKit
       - package: KiriKit
         product: KiriSyntax
+      # The Markdown preview's page (App/Kiri/MarkdownPreview.swift).
+      - package: KiriKit
+        product: KiriMarkdown
       - package: Sparkle
       - package: Vaka

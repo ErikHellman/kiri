@@ -33,6 +33,7 @@ struct KiriCommands: Commands {
     private var folder: FolderSession? { FrontEditor.shared.folder }
     private var tabs: WindowTabs? { FrontEditor.shared.tabs }
     private var document: KiriDocument? { FrontEditor.shared.document }
+    private var tab: DocumentTab? { tabs?.selectedTab }
 
     var body: some Commands {
         // Below About Kiri, where Mac apps keep it. Off in a build that
@@ -195,6 +196,11 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.actualSize)
             Toggle("Wrap Lines", isOn: $wrapLines)
                 .keyboardShortcut(Keys.wrapLines)
+            // A Markdown file rendered, or its text (the top bar's Text / Preview).
+            Toggle("Markdown Preview", isOn: Binding(get: { tab?.showsMarkdownPreview ?? false },
+                                                     set: { tab?.setMarkdownPreview($0) }))
+                .keyboardShortcut(Keys.markdownPreview)
+                .disabled(!(tab?.canPreviewMarkdown ?? false))
             Divider()
             Picker(Self.themeMenu[1], selection: $colorTheme) {
                 ForEach(Honey.Theme.all) { Text($0.name).tag($0.id) }
@@ -373,6 +379,8 @@ struct KiriCommands: Commands {
         }
         if action == .show || action == .showReplace { Telemetry.track("find_open", ["replace": action == .showReplace]) }
         if let editor {
+            // Find works on the text: a Markdown preview shows it.
+            editor.controller?.tab?.setMarkdownPreview(false)
             editor.find.perform(action)
             return
         }
