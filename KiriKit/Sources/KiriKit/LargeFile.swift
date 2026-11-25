@@ -280,7 +280,10 @@ public final class LargeFile: @unchecked Sendable {
     public func textLines(_ lines: Range<Int>) -> [(bytes: Range<Int>, text: String)] {
         let ranges = lineRanges(lines)
         guard let first = ranges.first, let last = ranges.last else { return [] }
-        let span = first.lowerBound..<min(last.upperBound, first.lowerBound + 64 << 20)
+        // One read for them all, unless the lines are long: then what
+        // shows of each, alone.
+        let span = first.lowerBound..<last.upperBound
+        guard span.count <= 4 << 20 else { return ranges.map { ($0, text(of: $0)) } }
         let bytes = read(span)
         return ranges.map { r in
             let lo = r.lowerBound - span.lowerBound

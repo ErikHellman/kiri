@@ -159,4 +159,22 @@ import Testing
         #expect(r.count == LargeFile.blockSize / 100 + 10)
         #expect(try search("\\d+$", SearchOptions(regularExpression: true), in: f).count == 1)
     }
+
+    // MARK: Bytes
+
+    @Test func foldsEveryByteAsTheSlowWayDoes() {
+        var bytes = (0..<256).map { UInt8($0) } + (0..<256).map { UInt8(255 - $0) } + Array("Hello WORLD Ä".utf8)
+        let expected = bytes.map(LargeFileSearch.lower)
+        bytes.withUnsafeMutableBufferPointer { LargeFileSearch.lowercase($0) }
+        #expect(bytes == expected)
+    }
+
+    @Test func countsNewlinesEightBytesAtATime() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<2000 {
+            let bytes = (0..<8).map { _ in [0x0A, 0x0B, 0x8A, 0x00, 0xFF, 0x61][Int.random(in: 0..<6, using: &generator)] as UInt8 }
+            let word = bytes.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
+            #expect(LargeFile.newlines(in: word) == bytes.filter { $0 == 0x0A }.count)
+        }
+    }
 }

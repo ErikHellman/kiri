@@ -103,6 +103,8 @@ extension SelfTest {
 
         // Find: every match counted, Next goes to the first after the caret.
         let find = model.find
+        // (A find pasteboard of its own: the shared one is the person's.)
+        find.board = NSPasteboard.withUniqueName()
         find.show()
         find.query = "needle"
         for _ in 0..<200 where find.isSearching { await settle(25) }

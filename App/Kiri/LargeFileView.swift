@@ -113,7 +113,11 @@ struct LargePosition: Comparable, Hashable {
 
     // MARK: Fonts and colors
 
+    private var fontSetting: (family: String, scale: Double)?
+
     func applyFont(family: String, scale: Double) {
+        if let fontSetting, fontSetting == (family, scale) { return }
+        fontSetting = (family, scale)
         font = EditorFont.font(family, size: Honey.editorFontSize * scale)
         gutterFont = EditorFont.gutterFont(family, size: max(9, 11 * scale))
         ascent = font.ascender
