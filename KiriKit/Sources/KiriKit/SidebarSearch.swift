@@ -22,10 +22,16 @@ public enum SidebarSearch {
         /// The names along the path, the row's own last.
         let components: [Substring]
 
+        /// The name as a query is looked for in it (`SidebarSearch.folded`),
+        /// worked out once: every key looks through all the entries.
+        let folded: [UInt8]
+
         public init(path: String, isFolder: Bool) {
             self.path = path
             self.isFolder = isFolder
-            components = path.split(separator: "/")
+            let names = path.split(separator: "/")
+            components = names
+            folded = SidebarSearch.folded(names.last ?? Substring(path))
         }
 
         /// The last name of the path: what the row shows.
@@ -38,12 +44,42 @@ public enum SidebarSearch {
     /// Whether `name` has `query` in it, as Finder's search would put it:
     /// letter case and accents aside. An empty query finds nothing.
     public static func matches<S: StringProtocol>(_ name: S, query: String) -> Bool {
-        guard !query.isEmpty else { return false }
-        #if canImport(Darwin)
-        return name.localizedStandardContains(query)
-        #else
-        return name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        #endif
+        contains(folded(name), folded(query))
+    }
+
+    /// `text` with letter case, accents and width set aside, as UTF-8:
+    /// what a name and a query are compared as. Folded once, a name is
+    /// then looked through byte by byte, which is many times quicker than
+    /// a localized search at every key.
+    static func folded<S: StringProtocol>(_ text: S) -> [UInt8] {
+        // Most names are plain ASCII, where folding is lowering the
+        // letters: done here, it costs nothing next to Foundation's.
+        var ascii: [UInt8] = []
+        ascii.reserveCapacity(text.utf8.count)
+        for byte in text.utf8 {
+            guard byte < 0x80 else {
+                return Array(String(text).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                                                  locale: nil).utf8)
+            }
+            ascii.append(byte >= 0x41 && byte <= 0x5A ? byte + 0x20 : byte)
+        }
+        return ascii
+    }
+
+    /// Whether `needle` is somewhere in `haystack`. An empty needle is not.
+    static func contains(_ haystack: [UInt8], _ needle: [UInt8]) -> Bool {
+        guard let first = needle.first, needle.count <= haystack.count else { return false }
+        var i = 0
+        let last = haystack.count - needle.count
+        while i <= last {
+            if haystack[i] == first {
+                var j = 1
+                while j < needle.count, haystack[i + j] == needle[j] { j += 1 }
+                if j == needle.count { return true }
+            }
+            i += 1
+        }
+        return false
     }
 
     /// The entries in the sidebar's order (`inTreeOrder`), each path once.
@@ -116,15 +152,17 @@ public enum SidebarSearch {
     /// The entries of `ordered` (in the sidebar's order already) whose
     /// names have `query` in them, in that order.
     public static func find(_ query: String, inOrdered ordered: [Entry]) -> [Entry] {
-        guard !query.isEmpty else { return [] }
-        return ordered.filter { matches($0.name, query: query) }
+        let needle = folded(query)
+        guard !needle.isEmpty else { return [] }
+        return ordered.filter { contains($0.folded, needle) }
     }
 
     /// The entries whose names have `query` in them, each once, in the
     /// sidebar's order.
     public static func find(_ query: String, in entries: [Entry]) -> [Entry] {
-        guard !query.isEmpty else { return [] }
-        return ordered(entries.filter { matches($0.name, query: query) })
+        let needle = folded(query)
+        guard !needle.isEmpty else { return [] }
+        return ordered(entries.filter { contains($0.folded, needle) })
     }
 
     /// Two lists in the sidebar's order as one, each path once.
