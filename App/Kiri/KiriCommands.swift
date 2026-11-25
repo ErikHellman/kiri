@@ -269,6 +269,9 @@ struct KiriCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("Keyboard Shortcuts") { openWindow(id: ShortcutsView.windowID) }
                 .keyboardShortcut(Keys.shortcuts)
+            // The newest release notes in the app (`WhatsNew`).
+            Button("What's New in Kiri", systemImage: "sparkles") { WhatsNew.showLatest() }
+                .disabled(WhatsNew.latest == nil)
             Divider()
             // Anonymous, through Vaka (`FeedbackWindow`, `Telemetry`).
             Button("Send Feedback…", systemImage: "bubble.left") { FeedbackWindow.show() }

@@ -80,6 +80,23 @@ import os
             }
             return
         }
+        // -KiriWhatsNewTest YES (with -KiriShowWhatsNew <notes>): What's
+        // new's checks alone (`WhatsNewSelfTest.swift`).
+        if UserDefaults.standard.bool(forKey: "KiriWhatsNewTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for What's new's checks"); quit(); return }
+                FrontEditor.shared.selfTestMain(window)
+                Task { @MainActor in
+                    await whatsNewStage(window, textView: textView)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE whats-new")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
         // The feedback window's flags (`FeedbackSelfTest.swift`).

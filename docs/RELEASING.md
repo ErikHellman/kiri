@@ -25,15 +25,16 @@ A disk image from your own website opens without warnings only when the app and 
 
 ## Making a release on your Mac
 
-1. Set the version in `App/project.yml` (`MARKETING_VERSION`, and bump `CURRENT_PROJECT_VERSION`).
-2. Build, sign, notarize and staple:
+1. Write the release notes, `docs/release-notes/<version>.md` (see [Release notes](#release-notes)), and commit them: the app bundles them for its What's new notice, so they come before the build.
+2. Set the version in `App/project.yml` (`MARKETING_VERSION`, and bump `CURRENT_PROJECT_VERSION`).
+3. Build, sign, notarize and staple:
    ```sh
    export SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID1234)"
    export NOTARY_PROFILE=kiri-notary
    scripts/dmg.sh --build
    ```
    This builds the app (for this Mac's architecture; `ARCH="arm64 x86_64"` makes it universal, which a public download should be), signs it with the hardened runtime and a secure timestamp, notarizes and staples it, packs `build/Kiri-<version>.dmg`, signs, notarizes and staples that too, and finally asks Gatekeeper (`spctl`) to accept both. Each notarization usually takes a few minutes. If Apple refuses one, the script prints Apple's log and stops.
-3. Upload `build/Kiri-<version>.dmg`. Publishing a SHA-256 next to it is a nice touch: `shasum -a 256 build/Kiri-*.dmg`.
+4. Upload `build/Kiri-<version>.dmg`. Publishing a SHA-256 next to it is a nice touch: `shasum -a 256 build/Kiri-*.dmg`.
 
 To check a downloaded copy the way a visitor's Mac will:
 
@@ -51,14 +52,18 @@ Other ways to pass the notary credentials, for CI where there is no keychain pro
 
 ## Releasing from GitHub
 
-`.github/workflows/release.yml` does a release by itself when a version tag is pushed:
+`.github/workflows/release.yml` does a release by itself when a version tag is pushed. Every release has written release notes, so a release is three steps:
 
-```sh
-git tag -a v0.2.0 -m "Kiri 0.2.0
+1. **Write the release notes** for every change since the previous release, in `docs/release-notes/<version>.md` (see [Release notes](#release-notes) below).
+2. **Merge them to `main`** through a pull request. That merge is also the commit of its own that a release needs (see Updates).
+3. **Tag the merged commit on `origin/main`**, not your branch's commit, and push the tag:
+   ```sh
+   git fetch origin main
+   git tag -a v0.3.2 -m "Kiri 0.3.2" origin/main
+   git push origin v0.3.2
+   ```
 
-- What's new, in Markdown: this becomes the release notes and the text of the update window."
-git push origin v0.2.0
-```
+The job reads the notes from the tagged commit, with `scripts/release-notes.sh`, and stops before the build when the file is missing or empty. If that happens, delete the tag (`git push origin :refs/tags/v0.3.2 && git tag -d v0.3.2`), merge the notes and tag again. The tag's own message isn't used.
 
 On a macOS runner it builds a universal app with the tag's version (`0.2.0`) and the number of commits as its build number, signs it with your Developer ID from a keychain that exists only for that job, notarizes and staples the app and the disk image with an App Store Connect API key, signs the image for Sparkle, writes the update feed, and publishes `Kiri-0.2.0.dmg`, its SHA-256 and `appcast.xml` as release `v0.2.0` of this repo, with the workflow's own `GITHUB_TOKEN`. The repo must be **public**: Sparkle downloads updates without signing in, and a private repo's release files answer with a 404. No version needs changing in `App/project.yml` first: the tag decides.
 
@@ -95,6 +100,36 @@ Then add these as [repository secrets of kiri](https://github.com/ErikHellman/ki
 
 When the Developer ID certificate is renewed, export and store the new .p12.
 
+## Release notes
+
+Each release has one file, `docs/release-notes/<version>.md`, such as `docs/release-notes/0.3.2.md`, with no `v`. The same text is the GitHub release, the Sparkle update window, and the What's new notice Kiri shows after it updates (the app bundles this folder), so people read it in three places.
+
+**Cover every change since the previous release.** Find the previous tag and list what has landed on `main` since:
+
+```sh
+git fetch origin main --tags
+PREV=$(git describe --tags --abbrev=0 origin/main)
+git log --no-merges --format='%h %s' "$PREV"..origin/main
+gh pr list --state merged --base main --search "merged:>=$(git log -1 --format=%cs "$PREV")" --json number,title
+```
+
+Go through all of it, not only the big features: each change that someone using Kiri could notice gets a bullet. Leave out what only touches the repo, CI, the website or the docs. If nothing in the release is visible to people using Kiri, say so in one bullet, the way 0.3.1 did.
+
+**How to write them:**
+
+- One `- ` bullet per change, in plain words for people who use Kiri, not commit subjects or code names. Say what they can now do or what works better.
+- **Keep each bullet to one or two sentences.** The What's new notice shows them on the empty editor page, where a paragraph is too much.
+- A new feature can start with its name in bold, with where to find it: `- **Send Feedback** (Help ▸ Send Feedback…): tell us what's not working.`
+- New features first, then improvements, then fixes.
+- No heading: the version is the title wherever the notes appear.
+- Only the Markdown `scripts/appcast.py` renders: paragraphs, `- ` lists, `` `code` ``, `**bold**` and `[links](https://…)`. Nothing else (tables, images, nested lists, `_italics_`) comes out right in the update window.
+
+Check the file before you merge it:
+
+```sh
+scripts/release-notes.sh 0.3.2
+```
+
 ## Updates
 
 Kiri updates itself with [Sparkle](https://sparkle-project.org) 2 (`App/Kiri/Updater.swift`):
@@ -106,7 +141,7 @@ Kiri updates itself with [Sparkle](https://sparkle-project.org) 2 (`App/Kiri/Upd
 
 Sparkle's helpers inside `Kiri.app` (its installer and the `Autoupdate` tool) are signed one by one, inside out, by `scripts/codesign-app.sh`, which `scripts/build.sh` and `scripts/dmg.sh` both use: `codesign --deep` would do it in no particular order, which Sparkle's documentation warns against.
 
-A release made by hand on your Mac (above) can be offered as an update too: sign the disk image with `./bin/sign_update build/Kiri-<version>.dmg`, write the feed with `scripts/appcast.py` and attach both to a release here. The workflow is simpler.
+A release made by hand on your Mac (above) can be offered as an update too: sign the disk image with `./bin/sign_update build/Kiri-<version>.dmg`, write the feed with `scripts/appcast.py --notes docs/release-notes/<version>.md` and attach both to a release here, with the same notes. The workflow is simpler.
 
 ## Crash reports
 
