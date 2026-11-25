@@ -2,13 +2,13 @@ import Foundation
 import KiriKit
 import Observation
 
-/// Every file under a folder window's folder, for the command palette:
-/// the tree shows one folder at a time, and the palette finds a file
-/// anywhere under it by a few letters of its name.
+/// Every file under a folder window's folder, for the command palette and
+/// for find in the sidebar (`SidebarFind`): the tree shows one folder at a
+/// time, and they find a file anywhere under it by a few letters of its name.
 ///
 /// The folder is read off the main thread, and what was read before stays
 /// in use until the new reading is in: typing never waits for the disk.
-/// It is read again when the palette opens and when the folder session
+/// It is read again when the palette or the sidebar's find opens and when the folder session
 /// refreshes (a file made or renamed in the sidebar, View ▸ Refresh Folder).
 @MainActor @Observable final class FolderIndex {
     let root: URL
@@ -38,7 +38,8 @@ import Observation
     nonisolated static let skippedFiles: Set<String> = [".DS_Store"]
 
     @ObservationIgnored private var reading: Reading?
-    @ObservationIgnored private var hasRead = false
+    /// The folder has been read at least once (`paths` is what was found).
+    @ObservationIgnored private(set) var hasRead = false
 
     /// Says whether a reading is still wanted.
     private final class Reading: @unchecked Sendable {

@@ -54,8 +54,9 @@ struct StartHint: View {
 }
 
 /// One line of the hint: muted words and the key caps of the Keyboard
-/// Shortcuts window, or without a key the words as a link.
-private struct StartHintLine: View {
+/// Shortcuts window, or without a key the words as a link. (What's new
+/// has lines of the same kind: `WhatsNewNotice`.)
+struct StartHintLine: View {
     let title: String
     let shortcut: KeyboardShortcut?
     let hovered: Bool
@@ -106,5 +107,63 @@ private struct StartHintLine: View {
 private struct StartHintLineStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// A hint line that is a checkbox: the words, and at the right, where a
+/// line's key caps would be, a box in the key caps' look that is ticked
+/// in the accent while it is on.
+struct StartHintCheckLine: View {
+    let title: String
+    let isOn: Bool
+    let hovered: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(_ title: String, isOn: Bool, hovered: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.isOn = isOn
+        self.hovered = hovered
+        self.action = action
+    }
+
+    var body: some View {
+        let active = hovering || hovered
+        let shape = RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
+        let box = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.honey(.subheadline, weight: .semibold))
+                    .foregroundStyle(active ? Color.honeyFg : Color.honeyMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 0)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Color.honeyAccentFg)
+                    .opacity(isOn ? 1 : 0)
+                    .frame(width: 22, height: 22)
+                    .background(isOn ? Color.honeyAccent : Color.honeySurface2, in: box)
+                    .overlay { box.strokeBorder(isOn ? Color.clear : Color.honeyLine, lineWidth: 1) }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(active ? Color.honeySurface2 : .clear, in: shape)
+            .contentShape(shape)
+        }
+        .buttonStyle(StartHintLineStyle())
+        .focused($focused)
+        .focusEffectDisabled()
+        .overlay { shape.strokeBorder(Color.honeyFocus, lineWidth: focused ? 2 : 0).allowsHitTesting(false) }
+        .onHover { hovering = $0 }
+        .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: active)
+        .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: isOn)
+        .accessibilityRepresentation {
+            Toggle(title, isOn: Binding(get: { isOn }, set: { _ in action() }))
+        }
     }
 }
