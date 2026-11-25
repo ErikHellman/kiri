@@ -64,6 +64,22 @@ import os
             }
             return
         }
+        // -KiriPositionTest YES: the kept file positions' checks alone
+        // (part of -KiriBehaviorTest too).
+        if UserDefaults.standard.bool(forKey: "KiriPositionTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for the position checks"); quit(); return }
+                Task { @MainActor in
+                    await positionStage(window)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE position")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
         // The feedback window's flags (`FeedbackSelfTest.swift`).
@@ -2129,6 +2145,7 @@ import os
                         await themeFadeStage(window)
                         await themePreviewStage(window)
                         await settingsStage(window)
+                        await positionStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)

@@ -258,6 +258,7 @@ extension EditorController {
     /// that isn't comes to the middle.
     func reveal(_ range: NSRange) {
         guard let textView, let scroll = textView.enclosingScrollView else { return }
+        pendingPosition = nil
         let clip = scroll.contentView
         let insets = scroll.contentInsets
         let target = range.location..<(range.location + range.length)

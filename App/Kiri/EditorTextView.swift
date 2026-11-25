@@ -434,6 +434,8 @@ final class EditorContainerView: NSView {
 
     /// Called when the visible part of the text changes.
     var onScroll: (() -> Void)?
+    /// Called after a layout that left the editor in a window with a size.
+    var onSized: (() -> Void)?
     /// Called while the person scrolls (a gesture, the wheel or a scroller),
     /// not when a command moves the text.
     var onLiveScroll: (() -> Void)?
@@ -466,6 +468,14 @@ final class EditorContainerView: NSView {
     /// `point` is in this view's coordinates.
     func pointerMoved(to point: NSPoint) {
         onPointer?(NSPoint(x: point.x, y: isFlipped ? bounds.height - point.y : point.y), bounds.size)
+    }
+
+    override func layout() {
+        super.layout()
+        guard onSized != nil, window != nil, bounds.height > 0 else { return }
+        // (After this pass: the scroll view and the text in it take their
+        // sizes from this view's in it.)
+        DispatchQueue.main.async { [weak self] in self?.onSized?() }
     }
 
     @objc private func scrolled() {
