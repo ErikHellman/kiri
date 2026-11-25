@@ -2,14 +2,20 @@ import Foundation
 import Testing
 @testable import KiriKit
 
-@Suite struct LargeFileTests {
+@Suite final class LargeFileTests {
+    /// Where this test's files are, deleted after it.
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kiri-large-\(UUID().uuidString)")
+
+    init() throws { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+    deinit { try? FileManager.default.removeItem(at: folder) }
+
     /// A file with `contents`, opened and counted.
     func file(_ contents: String) throws -> LargeFile {
         try file(Data(contents.utf8))
     }
 
     func file(_ data: Data) throws -> LargeFile {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("kiri-large-\(UUID().uuidString).log")
+        let url = folder.appendingPathComponent("\(UUID().uuidString).log")
         try data.write(to: url)
         let f = try LargeFile(url: url)
         f.index()

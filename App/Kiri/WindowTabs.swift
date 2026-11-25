@@ -63,6 +63,13 @@ import SwiftUI
         if arriving { arrive() }
     }
 
+    /// The document's file grew past the limit while it was open, and it
+    /// was read again read-only: the viewer takes the editor's place.
+    func documentBecameLarge() {
+        updateLargeViewer()
+        if let slot = window?.editorSlot, window?.tabs.selectedTab === self { slot.show(self) }
+    }
+
     /// A large file shows in a viewer of its own; any other in the editor.
     private func updateLargeViewer() {
         if let file = document.largeFile {

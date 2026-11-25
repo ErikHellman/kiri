@@ -89,7 +89,16 @@ extension UTType {
     /// Files at least this large open in the read-only viewer
     /// (`LargeFileView`), after asking: the editor would hold the whole
     /// text in memory, several times over.
-    static let largeFileThreshold = 100 << 20
+    static var largeFileThreshold: Int {
+        #if DEBUG || KIRI_SELFTEST
+        if let limit = largeFileThresholdForTests { return limit }
+        #endif
+        return 100 << 20
+    }
+    #if DEBUG || KIRI_SELFTEST
+    /// A smaller limit for a self-test.
+    nonisolated(unsafe) static var largeFileThresholdForTests: Int?
+    #endif
 
     /// The file, when it opened read-only for being too large for the
     /// editor. `text` is empty then, and nothing saves.
@@ -104,11 +113,12 @@ extension UTType {
     func largeFileReopened(_ new: LargeFile) { largeFile = new }
 
     /// A file of `size` bytes at `url` is too large for the editor: whether
-    /// to open it read-only, asking first unless it is reopened as it was
-    /// (Revert, a restored window) or only looked at (the folder
-    /// sidebar's preview). False is Cancel.
+    /// to open it read-only, asking first unless it is open already (a
+    /// Revert, or a file that grew past the limit while it was open),
+    /// reopened as it was (a restored window) or only looked at (the
+    /// folder sidebar's preview). False is Cancel.
     private func openLargeFile(at url: URL, size: Int) -> Bool {
-        if isLargeFile { return true }
+        if isLargeFile || counted { return true }
         let controller = NSDocumentController.shared as? KiriDocumentController
         if controller?.opensQuietly(url) == true { return true }
         #if DEBUG || KIRI_SELFTEST
@@ -137,15 +147,30 @@ extension UTType {
         case false?:
             throw CocoaError(.userCancelled)
         case true?:
+            // NUL in the first bytes: a binary file, as the editor says
+            // of a smaller one (or UTF-16, which large files don't read).
+            let head = (try? FileHandle(forReadingFrom: url)).flatMap { handle in
+                defer { try? handle.close() }
+                return try? handle.read(upToCount: 64 << 10)
+            } ?? Data()
+            if head.contains(0) { throw CocoaError(.fileReadUnknownStringEncoding) }
             let opened = try LargeFile(url: url)
             MainActor.assumeIsolated {
+                let wasLarge = isLargeFile
                 largeFile = opened
                 file = TextFile()
                 text = ""
                 encoding = .utf8
                 lineEnding = .lf
                 hasBOM = false
-                if let largeViewer, largeViewer.file !== opened { largeViewer.fileMayHaveChanged() }
+                if wasLarge {
+                    if let largeViewer, largeViewer.file !== opened { largeViewer.fileMayHaveChanged() }
+                } else if counted {
+                    // It grew past the limit while it was open: its tab
+                    // swaps the editor (emptied) for the viewer.
+                    editor?.load(self)
+                    DocumentWindow.tab(of: self)?.documentBecameLarge()
+                }
                 if !counted {
                     counted = true
                     DispatchQueue.main.async { Telemetry.fileOpened(language: .plainText, bytes: size) }

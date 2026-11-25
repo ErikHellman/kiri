@@ -216,7 +216,11 @@ import KiriKit
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, alreadyOpen, error in
                 MainActor.assumeIsolated {
                     if alreadyOpen { WindowPlacement.next = nil }
-                    if let error { WindowPlacement.next = nil; _ = NSApp.presentError(error) }
+                    if let error {
+                        WindowPlacement.next = nil
+                        // (Cancel on "Open it read-only?" says nothing more.)
+                        if (error as? CocoaError)?.code != .userCancelled { _ = NSApp.presentError(error) }
+                    }
                     if let doc {
                         if alreadyOpen {
                             // It comes forward where it is (`showWindows`).

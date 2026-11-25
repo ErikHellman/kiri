@@ -24,8 +24,9 @@ struct LargeFileStatus: Equatable {
 /// behind it. The lines are counted in the background as soon as the file
 /// opens, and the view shows them as they come. A file that grows (a log
 /// being written) is followed: what was added is counted, and a view that
-/// was at the end stays there. A file that gets shorter (truncated or
-/// rotated) is opened again.
+/// was at the end stays there. A file that gets shorter (truncated, or
+/// rotated by copying and truncating) is opened again. A log rotated by
+/// renaming it is followed as any document is, to its new name.
 @MainActor final class LargeFileViewer {
     let view: LargeFileView
     private(set) weak var document: KiriDocument?
@@ -69,7 +70,11 @@ struct LargeFileStatus: Equatable {
         counting = nil
         watch?.invalidate()
         watch = nil
-        if model?.large === self { model?.large = nil }
+        if model?.large === self {
+            model?.large = nil
+            // A search of this file, and its matches, end with it.
+            model?.find.largeFileGone()
+        }
         model?.largeStatus = nil
         if document?.largeViewer === self { document?.largeViewer = nil }
     }
@@ -100,8 +105,9 @@ struct LargeFileStatus: Equatable {
                     self.counting = nil
                     self.linesAdded()
                     self.publish(counting: nil)
-                    // It grew while it was being counted.
-                    if file.currentSize > file.indexedLength { self.fileMayHaveChanged() }
+                    // It grew while it was being counted. (The once-a-second
+                    // look may have seen the new size already.)
+                    if file.currentSize > file.indexedLength { self.count() }
                 }
             }
         }

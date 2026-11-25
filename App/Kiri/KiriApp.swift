@@ -182,18 +182,22 @@ final class KiriDocumentController: NSDocumentController {
     /// one that is only looked at, and one AppKit reopens (a window
     /// brought back at launch).
     func opensQuietly(_ url: URL) -> Bool {
-        reopening > 0 || glanced.contains(url.standardizedFileURL)
+        let url = url.standardizedFileURL
+        return reopening.contains(url) || glanced.contains(url)
     }
 
-    private var reopening = 0
+    /// The files AppKit is reopening, until each has been read (which may
+    /// be after `reopenDocument` returns).
+    private var reopening: Set<URL> = []
 
     override func reopenDocument(for urlOrNil: URL?, withContentsOf contentsURL: URL, display displayDocument: Bool,
                                  completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
-        reopening += 1
+        let url = contentsURL.standardizedFileURL
+        let added = reopening.insert(url).inserted
         super.reopenDocument(for: urlOrNil, withContentsOf: contentsURL, display: displayDocument) { document, alreadyOpen, error in
+            MainActor.assumeIsolated { if added { self.reopening.remove(url) } }
             completionHandler(document, alreadyOpen, error)
         }
-        reopening -= 1
     }
 
     /// The file at `url` did not open after all.

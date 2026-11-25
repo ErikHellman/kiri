@@ -100,7 +100,10 @@ struct KiriCommands: Commands {
                     // Two of a name are told apart by their folders, as tabs are.
                     Button(folder.map { "\(url.lastPathComponent) — \($0)" } ?? url.lastPathComponent) {
                         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
-                            MainActor.assumeIsolated { if let error { _ = NSApp.presentError(error) } }
+                            MainActor.assumeIsolated {
+                                // (Not Cancel on "Open it read-only?".)
+                                if let error, (error as? CocoaError)?.code != .userCancelled { _ = NSApp.presentError(error) }
+                            }
                         }
                     }
                 }

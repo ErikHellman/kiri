@@ -170,6 +170,61 @@ extension SelfTest {
         report(viewer.file.lineCount == 3 && viewer.view.caret.line == 0, "a large file that gets shorter is read again from the top")
         document.close()
 
+        // Quietly, without the question (Cancel is the answer it would
+        // get): the folder sidebar's preview, and a window brought back.
+        try? Data(String(repeating: "quiet line\n", count: 2000).utf8).write(to: url)
+        KiriDocument.largeFileThresholdForTests = 4096
+        LargeFileAnswer.forTests = false
+        if let window = NSApp.windows.first(where: { $0 is DocumentNSWindow }) {
+            let shown: NSWindow? = await withCheckedContinuation { done in
+                SidebarOpen.open(url, keep: false, from: window) { done.resume(returning: $0) }
+            }
+            await settle(200)
+            let previewed = NSDocumentController.shared.document(for: url) as? KiriDocument
+            report(shown != nil && previewed?.isLargeFile == true, "the sidebar's preview opens a large file without asking")
+            previewed?.close()
+            await settle(100)
+        } else {
+            report(false, "a window for the sidebar's preview")
+        }
+        let reopened: KiriDocument? = await withCheckedContinuation { done in
+            NSDocumentController.shared.reopenDocument(for: url, withContentsOf: url, display: false) { document, _, _ in
+                done.resume(returning: document as? KiriDocument)
+            }
+        }
+        report(reopened?.isLargeFile == true, "a large file AppKit reopens (a restored window) opens without asking")
+        reopened?.close()
+
+        // A binary file over the limit is refused, as the editor refuses one.
+        LargeFileAnswer.forTests = true
+        let binary = folder.appendingPathComponent("disk.img")
+        try? Data([0x00, 0x01, 0x02] + [UInt8](repeating: 0x41, count: 8192)).write(to: binary)
+        let refused = await open(binary)
+        report(refused == nil, "a binary file over the limit doesn't open")
+
+        // A file open in the editor that grows past the limit while it is
+        // open: read again, read-only, in the viewer.
+        let growing = folder.appendingPathComponent("growing.log")
+        try? Data("first\n".utf8).write(to: growing)
+        if let doc = await open(growing), let growingTab = DocumentWindow.tab(of: doc) {
+            await settle(200)
+            let wasEditor = growingTab.largeViewer == nil && !doc.isLargeFile
+            if let handle = try? FileHandle(forWritingTo: growing) {
+                try? handle.seekToEnd()
+                try? handle.write(contentsOf: Data(String(repeating: "more\n", count: 2000).utf8))
+                try? handle.close()
+            }
+            try? doc.revert(toContentsOf: growing, ofType: doc.fileType ?? "public.plain-text")
+            await settle(300)
+            report(wasEditor && doc.isLargeFile && growingTab.largeViewer != nil && growingTab.largeViewer?.view.window != nil
+                   && doc.text.isEmpty,
+                   "a file that grows past the limit while open goes on read-only in the viewer (\(doc.isLargeFile))")
+            doc.close()
+        } else {
+            report(false, "a small file opens to grow")
+        }
+        KiriDocument.largeFileThresholdForTests = nil
+
         // Under the limit: the editor, as always.
         let small = folder.appendingPathComponent("small.log")
         try? Data("small\n".utf8).write(to: small)

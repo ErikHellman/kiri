@@ -93,7 +93,7 @@ public struct LargeFileSearch: @unchecked Sendable {
                 counts.withUnsafeMutableBufferPointer { c in
                     let f = UnsafeSendable(f), c = UnsafeSendable(c)
                     DispatchQueue.concurrentPerform(iterations: these.count) { i in
-                        let (ranges, n) = self.search(these[i], of: whole, in: file, keep: room, isCancelled: isCancelled)
+                        let (ranges, n) = self.search(these[i], of: whole, in: file, keep: room)
                         f.value[i] = ranges
                         c.value[i] = n
                     }
@@ -138,8 +138,7 @@ public struct LargeFileSearch: @unchecked Sendable {
 
     /// The matches that start in `block`: those kept (at most `keep`) and
     /// how many there are.
-    private func search(_ block: Range<Int>, of whole: Range<Int>, in file: LargeFile, keep: Int,
-                        isCancelled: () -> Bool) -> ([Range<Int>], Int) {
+    private func search(_ block: Range<Int>, of whole: Range<Int>, in file: LargeFile, keep: Int) -> ([Range<Int>], Int) {
         // A plain match that starts in the block may end past it.
         let over = regex == nil ? max(0, needle.count - 1) : 0
         let span = block.lowerBound..<min(block.upperBound + over, whole.upperBound)

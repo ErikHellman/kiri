@@ -805,6 +805,19 @@ extension FindController {
         refreshLarge(jump: false, step: nil, appending: true)
     }
 
+    /// The tab no longer shows the large file (closed, or the preview tab
+    /// went on to another file): its search ends, and its matches, which
+    /// were byte offsets, are no use to the editor.
+    func largeFileGone() {
+        cancelPending()
+        store(TextSearch.Matches(), for: nil)
+        largeTotal = 0
+        largeSearchedTo = 0
+        largeInvalid = false
+        needsSearch = true
+        if isOpen { refresh(jump: false) }
+    }
+
     /// The large file was opened again: searched again from the top.
     func largeFileReplaced() {
         guard isOpen, large != nil else { return }
