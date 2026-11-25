@@ -188,6 +188,8 @@ import SwiftUI
     /// last tab (`KiriDocument.close`).
     static func documentWillClose(_ document: KiriDocument) {
         guard let tab = tab(of: document), let window = tab.window else { return }
+        // Where it was, for the next time it opens.
+        tab.controller.rememberPosition()
         window.tabs.remove(tab)
     }
 

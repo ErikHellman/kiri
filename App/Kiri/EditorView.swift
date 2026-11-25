@@ -80,6 +80,9 @@ struct EditorView: NSViewRepresentable {
         c.setWrap(wrapLines)
         tab.container.textView.setAnimation(animation)
         c.setCrossfade(animation != .none)
+        // (Now its font and wrapping are the settings', a position kept
+        // for the file can be put back: in `show`.)
+        c.configured = true
         slot.show(tab)
     }
 }
@@ -118,6 +121,12 @@ final class TabEditorSlot: NSView {
                 // its window, and doesn't take them back by itself.
                 editor.textView.updateDragTypeRegistration()
             }
+        }
+        // Back where the file was the last time it was open, before its
+        // text fades in there.
+        if tab.controller.pendingPosition != nil, tab.controller.configured, bounds.height > 0 {
+            editor.layoutSubtreeIfNeeded()
+            tab.controller.applyPendingPosition()
         }
         if tab.arriving { arrive(tab) }
         guard !tab.installed, window != nil else { return }
@@ -183,6 +192,19 @@ final class TabEditorSlot: NSView {
     /// The document's undo manager: text edits registered here make the
     /// document dirty, and File ▸ Save cleans it.
     weak var undoManager: UndoManager?
+    /// Where the document was the last time it was open, still to be
+    /// scrolled to once the editor has a size (`FilePositions`). Anything
+    /// that moves the caret on purpose first (`kiri file:12`, Go to Line,
+    /// find) wins over it.
+    var pendingPosition: FilePosition?
+    /// `EditorView` has given the editor the settings' font and wrapping.
+    var configured = false
+    /// `restorePosition` is putting the selection back (any other change
+    /// of the selection wins over the scroll still to be put back).
+    var restoringSelection = false
+    private var rememberWork: DispatchWorkItem?
+
+    var currentLineIndex: LineIndex { lineIndex }
 
     init(model: EditorModel) {
         self.model = model
@@ -202,7 +224,9 @@ final class TabEditorSlot: NSView {
         view.onScroll = { [weak self, weak view] in
             self?.highlighter?.visibleRangeChanged()
             view?.textView.marksIfLoaded?.setNeedsUpdate()
+            self?.positionChanged()
         }
+        view.onSized = { [weak self] in self?.applyPendingPosition() }
         view.onLiveScroll = { [weak self] in self?.model.statusRest.activity() }
         view.onPointer = { [weak self] point, size in self?.model.statusRest.pointerMoved(to: point, in: size) }
         applyFont()
@@ -215,6 +239,7 @@ final class TabEditorSlot: NSView {
         if let old = self.document, old !== document, old.editor === self { old.editor = nil }
         self.document = document
         document.editor = self
+        pendingPosition = nil
         let text = document.text
         // The storage delegate fills the index in from this edit: replacing
         // everything (old length) with `text`.
@@ -240,7 +265,8 @@ final class TabEditorSlot: NSView {
 
     /// Another document takes this editor (the preview tab going from
     /// file to file): what `EditorView` does for a new one, in its order,
-    /// and from the file's first line.
+    /// and from the file's first line (`DocumentTab.replaceDocument` then
+    /// puts it back where it was the last time it was open).
     func show(_ document: KiriDocument) {
         guard self.document !== document else { return }
         // The line asked for was a line of the other file, and what the
@@ -384,9 +410,23 @@ final class TabEditorSlot: NSView {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        if !restoringSelection, !loading { pendingPosition = nil }
         updateCaret()
         model.find.selectionChanged()
+        positionChanged()
     }
+
+    /// The selection or the scroll changed: the document's position is
+    /// noted once they rest (`FilePositions`).
+    private func positionChanged() {
+        guard !loading, document?.fileURL != nil else { return }
+        rememberWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.rememberPosition() }
+        rememberWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rememberPause, execute: work)
+    }
+
+    static let rememberPause = 0.5
 
     private func updateCaret() {
         guard let textView else { return }
@@ -434,6 +474,7 @@ final class TabEditorSlot: NSView {
     /// Moves the caret to a 1-based line (and column) and scrolls to it.
     func goTo(line: Int, column: Int = 1) {
         guard let textView else { return }
+        pendingPosition = nil
         let r = caret(line: line, column: column)
         textView.setSelectedRange(r)
         textView.scrollRangeToVisible(r)
@@ -445,6 +486,7 @@ final class TabEditorSlot: NSView {
     /// keyboard stays in the Go to Line field.
     func previewLine(_ line: Int, column: Int = 1) {
         guard let textView else { return }
+        pendingPosition = nil
         let r = caret(line: line, column: column)
         textView.setSelectedRange(r)
         reveal(r)

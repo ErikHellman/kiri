@@ -697,6 +697,8 @@ extension SelfTest {
 ///   one empty document. Run after a quit with no window open, and after
 ///   the app was killed (when AppKit doesn't call the launch a default
 ///   one, though there is nothing to bring back).
+/// - `position-quit` / `position-check`: tabs come back scrolled where
+///   they were (`positionQuit`).
 /// - `idle`: does nothing, for the runner to kill.
 extension SelfTest {
     /// A phase that waits for an editor says so if none ever comes.
@@ -757,6 +759,13 @@ extension SelfTest {
                 fflush(stdout)
                 NSApp.terminate(nil)
                 return
+            case "position-quit":
+                await positionQuit()
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
+            case "position-check": await positionCheck()
             case "empty-check": await emptyCheck()
             case "restore-quit":
                 // A quit as the person's: the document is not closed
@@ -779,6 +788,58 @@ extension SelfTest {
             fflush(stdout)
             quit()
         }
+    }
+
+    /// `position-quit` / `position-check` (three files of 400 lines or more,
+    /// `-NSQuitAlwaysKeepsWindows YES`): a quit as the person's, with the
+    /// middle tab showing scrolled down and the first scrolled elsewhere
+    /// before it; after the relaunch both are back where they were, the one
+    /// that didn't show once it shows.
+    private static let positionRelaunch = (first: (top: 150, line: 160), middle: (top: 300, line: 310))
+
+    private static func positionQuit() async {
+        _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+        let docs = documents(in: DocumentWindow.all.first)
+        guard docs.count == 3, let tabs = DocumentWindow.all.first?.tabs else { report(false, "three tabs to quit with"); return }
+        func place(_ doc: KiriDocument, top: Int, line: Int) async {
+            show(doc)
+            await settle(300)
+            guard let tab = DocumentWindow.tab(of: doc) else { return }
+            let c = tab.controller
+            let at = c.currentLineIndex.starts[line] + 2
+            tab.container.textView.setSelectedRange(NSRange(location: at, length: 0))
+            c.pendingPosition = FilePosition(selection: at..<at, topLine: top, in: c.currentLineIndex)
+            c.applyPendingPosition()
+            await settle(100)
+        }
+        await place(docs[0], top: positionRelaunch.first.top, line: positionRelaunch.first.line)
+        await place(docs[1], top: positionRelaunch.middle.top, line: positionRelaunch.middle.line)
+        let shown = tabs.selectedTab?.controller.currentPosition()
+        report(isShowing(docs[1]) && shown?.topLine == positionRelaunch.middle.top,
+               "quitting with the middle tab showing, line \(positionRelaunch.middle.top + 1) at its top (\(shown.map { $0.topLine + 1 } ?? 0))")
+    }
+
+    private static func positionCheck() async {
+        _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+        let docs = documents(in: DocumentWindow.all.first)
+        guard docs.count == 3, let middle = DocumentWindow.tab(of: docs[1]), let first = DocumentWindow.tab(of: docs[0])
+        else { report(false, "the three tabs are back"); return }
+        _ = await pause(3) { middle.controller.pendingPosition == nil && middle.container.bounds.height > 0 }
+        await settle(300)
+        func describe(_ tab: DocumentTab) -> String {
+            "caret on line \(tab.model.line), line \(tab.controller.currentPosition().map { $0.topLine + 1 } ?? 0) at the top"
+        }
+        report(isShowing(docs[1]) && middle.model.line == positionRelaunch.middle.line + 1
+               && middle.controller.currentPosition()?.topLine == positionRelaunch.middle.top,
+               "after a relaunch the tab that showed is back where it was (\(describe(middle)))")
+        report(first.controller.pendingPosition?.topLine == positionRelaunch.first.top,
+               "a tab that hasn't shown since the relaunch holds its place to put back")
+        show(docs[0])
+        _ = await pause(3) { first.controller.pendingPosition == nil }
+        await settle(300)
+        report(first.model.line == positionRelaunch.first.line + 1
+               && first.controller.currentPosition()?.topLine == positionRelaunch.first.top,
+               "and shown, it is back where it was too (\(describe(first)))")
     }
 
     private static func restoreCheck() async {
