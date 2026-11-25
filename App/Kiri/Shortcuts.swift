@@ -182,6 +182,9 @@ struct ShortcutGroup: Identifiable {
             Item("Open file in a tab to stay, and edit it", "↩"),
             Item("Show file in the preview tab, stay here", "Space"),
             Item("Jump to a name", "Type its first letters"),
+            Item("Find a file or folder anywhere in the folder", Keys.find),
+            Item("Next / previous found, in the sidebar's find field", "↓  ↑"),
+            Item("In the find field: keep the row found / go back", "↩  ⎋"),
             Item("Back to the editor", "⎋"),
         ]),
         ShortcutGroup(title: "Find", systemImage: "magnifyingglass", items: [
@@ -189,6 +192,8 @@ struct ShortcutGroup: Identifiable {
             Item("Find and replace", Keys.findAndReplace),
             Item("Find next", Keys.findNext),
             Item("Find previous", Keys.findPrevious),
+            Item("Find in the sidebar, when it has the keyboard", Keys.find),
+            Item("Next / previous file found, in the sidebar", "\(Keys.findNext.glyphs)  \(Keys.findPrevious.glyphs)"),
             Item("Next / previous match, in the find field", "↩  ⇧↩"),
             Item("Replace and find the next, in the replace field", "↩"),
             Item("Between the find and replace fields", "⇥  ⇧⇥"),
