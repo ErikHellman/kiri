@@ -502,7 +502,13 @@ import os
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5 * Double(i + 1)) {
                     print("SELFTEST info opening \(path) at \(ProcessInfo.processInfo.systemUptime)")
                     fflush(stdout)
-                    NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: String(path)), display: true) { _, _, _ in }
+                    NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: String(path)), display: true) { doc, _, _ in
+                        // -KiriRevealScrollTo <line>: the new tab scrolls to that line
+                        // just after it opens, as a remembered position would.
+                        let line = UserDefaults.standard.integer(forKey: "KiriRevealScrollTo")
+                        guard line > 0, let doc else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { scrollToLine(line, of: doc) }
+                    }
                 }
             }
         }
@@ -2917,6 +2923,24 @@ import os
 
     /// The editor of `doc`'s tab, showing or not.
     static func editorText(of doc: NSDocument?) -> KiriTextView? { documentTab(of: doc)?.container.textView }
+
+    /// Scrolls `doc`'s editor so that `line` (1-based) is at the top.
+    static func scrollToLine(_ line: Int, of doc: NSDocument) {
+        guard let textView = editorText(of: doc), let tlm = textView.textLayoutManager,
+              let clip = textView.enclosingScrollView?.contentView else { return }
+        let text = textView.string as NSString
+        var offset = 0, n = 1
+        while n < line, offset < text.length {
+            let r = text.lineRange(for: NSRange(location: offset, length: 0))
+            offset = NSMaxRange(r)
+            n += 1
+        }
+        guard let location = tlm.location(tlm.documentRange.location, offsetBy: offset) else { return }
+        tlm.ensureLayout(for: NSTextRange(location: location))
+        guard let fragment = tlm.textLayoutFragment(for: location) else { return }
+        clip.scroll(to: NSPoint(x: 0, y: fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y))
+        textView.enclosingScrollView?.reflectScrolledClipView(clip)
+    }
 
     /// `doc`'s tab is the one its window shows.
     static func isShowing(_ doc: NSDocument?) -> Bool {
