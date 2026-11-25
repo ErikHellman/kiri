@@ -25,6 +25,19 @@ VERSION_SETTINGS=
 
 command -v xcodegen >/dev/null || { echo "xcodegen not found: brew install xcodegen" >&2; exit 1; }
 
+# Tracked files that are gone from the working tree (say, a folder moved by
+# accident in Xcode or Finder) make xcodebuild fail with a bare "No such file
+# or directory". Name them up front. Only a warning: deleting a file is also
+# a normal step in a change.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    missing=$(git ls-files --deleted)
+    if [ -n "$missing" ]; then
+        echo "warning: these tracked files are missing from the working tree:" >&2
+        echo "$missing" | sed 's/^/    /' >&2
+        echo "If that isn't intended, bring them back with: git restore <path>" >&2
+    fi
+fi
+
 # xcodebuild runs git (package fetches) and its build service in process
 # groups of their own, so Ctrl+C in the terminal never reaches them: git keeps
 # downloading and xcodebuild keeps waiting. So xcodebuild runs as a job in its
