@@ -201,10 +201,26 @@ import WebKit
         guard let message = body as? [String: Any] else { return }
         if let top = message["top"] as? Int { topLine = top }
         if let text = message["copy"] as? String {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            let board = Self.pasteboard
+            board.clearContents()
+            board.setString(text, forType: .string)
         }
     }
+
+    /// Where Copy puts a code block.
+    private static var pasteboard: NSPasteboard {
+        #if DEBUG || KIRI_SELFTEST
+        if let board = pasteboardForTests { return board }
+        #endif
+        return .general
+    }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// A self-test's own pasteboard for Copy (the person's stays as it is),
+    /// and what it is told of links instead of opening them.
+    static var pasteboardForTests: NSPasteboard?
+    static var openedForTests: ((URL) -> Void)?
+    #endif
 
     /// The page's script posts to `kiri`; the content controller keeps
     /// this, not the preview.
@@ -249,6 +265,9 @@ extension MarkdownPreview: WKNavigationDelegate {
     /// in its own app otherwise; anything else in the browser (or the app
     /// for its scheme, such as Mail).
     private func open(_ url: URL) {
+        #if DEBUG || KIRI_SELFTEST
+        if let opened = Self.openedForTests { return opened(url) }
+        #endif
         guard url.scheme == MarkdownPage.scheme else {
             NSWorkspace.shared.open(url)
             return
