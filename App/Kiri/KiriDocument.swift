@@ -86,14 +86,17 @@ extension UTType {
 
     // MARK: Large files
 
-    /// Files at least this large open in the read-only viewer
+    /// Files at least this large (50 MB) open in the read-only viewer
     /// (`LargeFileView`), after asking: the editor would hold the whole
     /// text in memory, several times over.
     static var largeFileThreshold: Int {
         #if DEBUG || KIRI_SELFTEST
         if let limit = largeFileThresholdForTests { return limit }
         #endif
-        return 100 << 20
+        // (Measured on a release build: the editor shows a 10 MB file as
+        // quickly as a 1 MB one, a 50 MB one in 1.3 s, 100 MB in 2.2 s
+        // with 550 MB of memory, 500 MB in 9.4 s with 2.3 GB.)
+        return 50 << 20
     }
     #if DEBUG || KIRI_SELFTEST
     /// A smaller limit for a self-test.
