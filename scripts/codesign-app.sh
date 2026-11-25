@@ -1,12 +1,14 @@
 #!/bin/sh
 # Signs Kiri.app from the inside out: Sparkle's helpers, then the frameworks,
-# then the app, each with the hardened runtime. Used by scripts/build.sh and
-# scripts/dmg.sh.
+# then the app. Used by scripts/build.sh and scripts/dmg.sh.
 #
 #   scripts/codesign-app.sh <Kiri.app> <identity>
 #
-# Identity "-" signs ad hoc (no timestamp); a real one, such as a Developer
-# ID, also gets the secure timestamp notarization asks for.
+# Identity "-" signs ad hoc, for local builds. A real one, such as a Developer
+# ID, also gets the hardened runtime and the secure timestamp that
+# notarization asks for. Ad hoc code goes without the hardened runtime: its
+# library validation rejects an ad hoc Sparkle.framework (no Team ID to match),
+# so the app would stop at launch with nothing on screen.
 #
 # Not `codesign --deep`: it signs nested code in no particular order and
 # drops the entitlements of Sparkle's Downloader service, which is what
@@ -16,10 +18,14 @@ set -eu
 APP=$1
 IDENTITY=$2
 TIMESTAMP=--timestamp=none
-[ "$IDENTITY" = "-" ] || TIMESTAMP=--timestamp
+RUNTIME=
+if [ "$IDENTITY" != "-" ]; then
+    TIMESTAMP=--timestamp
+    RUNTIME="--options runtime"
+fi
 
 sign() {
-    codesign --force --options runtime $TIMESTAMP --sign "$IDENTITY" "$@"
+    codesign --force $RUNTIME $TIMESTAMP --sign "$IDENTITY" "$@"
 }
 
 FRAMEWORKS="$APP/Contents/Frameworks"
