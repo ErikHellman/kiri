@@ -25,8 +25,14 @@ import SwiftUI
 
     /// The notes to show, newest first; empty when there are none.
     private(set) var notes: [ReleaseNotes] = []
-    /// The tab (its editor) showing them: one, the first to appear.
-    private(set) var owner: ObjectIdentifier?
+    /// The tab (its editor) showing them: one, the first to appear. (Held
+    /// weakly: a tab closed with them showing ends them.)
+    @ObservationIgnored private weak var owner: EditorModel?
+    /// Bumped when `owner` changes, which the views follow.
+    private var ownerChanges = 0
+    /// A tab took them and hasn't given them back: with `owner` gone, the
+    /// tab closed while they showed.
+    @ObservationIgnored private var hadOwner = false
     @ObservationIgnored private weak var ownerDocument: NSDocument?
     /// `Prefs.whatsNewSeenKey` before this launch's notes were shown, to
     /// put back if their tab turns out not to be one to show them in.
@@ -126,13 +132,24 @@ import SwiftUI
     // MARK: Which editor shows them
 
     /// Whether `model`'s tab shows the notes.
-    func shows(in model: EditorModel) -> Bool { !notes.isEmpty && owner == ObjectIdentifier(model) }
+    func shows(in model: EditorModel) -> Bool {
+        _ = ownerChanges
+        return !notes.isEmpty && owner === model
+    }
+
+    private func setOwner(_ model: EditorModel?) {
+        owner = model
+        hadOwner = model != nil
+        ownerChanges += 1
+    }
 
     /// A tab came up in a window: the first takes the notes, and from then
     /// on they count as seen.
     func offer(_ model: EditorModel, document: NSDocument?) {
+        // Their tab closed without closing them: they were shown.
+        if owner == nil, hadOwner { close() }
         guard !notes.isEmpty, owner == nil else { return }
-        owner = ObjectIdentifier(model)
+        setOwner(model)
         ownerDocument = document
         Telemetry.screen("What's New")
         if recordsSeen {
@@ -142,12 +159,21 @@ import SwiftUI
         }
     }
 
+    /// `model`'s tab came forward in the window where `previous`'s, which
+    /// shows the notes, was: they go with it.
+    func follow(from previous: EditorModel, to model: EditorModel, document: NSDocument?) {
+        guard owner === previous, previous !== model, !notes.isEmpty else { return }
+        setOwner(model)
+        ownerDocument = document
+    }
+
     /// `documents` are a `kiri -w` request's (a commit message, say): the
     /// tab of one of them gives the notes back, for the next tab that appears
     /// or the next launch.
     func waiting(on documents: [NSDocument]) {
         guard owner != nil, let ownerDocument, documents.contains(where: { $0 === ownerDocument }) else { return }
-        owner = nil
+        setOwner(nil)
+        self.ownerDocument = nil
         guard markedSeen else { return }
         markedSeen = false
         recordsSeen = true
@@ -161,7 +187,8 @@ import SwiftUI
     /// The notice's Close, Escape in its editor, or the first edit there.
     func close() {
         notes = []
-        owner = nil
+        setOwner(nil)
+        ownerDocument = nil
     }
 
     /// Something was typed, pasted or dropped into `model`'s document: the
@@ -169,6 +196,20 @@ import SwiftUI
     func edited(_ model: EditorModel) {
         if shows(in: model) { close() }
     }
+
+    #if DEBUG || KIRI_SELFTEST
+    @ObservationIgnored private var selfTestNotes: [ReleaseNotes] = []
+    /// Gives the notes to `model`'s tab as if it had come up first.
+    func selfTestHandOver(to model: EditorModel) {
+        selfTestNotes = notes
+        setOwner(model)
+    }
+    /// Puts the notes back in `model`'s tab.
+    func selfTestRestore(notesOf model: EditorModel) {
+        notes = selfTestNotes
+        setOwner(model)
+    }
+    #endif
 
     // MARK: Help ▸ What's New in Kiri
 
@@ -192,7 +233,8 @@ import SwiftUI
         guard !notes.isEmpty else { return }
         shared.recordsSeen = false
         shared.markedSeen = false
-        shared.owner = nil
+        shared.setOwner(nil)
+        shared.ownerDocument = nil
         shared.notes = [notes]
         if let model = FrontEditor.shared.editor {
             shared.offer(model, document: FrontEditor.shared.document)

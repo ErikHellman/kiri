@@ -34,6 +34,18 @@ extension SelfTest {
         whatsNew.offer(other, document: nil)
         report(!whatsNew.shows(in: other) && whatsNew.shows(in: model), "What's new shows in one tab only")
 
+        // A tab closed while it showed them ends them: no later tab gets
+        // them (they were seen).
+        do {
+            var gone: EditorModel? = EditorModel()
+            whatsNew.selfTestHandOver(to: gone!)
+            gone = nil
+            let later = EditorModel()
+            whatsNew.offer(later, document: nil)
+            report(!whatsNew.shows(in: later) && whatsNew.notes.isEmpty, "a tab closed with What's new showing ends it: no later tab shows it")
+            whatsNew.selfTestRestore(notesOf: model)
+        }
+
         // Escape in the editor closes it, and the hint is back.
         textView.cancelOperation(nil)
         await settle(400)

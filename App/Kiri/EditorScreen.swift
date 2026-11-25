@@ -102,8 +102,13 @@ private struct TabScreen: View {
         // going from file to file): a Save that was under way was the
         // other one's.
         .onChange(of: tab.id) { saveState = .idle }
-        // The first tab to show after an update has What's new.
-        .onChange(of: tab.id, initial: true) { whatsNew.offer(model, document: document) }
+        // The first tab to show after an update has What's new, and it
+        // stays in front in its window: another tab coming forward (the
+        // next file of a launch's, say) takes it along.
+        .onChange(of: tab.id, initial: true) { old, new in
+            if old != new, let previous = tabs.tab(id: old)?.model { whatsNew.follow(from: previous, to: model, document: document) }
+            whatsNew.offer(model, document: document)
+        }
         .onChange(of: ObjectIdentifier(document)) { saveState = .idle }
     }
 
