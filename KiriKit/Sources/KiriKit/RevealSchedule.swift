@@ -11,14 +11,14 @@
 /// flashing.
 public struct RevealSchedule: Sendable {
     /// The resting pace (seconds).
-    public static let wordStagger = 0.03
-    public static let wordFade = 0.2
+    public static let wordStagger = 0.018
+    public static let wordFade = 0.14
     /// The fastest a word may come in.
-    public static let minimumFade = 0.06
+    public static let minimumFade = 0.04
     /// How far through a line the next one starts.
     public static let lead = 0.2
     /// The longest the reveal of a full window should take.
-    public static let defaultBudget = 0.7
+    public static let defaultBudget = 0.4
 
     public let wordCounts: [Int]
     /// Each line's start, from the first line's start.
