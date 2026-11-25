@@ -47,9 +47,70 @@ public enum SidebarSearch {
     }
 
     /// The entries in the sidebar's order (`inTreeOrder`), each path once.
+    ///
+    /// The paths are put in a tree first and each folder's names sorted
+    /// on their own, then read top to bottom: a name is only ever compared
+    /// with the others in its folder, not every path with every other, so
+    /// 20 000 files take a fraction of what one big sort by `inTreeOrder`
+    /// would. The order is the same.
     public static func ordered(_ entries: [Entry]) -> [Entry] {
+        let root = TreeNode(name: "", isFolder: true)
         var seen = Set<String>()
-        return entries.filter { seen.insert($0.path).inserted }.sorted(by: inTreeOrder)
+        for entry in entries where seen.insert(entry.path).inserted {
+            var node = root
+            for (i, name) in entry.components.enumerated() {
+                let last = i == entry.components.count - 1
+                node = node.child(name, isFolder: !last || entry.isFolder)
+            }
+            node.entry = entry
+        }
+        var out: [Entry] = []
+        out.reserveCapacity(entries.count)
+        func walk(_ node: TreeNode) {
+            if let entry = node.entry { out.append(entry) }
+            for child in node.sortedChildren() { walk(child) }
+        }
+        walk(root)
+        return out
+    }
+
+    /// A name in the tree `ordered` reads: an entry's own, or a folder
+    /// above entries that may not be one itself.
+    private final class TreeNode {
+        let name: Substring
+        let isFolder: Bool
+        var entry: Entry?
+        private var children: [Key: TreeNode] = [:]
+
+        private struct Key: Hashable {
+            let name: Substring
+            let isFolder: Bool
+        }
+
+        init(name: Substring, isFolder: Bool) {
+            self.name = name
+            self.isFolder = isFolder
+        }
+
+        func child(_ name: Substring, isFolder: Bool) -> TreeNode {
+            let key = Key(name: name, isFolder: isFolder)
+            if let node = children[key] { return node }
+            let node = TreeNode(name: name, isFolder: isFolder)
+            children[key] = node
+            return node
+        }
+
+        /// Folders first, then files, each by name as `inTreeOrder` has them.
+        func sortedChildren() -> [TreeNode] {
+            children.values.sorted { a, b in
+                if a.isFolder != b.isFolder { return a.isFolder }
+                switch SidebarSearch.compare(a.name, b.name) {
+                case .orderedAscending: return true
+                case .orderedDescending: return false
+                case .orderedSame: return a.name < b.name
+                }
+            }
+        }
     }
 
     /// The entries of `ordered` (in the sidebar's order already) whose

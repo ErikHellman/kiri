@@ -72,6 +72,23 @@ import Testing
         #expect(SidebarSearch.find("e", inOrdered: all) == SidebarSearch.find("e", in: tree))
     }
 
+    /// `ordered` sorts each folder on its own; that is the order one sort
+    /// of every path by `inTreeOrder` gives, folders above files or not.
+    @Test func orderingByFolderIsTheOrderOfOneBigSort() {
+        let names = ["b", "A", "a", "file2", "file10", "Zed", "café", "cafe", "x.swift", "X.md"]
+        var entries: [Entry] = []
+        for (i, a) in names.enumerated() {
+            entries.append(file(a))
+            entries.append(file("\(a)dir/\(names[(i + 3) % names.count])"))
+            entries.append(file("\(a)dir/\(names[(i + 5) % names.count])dir/\(names[(i + 7) % names.count])"))
+            if i % 2 == 0 { entries.append(folder("\(a)dir")) }
+            if i % 3 == 0 { entries.append(folder("empty\(a)")) }
+        }
+        var seen = Set<String>()
+        let sorted = entries.filter { seen.insert($0.path).inserted }.sorted(by: SidebarSearch.inTreeOrder)
+        #expect(SidebarSearch.ordered(entries.shuffled()).map(\.path) == sorted.map(\.path))
+    }
+
     /// A folder as big as the index holds (20 000 files): put in order once
     /// when it has been read, then searched at every key on the main thread
     /// in a frame or two, even for one letter that most names have.
