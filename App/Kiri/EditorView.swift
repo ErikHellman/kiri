@@ -123,7 +123,16 @@ final class TabEditorSlot: NSView {
     init(identity: Int) {
         self.identity = identity
         super.init(frame: .zero)
+        #if DEBUG || KIRI_SELFTEST
+        Self.made += 1
+        #endif
     }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// How many slots have been made, for the self-test: a side opening
+    /// makes one, and the side that stays keeps its own.
+    static var made = 0
+    #endif
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 

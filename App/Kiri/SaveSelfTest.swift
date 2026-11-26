@@ -693,6 +693,10 @@ extension SelfTest {
 ///   window) / `tabs-check`, both with `-NSQuitAlwaysKeepsWindows YES`:
 ///   the window comes back with its three tabs in their order, the one
 ///   that showed (the middle one) showing.
+/// - `split-quit` (with three files) / `split-check`, both with
+///   `-NSQuitAlwaysKeepsWindows YES`: a window split side by side (the
+///   middle tab on the left, the first on the right with the keyboard, the
+///   edge at 40 %) comes back the same.
 /// - `empty-check`: a launch with nothing to restore or recover starts in
 ///   one empty document. Run after a quit with no window open, and after
 ///   the app was killed (when AppKit doesn't call the launch a default
@@ -727,6 +731,31 @@ extension SelfTest {
             case "frame-check": frameCheck(textView)
             case "restore-check": await restoreCheck()
             case "tabs-check": await tabsCheck()
+            case "split-check":
+                _ = await pause(5) { (DocumentWindow.all.first?.tabs.isSplit ?? false) && documents(in: DocumentWindow.all.first).count == 3 }
+                await settle(500)
+                let tabs = DocumentWindow.all.first?.tabs
+                let names = tabs?.panels.map { ($0.tab.document.fileURL?.lastPathComponent ?? "-") + ($0.keyboard ? "*" : "") } ?? []
+                report(DocumentWindow.all.count == 1 && names == ["second.txt", "crash.swift*"]
+                       && abs((tabs?.splitFraction ?? 0) - 0.4) < 0.001,
+                       "a window split side by side comes back with the same tabs on the same sides, the keyboard and the edge where they were (\(names), \(tabs?.splitFraction ?? 0))")
+            case "split-quit":
+                _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }
+                let docs = documents(in: DocumentWindow.all.first)
+                guard docs.count == 3, let window = DocumentWindow.all.first, let first = window.tabs.tab(for: docs[0]),
+                      let middle = window.tabs.tab(for: docs[1]) else { report(false, "three tabs to split"); break }
+                window.tabs.select(middle)
+                await settle(300)
+                window.tabs.openToSide(first, source: .menu)
+                window.tabs.splitFraction = 0.4
+                window.invalidateRestorableState()
+                await settle(800)
+                let names = window.tabs.panels.map { ($0.tab.document.fileURL?.lastPathComponent ?? "-") + ($0.keyboard ? "*" : "") }
+                report(names == ["second.txt", "crash.swift*"], "quitting with a window split side by side (\(names))")
+                print("SELFTEST DONE relaunch \(phase)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+                return
             case "untitled-quit":
                 // Three file tabs and a new empty one after them, showing.
                 _ = await pause(5) { documents(in: DocumentWindow.all.first).count == 3 }

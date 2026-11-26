@@ -158,6 +158,9 @@ final class KiriTextView: NSTextView {
             let sidebarByDefault = !(responder is NSText) && controller?.model.sidebarFocusRequest == 0
                 && controller?.document?.fileURL != nil
             guard nobody || sidebarByDefault else { return }
+            // Only the editor of the tab with the keyboard: the other side
+            // of a split window doesn't take it.
+            if let tab = controller?.tab, let tabs = tab.window?.tabs, tabs.selectedTab !== tab { return }
             window.makeFirstResponder(self)
         }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {

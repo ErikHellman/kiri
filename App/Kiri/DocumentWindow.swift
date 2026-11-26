@@ -315,10 +315,19 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         guard var view = responder as? NSView, view !== contentView else { return nil }
         if let field = view as? NSTextView, field.isFieldEditor, let owner = field.delegate as? NSView { view = owner }
         guard view.window === self else { return nil }
+        // In a slot: that slot's side, wherever it is on screen (a side
+        // that is coming in isn't where it will be yet).
+        var ancestor: NSView? = view
+        while let v = ancestor {
+            if let slot = v as? TabEditorSlot {
+                return tabs.panels.first { $0.slot == slot.identity }?.side
+            }
+            ancestor = v.superview
+        }
         let rect = view.convert(view.bounds, to: nil)
+        guard rect.width > 0, rect.height > 0 else { return nil }
         for panel in tabs.panels {
             guard let slot = slot(identity: panel.slot) else { continue }
-            if view.isDescendant(of: slot) { return panel.side }
             let frame = slot.convert(slot.bounds, to: nil).insetBy(dx: -1, dy: -1)
             if frame.contains(rect) { return panel.side }
         }

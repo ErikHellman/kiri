@@ -192,6 +192,7 @@ extension SelfTest {
         await closeChecks(f)
         await sidebarChecks(f)
         await paletteChecks(f)
+        await optionReturnChecks(f)
         await dragChecks(f)
         await roomChecks(f)
         await movingOutChecks(f)
@@ -211,8 +212,13 @@ extension SelfTest {
         let key = item?.keyEquivalent ?? "\\"
         report(item?.isEnabled == true && ["\\", "'"].contains(key) && item?.keyEquivalentModifierMask == .command,
                "View ▸ Split Editor is on, on ⌘\\ (\(item?.isEnabled ?? false), ⌘\(key) on this layout)")
+        let made = TabEditorSlot.made
+        let kept = f.window.editorSlot
         let pressed = await f.press(key, .command, code: 42)
         let shown = await f.wait { f.slotsShowTheirTabs && f.tabs.panels.count == 2 }
+        await settle(600)
+        report(TabEditorSlot.made == made + 1 && f.window.slot(for: f.tabs.selectedTab!) === kept,
+               "the side that stays keeps its slot, and the new side gets one (\(TabEditorSlot.made - made) made)")
         report(pressed && shown && f.layout == "d.swift* | c.txt",
                "⌘\\ shows the tab that showed before on the right, the keyboard staying on the left (\(f.layout), pressed \(pressed), in their slots \(f.slotsShowTheirTabs))")
         let strip = f.tabs.tabs
@@ -450,6 +456,54 @@ extension SelfTest {
         DocumentWindow.mergeAll(into: f.window)
         await settle(300)
         report(!lone.isVisible && f.window.tabs.list.contains { $0 === e }, "Merge All Windows brings them back")
+    }
+
+    /// ⌥↩ as a key, in the palette's field and on a sidebar row: the file
+    /// opens to the side. (Keys reach SwiftUI's views only where it is
+    /// drawing the window: elsewhere this is skipped.)
+    private static func optionReturnChecks(_ f: SplitFixture) async {
+        guard f.window.occlusionState.contains(.visible) || UserDefaults.standard.bool(forKey: "KiriAssumeDrawn") else {
+            print("SELFTEST info ⌥↩ as a key skipped: the window isn't drawn")
+            return
+        }
+        func optionReturn() async {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .option,
+                                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: f.window.windowNumber,
+                                            context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) {
+                    NSApp.postEvent(e, atStart: false)
+                }
+            }
+            await settle(300)
+        }
+        f.tabs.closeSplit()
+        for name in ["f.txt", "h.txt"] { f.tab(name)?.document.close() }
+        await settle(300)
+        guard let model = f.tabs.selectedTab?.model else { return }
+        // The palette's field.
+        model.palette.open(with: "f.tx")
+        let row = await f.wait { model.palette.selectedRow.map { if case .file = $0.action { true } else { false } } == true
+            && (f.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        await optionReturn()
+        let opened = await f.wait(4) { f.tab("f.txt") != nil && f.tabs.isSplit }
+        await settle(300)
+        report(row && opened && f.tabs.selectedTab.map(f.name) == "f.txt" && f.tabs.keyboardSide == .right
+               && f.tab("f.txt")?.document.fileURL.map { _ in true } == true,
+               "⌥↩ pressed in the palette's field opens its file to the side (\(f.layout))")
+        f.tabs.closeSplit()
+        await settle(200)
+        // A sidebar row.
+        guard let session = FolderSessions.session(for: f.window), let tab = f.tabs.selectedTab else { return }
+        session.cursor = f.file("h.txt")
+        tab.model.sidebarFocusRequest += 1
+        let focused = await f.wait { tab.model.sidebarHasFocus }
+        await optionReturn()
+        let fromSidebar = await f.wait(4) { f.tab("h.txt") != nil && f.tabs.isSplit }
+        await settle(300)
+        report(focused && fromSidebar && f.tabs.selectedTab.map(f.name) == "h.txt" && f.tab("h.txt")?.preview == false,
+               "⌥↩ pressed on a sidebar row opens its file to the side, to stay (\(f.layout), sidebar had the keyboard \(focused))")
+        f.tabs.closeSplit()
+        await settle(200)
     }
 
     /// A tab dragged onto a half of the editors shows there; files from
