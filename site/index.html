@@ -117,6 +117,26 @@
           <p>⌃⌘P shows a Markdown file rendered in the theme's colors, with front matter as a table and Mermaid diagrams drawn.</p>
         </article>
         <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg></div>
+          <h3>Pictures</h3>
+          <p>JPEG, PNG, HEIC, WebP, TIFF and more open in a viewer. Animated GIF, WebP and PNG play, and ⌘+ and ⌘− zoom.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 6h13v12H3zM16 10l5-3v10l-5-3"/></svg></div>
+          <h3>Videos and sounds</h3>
+          <p>MPEG-4, QuickTime, MPEG and anything else macOS plays, in the system's player. Space plays and pauses.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM12 4v3m0 2v2m0 2v2"/><path d="M10.5 15h3v3h-3z"/></svg></div>
+          <h3>Inside archives</h3>
+          <p>A zip, tar or tar.gz shows its folders and files as a tree, each with its size unpacked. Nothing is unpacked to show it.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 21 20H3z"/><circle cx="12" cy="14" r="2.5"/></svg></div>
+          <h3>SVG preview</h3>
+          <p>An SVG opens on its picture. The Text / Preview switch, or ⌃⌘P, shows its text to edit.</p>
+        </article>
+        <article class="card">
           <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></div>
           <h3>Back where you left off</h3>
           <p>A file you open again, even after a relaunch, comes back at the same line with the same selection. Windows come back with all their tabs.</p>
@@ -161,6 +181,22 @@
 <span class="n"> 88 931</span>  09:02:47 ERROR upstream <span class="m cur">timeout</span> /sync
 <span class="n">402 117</span>  11:38:12 WARN  pool <span class="m">timeout</span>, retrying
 <span class="n">918 650</span>  14:55:29 ERROR upstream <span class="m">timeout</span> /feed</code></pre>
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <h2>Pictures, videos and archives, too</h2>
+          <p>Not everything in a folder is text. Pictures open in a viewer that fits them to the window, with animations playing and ⌘0 for the actual size. Videos and sounds play in the system's player.</p>
+          <p>A zip, tar or tar.gz opens on what it holds, as a tree with each file's size unpacked, without unpacking anything. All of it is read-only, and the status bar says what you're looking at.</p>
+        </div>
+        <pre class="term logview" aria-label="An illustration of Kiri's archive viewer listing the folders and files of project.zip with their sizes"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="bar">project.zip · 214 files · 18.6 MB unpacked</span><code><span class="c">NAME                                SIZE</span>
+<span class="p">▾</span> project/           214 files   18.6 MB
+  <span class="p">▸</span> assets/           96 files   14.2 MB
+  <span class="p">▸</span> docs/             31 files    1.1 MB
+  <span class="p">▾</span> src/              85 files    3.3 MB
+      App.swift                    12 KB
+      Archive.swift                28 KB
+    README.md                       4 KB
+    Package.swift                   2 KB</code></pre>
       </div>
     </section>
 
