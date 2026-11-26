@@ -129,6 +129,8 @@ import os
         }
         // The Markdown preview's flags (`MarkdownPreviewSelfTest.swift`).
         if markdownFlags(textView) { return }
+        // Side by side (`SplitSelfTest.swift`).
+        if splitFlags(textView) { return }
         // The command palette's flags (`PaletteSelfTest.swift`).
         if paletteFlags(textView) { return }
         // The feedback window's flags (`FeedbackSelfTest.swift`).

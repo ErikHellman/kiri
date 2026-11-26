@@ -28,6 +28,18 @@ import KiriKit
         view.beginDraggingSession(with: [draggingItem], event: event, source: Source.shared)
     }
 
+    #if DEBUG || KIRI_SELFTEST
+    /// A pasteboard as a drag of `tab` out of its strip fills one, for the
+    /// self-test (which can't drag with the pointer).
+    static func selfTestPasteboard(dragging tab: DocumentTab) -> NSPasteboard {
+        dragged = tab
+        let board = NSPasteboard.withUniqueName()
+        board.clearContents()
+        board.setString(String(tab.id), forType: type)
+        return board
+    }
+    #endif
+
     static func isTabDrag(_ info: any NSDraggingInfo) -> Bool {
         info.draggingPasteboard.availableType(from: [type]) != nil
     }
