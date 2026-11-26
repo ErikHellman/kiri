@@ -222,6 +222,19 @@ p { margin: 0; }
 .term .dots i:nth-child(3) { background: #28C840; }
 .term .c { color: #A08E7E; }
 .term .p { color: #F2A93B; }
+.term em { font-style: normal; }
+/* The large-file viewer, drawn in the terminal's colors. */
+.logview { font-size: 13.5px; line-height: 1.9; }
+.logview .bar { display: block; margin-bottom: 10px; font: 700 0.9rem Nunito, system-ui, sans-serif; color: #D9C8B6; }
+.logview .find {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 12px; padding: 6px 12px;
+  border-radius: 12px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.logview .find .q { color: var(--term-fg); }
+.logview .find .c { font: 700 0.85rem Nunito, system-ui, sans-serif; }
+.logview .n { color: #7D6C5E; user-select: none; }
+.logview .m { background: rgba(242, 169, 59, 0.22); color: #FFD58A; border-radius: 4px; padding: 1px 2px; }
+.logview .m.cur { background: #F2A93B; color: #2A1D0C; }
 
 /* Get Kiri */
 .get { text-align: center; padding-bottom: 96px; }

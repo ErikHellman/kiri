@@ -241,6 +241,7 @@ struct ShortcutGroup: Identifiable {
             Item("Theme, appearance, motion, typing animations", "View menu"),
             Item("Open the menu bar", "⌃F2"),
             Item("Search all menus", "Help menu"),
+            Item("The kiri command's options and examples", "Help menu"),
             Item("Send feedback", "Help menu"),
         ]),
     ]

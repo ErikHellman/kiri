@@ -24,11 +24,14 @@ Opens files and folders in Kiri. With no paths, opens or brings up Kiri.
 Options:
   -n, --new-window  open in a new window instead of the front one
   -w, --wait        wait until the opened tabs are closed (for EDITOR and git)
+  --                treat everything after it as a path, even names starting with -
   -h, --help        show this help
   -v, --version     show Kiri's version
 
 Use Kiri as your editor:  export EDITOR="kiri -w"
                           git config --global core.editor "kiri -w"
+
+More examples: Help > Command Line Tool in Kiri.
 EOF
 }
 

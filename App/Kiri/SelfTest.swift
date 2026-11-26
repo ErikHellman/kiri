@@ -2730,6 +2730,21 @@ import os
         report(opened && ktv.string == original, "⌘? (⇧⌘/ as the keyboard sends it) opens Keyboard Shortcuts and leaves the text alone")
         shortcutsWindow()?.close()
         _ = await wait { shortcutsWindow() == nil }
+
+        // Help ▸ Command Line Tool: the `kiri` command's options and examples.
+        func commandLineWindow() -> NSWindow? {
+            NSApp.windows.first { $0.identifier?.rawValue == CommandLineHelpView.windowID && $0.isVisible }
+        }
+        updateMenu(main)
+        if let i = help.items.firstIndex(where: { $0.title == "Command Line Tool" }) {
+            help.performActionForItem(at: i)
+            let shown = await wait { commandLineWindow() != nil }
+            report(shown && ktv.string == original, "Help ▸ Command Line Tool opens the command's options and examples")
+            commandLineWindow()?.close()
+            _ = await wait { commandLineWindow() == nil }
+        } else {
+            report(false, "Help ▸ Command Line Tool exists (\(help.items.map(\.title)))")
+        }
         ktv.setSelectedRange(NSRange(location: 0, length: 0))
         window.makeFirstResponder(ktv)
     }

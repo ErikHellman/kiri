@@ -280,6 +280,8 @@ struct KiriCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("Keyboard Shortcuts") { openWindow(id: ShortcutsView.windowID) }
                 .keyboardShortcut(Keys.shortcuts)
+            // The `kiri` command: options and examples, piping among them.
+            Button("Command Line Tool", systemImage: "terminal") { openWindow(id: CommandLineHelpView.windowID) }
             // The newest release notes in the app (`WhatsNew`).
             Button("What's New in Kiri", systemImage: "sparkles") { WhatsNew.showLatest() }
                 .disabled(WhatsNew.latest == nil)

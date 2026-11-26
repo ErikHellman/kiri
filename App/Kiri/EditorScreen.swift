@@ -95,6 +95,7 @@ private struct TabScreen: View {
             #if DEBUG || KIRI_SELFTEST
             if UserDefaults.standard.bool(forKey: "KiriShowSettings") { openWindow(id: SettingsView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowShortcuts") { openWindow(id: ShortcutsView.windowID) }
+            if UserDefaults.standard.bool(forKey: "KiriShowCommandLine") { openWindow(id: CommandLineHelpView.windowID) }
             if UserDefaults.standard.bool(forKey: "KiriShowStyleGallery") { openWindow(id: "style-gallery") }
             #endif
         }
