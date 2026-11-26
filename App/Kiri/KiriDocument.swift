@@ -115,6 +115,54 @@ extension UTType {
     /// The viewer opened the file again (it got shorter on disk).
     func largeFileReopened(_ new: LargeFile) { largeFile = new }
 
+    // MARK: Pictures, videos and archives
+
+    /// The file, when it is a picture, a video or an archive: shown in a
+    /// read-only viewer (`MediaViewer`) instead of the editor, and never
+    /// read as text (a video of some GB opens at once). `text` is empty
+    /// then, and nothing saves.
+    private(set) var media: MediaFile?
+    /// The viewer that shows it, while a tab does.
+    @ObservationIgnored weak var mediaViewer: MediaViewer?
+
+    /// Nothing saves the document: a large file, or a picture, video or
+    /// archive.
+    var isReadOnly: Bool { largeFile != nil || media != nil }
+
+    /// What the file at `url` is, from its first bytes (`MediaKind`), or
+    /// nil for a file the editor opens.
+    private nonisolated static func mediaKind(of url: URL) -> MediaKind? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let head = (try? handle.read(upToCount: MediaKind.headLength)) ?? Data()
+        return MediaKind.detect(fileName: url.lastPathComponent, head: head)
+    }
+
+    /// The document becomes the picture, video or archive `new`: when it
+    /// opens, and again when its file changes on disk (a Revert).
+    private func openMedia(_ new: MediaFile) {
+        let was = media
+        media = new
+        largeFile = nil
+        file = TextFile()
+        text = ""
+        encoding = .utf8
+        lineEnding = .lf
+        hasBOM = false
+        if let was, was.kind == new.kind {
+            mediaViewer?.reload(new)
+        } else if was != nil || counted {
+            // It was text (or a large file) and its file is now a
+            // picture: its tab swaps the editor (emptied) for the viewer.
+            editor?.load(self)
+            DocumentWindow.tab(of: self)?.documentChangedKind()
+        }
+        if !counted {
+            counted = true
+            DispatchQueue.main.async { Telemetry.mediaOpened(new.kind, bytes: new.size) }
+        }
+    }
+
     /// A file of `size` bytes at `url` is too large for the editor: whether
     /// to open it read-only, asking first unless it is open already (a
     /// Revert, or a file that grew past the limit while it was open),
@@ -140,8 +188,23 @@ extension UTType {
 
     override nonisolated func read(from url: URL, ofType typeName: String) throws {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let stream = MainActor.assumeIsolated { (NSDocumentController.shared as? KiriDocumentController)?.isStream(url) == true }
+        // A picture, a video or an archive: its viewer, at any size. (A
+        // stream is never one: its first bytes can be read only once.)
+        if !stream, let kind = Self.mediaKind(of: url) {
+            MainActor.assumeIsolated { openMedia(MediaFile(url: url, kind: kind, size: size)) }
+            return
+        }
+        // It was one, and is text now.
+        let wasMedia = MainActor.assumeIsolated { () -> Bool in
+            guard media != nil else { return false }
+            media = nil
+            return true
+        }
+        defer {
+            if wasMedia { MainActor.assumeIsolated { DocumentWindow.tab(of: self)?.documentChangedKind() } }
+        }
         let large = MainActor.assumeIsolated { () -> Bool? in
-            let stream = (NSDocumentController.shared as? KiriDocumentController)?.isStream(url) == true
             guard size >= Self.largeFileThreshold || isLargeFile || stream else { return nil }
             return openLargeFile(at: url, size: size)
         }
@@ -173,7 +236,7 @@ extension UTType {
                     // It grew past the limit while it was open: its tab
                     // swaps the editor (emptied) for the viewer.
                     editor?.load(self)
-                    DocumentWindow.tab(of: self)?.documentBecameLarge()
+                    DocumentWindow.tab(of: self)?.documentChangedKind()
                 }
                 if !counted {
                     counted = true
@@ -220,8 +283,9 @@ extension UTType {
     // MARK: Writing
 
     override func data(ofType typeName: String) throws -> Data {
-        // A large file is never written: its text is not here.
-        if isLargeFile { throw CocoaError(.fileWriteNoPermission) }
+        // A large file, a picture, a video or an archive is never written:
+        // its text is not here.
+        if isReadOnly { throw CocoaError(.fileWriteNoPermission) }
         do { return try contents().data() } catch { throw CocoaError(.fileWriteInapplicableStringEncoding) }
     }
 
@@ -259,9 +323,10 @@ extension UTType {
     /// being worked on. (A recovery copy is no save.)
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
                        completionHandler: @escaping (Error?) -> Void) {
-        // A large file is read-only. (Cancelled, so no alert says so:
-        // Save is off in the menus and on the toolbar already.)
-        if isLargeFile {
+        // A large file (a picture, a video, an archive) is read-only.
+        // (Cancelled, so no alert says so: Save is off in the menus and on
+        // the toolbar already.)
+        if isReadOnly {
             completionHandler(CocoaError(.userCancelled))
             return
         }
@@ -311,7 +376,7 @@ extension UTType {
 
     /// The language the file's name, or its first line, says it is in.
     var detectedLanguage: Language {
-        if isLargeFile { return .plainText }
+        if isReadOnly { return .plainText }
         let firstLine = file.text.prefix(200).split(separator: "\n", maxSplits: 1).first.map(String.init)
         return Language.detect(fileName: fileURL?.lastPathComponent, firstLine: firstLine)
     }
@@ -346,7 +411,7 @@ extension UTType {
     /// undoable edit, so the document turns dirty.
     func change<V: Equatable>(_ keyPath: ReferenceWritableKeyPath<KiriDocument, V>, to new: V, actionName: String) {
         let old = self[keyPath: keyPath]
-        guard old != new, !isLargeFile else { return }
+        guard old != new, !isReadOnly else { return }
         self[keyPath: keyPath] = new
         // Unsaved changes, so no longer a preview.
         PreviewTabs.keep(self)
@@ -360,15 +425,15 @@ extension UTType {
     func setLineEnding(_ new: LineEnding) { change(\.lineEnding, to: new, actionName: "Change Line Endings") }
     func setByteOrderMark(_ new: Bool) { change(\.hasBOM, to: new, actionName: "Change Byte Order Mark") }
 
-    /// A large file has nothing to save, whatever happens to the (empty,
-    /// unseen) editor behind it.
+    /// A large file (or a picture, video or archive) has nothing to save,
+    /// whatever happens to the (empty, unseen) editor behind it.
     override func updateChangeCount(_ change: NSDocument.ChangeType) {
-        if isLargeFile { return }
+        if isReadOnly { return }
         super.updateChangeCount(change)
     }
 
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if isLargeFile, let action = item.action,
+        if isReadOnly, let action = item.action,
            [#selector(save(_:)), #selector(saveAs(_:)), #selector(saveTo(_:)), #selector(duplicate(_:))].contains(action) {
             return false
         }
@@ -435,6 +500,7 @@ extension UTType {
     /// document. `kiri -w` and the files `kiri` made are told.
     override func close() {
         largeViewer?.stop()
+        mediaViewer?.stop()
         if let fileURL { (NSDocumentController.shared as? KiriDocumentController)?.endStream(fileURL) }
         DocumentWindow.documentWillClose(self)
         super.close()

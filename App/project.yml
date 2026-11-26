@@ -66,6 +66,20 @@ targets:
               - public.swift-source
               - com.netscape.javascript-source
               - public.html
+          # Pictures, videos and archives open read-only in a viewer
+          # (App/Kiri/MediaViewer.swift): Kiri is offered in Open With.
+          - CFBundleTypeName: Picture, Video or Archive
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            NSDocumentClass: KiriDocument
+            LSItemContentTypes:
+              - public.image
+              - public.movie
+              - public.audio
+              - public.zip-archive
+              - public.tar-archive
+              - org.gnu.gnu-zip-tar-archive
+              - com.sun.java-archive
           - CFBundleTypeName: Any File
             CFBundleTypeRole: Editor
             LSHandlerRank: None
@@ -128,3 +142,23 @@ targets:
         product: KiriMarkdown
       - package: Sparkle
       - package: Vaka
+      # The video player (App/KiriVideo): embedded, not linked, so AVKit
+      # loads only when a video opens (App/Kiri/VideoViewer.swift).
+      - target: KiriVideo
+        link: false
+        embed: true
+  # The video viewer's player, with AVKit, loaded by the app the first
+  # time a video opens. It knows nothing of the app: they talk by name.
+  KiriVideo:
+    type: framework
+    platform: macOS
+    sources:
+      - KiriVideo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri.video
+        PRODUCT_NAME: KiriVideo
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        DEFINES_MODULE: NO
+        ENABLE_HARDENED_RUNTIME: YES

@@ -34,6 +34,8 @@ struct KiriCommands: Commands {
     private var tabs: WindowTabs? { FrontEditor.shared.tabs }
     private var document: KiriDocument? { FrontEditor.shared.document }
     private var tab: DocumentTab? { tabs?.selectedTab }
+    /// The front tab shows a picture, a video or an archive: it has no text.
+    private var showsMedia: Bool { editor?.mediaStatus != nil }
 
     var body: some Commands {
         // Below About Kiri, where Mac apps keep it. Off in a build that
@@ -176,7 +178,7 @@ struct KiriCommands: Commands {
             Divider()
             Button("Go to Line…") { editor?.goToLine.open() }
                 .keyboardShortcut(Keys.goToLine)
-                .disabled(editor == nil)
+                .disabled(editor == nil || showsMedia)
         }
 
         // View. The size is the editor text's (and its line numbers'), not
@@ -188,16 +190,18 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.palette)
                 .disabled(editor == nil)
             Divider()
-            Button("Bigger Text") { textScale = Prefs.bigger(textScale) }
+            // A picture zooms instead.
+            Button("Bigger Text") { if !EditAction.zoomMedia(.bigger) { textScale = Prefs.bigger(textScale) } }
                 .keyboardShortcut(Keys.bigger)
-            Button("Smaller Text") { textScale = Prefs.smaller(textScale) }
+            Button("Smaller Text") { if !EditAction.zoomMedia(.smaller) { textScale = Prefs.smaller(textScale) } }
                 .keyboardShortcut(Keys.smaller)
-            Button("Actual Size") { textScale = 1 }
+            Button("Actual Size") { if !EditAction.zoomMedia(.actualSize) { textScale = 1 } }
                 .keyboardShortcut(Keys.actualSize)
             Toggle("Wrap Lines", isOn: $wrapLines)
                 .keyboardShortcut(Keys.wrapLines)
-            // A Markdown file rendered, or its text (the top bar's Text / Preview).
-            Toggle("Markdown Preview", isOn: Binding(get: { tab?.showsMarkdownPreview ?? false },
+            // A Markdown file rendered, or an SVG drawn, or its text (the
+            // top bar's Text / Preview).
+            Toggle(tab?.isSVG == true ? "SVG Preview" : "Markdown Preview", isOn: Binding(get: { tab?.showsMarkdownPreview ?? false },
                                                      set: { tab?.setMarkdownPreview($0) }))
                 .keyboardShortcut(Keys.markdownPreview)
                 .disabled(!(tab?.canPreviewMarkdown ?? false))
@@ -221,11 +225,11 @@ struct KiriCommands: Commands {
             // same choice for the menu bar (and the palette's "Language:" rows).
             Button(Self.chooseLanguageTitle) { editor?.palette.toggleLanguages() }
                 .keyboardShortcut(Keys.chooseLanguage)
-                .disabled(editor == nil)
+                .disabled(editor == nil || showsMedia)
             Picker(Self.languageMenu[1], selection: languageBinding) {
                 ForEach(Language.all) { Text($0.name).tag($0) }
             }
-            .disabled(editor == nil)
+            .disabled(editor == nil || showsMedia)
             Divider()
             Picker("Text Encoding", selection: Binding(get: { document?.encoding }, set: { if let new = $0 { document?.setEncoding(new) } })) {
                 ForEach(TextEncoding.allCases, id: \.self) { Text($0.label).tag(Optional($0)) }
@@ -240,14 +244,14 @@ struct KiriCommands: Commands {
             Divider()
             Button("Shift Right") { editor?.controller?.shiftLines(right: true) }
                 .keyboardShortcut(Keys.shiftRight)
-                .disabled(editor == nil)
+                .disabled(editor == nil || showsMedia)
             Button("Shift Left") { editor?.controller?.shiftLines(right: false) }
                 .keyboardShortcut(Keys.shiftLeft)
-                .disabled(editor == nil)
+                .disabled(editor == nil || showsMedia)
             // Off in a format that has no comments (plain text, JSON, CSV).
             Button("Toggle Comment") { editor?.controller?.toggleComment() }
                 .keyboardShortcut(Keys.toggleComment)
-                .disabled(editor?.language.comment == nil)
+                .disabled(editor?.language.comment == nil || showsMedia)
         }
 
         // Window: Kiri draws its own tab strip, so it gets Safari's keys
@@ -347,6 +351,12 @@ struct KiriCommands: Commands {
 /// document's find bar (`FrontEditor`), wherever in that window the
 /// keyboard is.
 @MainActor enum EditAction {
+    /// View ▸ Bigger Text, Smaller Text and Actual Size zoom the picture in
+    /// the front tab; false when there isn't one.
+    static func zoomMedia(_ step: MediaZoom) -> Bool {
+        FrontEditor.shared.editor?.media?.zoom(step) ?? false
+    }
+
     static func send(_ action: Selector, tag: Int = 0) {
         // The find actions read which one they are from the sender's tag,
         // as they do from AppKit's own menu items.
@@ -380,6 +390,11 @@ struct KiriCommands: Commands {
             return
         }
         if action == .show || action == .showReplace { Telemetry.track("find_open", ["replace": action == .showReplace]) }
+        // A picture, a video or an archive has no text to find in.
+        if let editor, editor.mediaStatus != nil {
+            NSSound.beep()
+            return
+        }
         if let editor {
             // Find works on the text: a Markdown preview shows it.
             editor.controller?.tab?.setMarkdownPreview(false)

@@ -71,6 +71,20 @@ public struct FileIcon: Hashable, Sendable {
 
     public static func of(_ language: Language) -> FileIcon { byLanguage[language.id] ?? document }
 
-    /// The icon for a file, from its name alone (nothing is read).
-    public static func forFile(named name: String) -> FileIcon { of(Language.detect(fileName: name)) }
+    /// The icon for a file, from its name alone (nothing is read): a
+    /// picture, a video or an archive (which Kiri shows in a viewer) by
+    /// its kind, any other by its language.
+    public static func forFile(named name: String) -> FileIcon {
+        switch MediaKind.guess(fileName: name) {
+        case .image?: image
+        case .video?: video
+        case .archive?: archive
+        case nil: of(Language.detect(fileName: name))
+        }
+    }
+
+    // In tints the languages use already (`tints`).
+    public static let image = FileIcon(symbol: "photo", tint: .function)
+    public static let video = FileIcon(symbol: "film", tint: .keyword)
+    public static let archive = FileIcon(symbol: "doc.zipper", tint: .property)
 }

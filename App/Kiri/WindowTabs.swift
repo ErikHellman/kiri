@@ -47,6 +47,12 @@ import SwiftUI
     /// The read-only viewer that shows a large file in the editor's place
     /// (`KiriDocument.isLargeFile`).
     @ObservationIgnored private(set) var largeViewer: LargeFileViewer?
+    /// The read-only viewer that shows a picture, a video or an archive in
+    /// the editor's place (`KiriDocument.media`).
+    @ObservationIgnored private(set) var mediaViewer: MediaViewer?
+    /// The tab opened on an SVG file's picture, which isn't drawn yet: the
+    /// slot shows the paper until it is, not the text (`TabEditorSlot.show`).
+    @ObservationIgnored var opensInPreview = false
 
     init(document: KiriDocument, arriving: Bool) {
         Self.lastID += 1
@@ -63,32 +69,53 @@ import SwiftUI
         languageFor = document.location
         model.language = document.detectedLanguage
         controller.setLanguage(model.language)
-        updateLargeViewer()
+        updateViewer()
         // Where the file was the last time it was open (`FilePositions`).
         controller.restorePosition()
         trackLocation()
+        openSVGAsPicture()
         if arriving { arrive() }
     }
 
-    /// The document's file grew past the limit while it was open, and it
-    /// was read again read-only: the viewer takes the editor's place.
-    func documentBecameLarge() {
-        // (Large files are read-only, and have no preview.)
-        showsMarkdownPreview = false
-        updateLargeViewer()
+    /// The document's file became another kind of file while it was open
+    /// (it grew past the limit, or became a picture, or text again), and
+    /// was read again: the viewer or the editor takes the other's place.
+    func documentChangedKind() {
+        // (Read-only files have no preview.)
+        if document.isReadOnly { showsMarkdownPreview = false }
+        updateViewer()
         if let slot = window?.editorSlot, window?.tabs.selectedTab === self { slot.show(self) }
     }
 
-    /// A large file shows in a viewer of its own; any other in the editor.
-    private func updateLargeViewer() {
+    /// A large file shows in a viewer of its own, as does a picture, a
+    /// video or an archive; any other file in the editor.
+    private func updateViewer() {
         if let file = document.largeFile {
-            guard largeViewer?.document !== document else { return }
-            largeViewer?.stop()
-            largeViewer = LargeFileViewer(document: document, file: file, model: model)
+            if largeViewer?.document !== document {
+                largeViewer?.stop()
+                largeViewer = LargeFileViewer(document: document, file: file, model: model)
+            }
         } else if let viewer = largeViewer {
             viewer.stop()
             largeViewer = nil
         }
+        if let media = document.media {
+            if mediaViewer?.document !== document || mediaViewer?.kind != media.kind {
+                mediaViewer?.stop()
+                mediaViewer = MediaViewer(document: document, media: media, model: model)
+            }
+        } else if let viewer = mediaViewer {
+            viewer.stop()
+            mediaViewer = nil
+        }
+    }
+
+    /// An SVG file opens on its picture (the Text / Preview switch, as for
+    /// Markdown, goes to its text).
+    private func openSVGAsPicture() {
+        guard isSVG, canPreviewMarkdown, !showsMarkdownPreview else { return }
+        opensInPreview = true
+        setMarkdownPreview(true)
     }
 
     /// The text fades in: now, if the tab shows, or when it next does.
@@ -103,12 +130,15 @@ import SwiftUI
     func replaceDocument(with new: KiriDocument) {
         guard new !== document else { return }
         controller.rememberPosition()
+        // An SVG's picture was showing: the next file opens as its own does.
+        if isSVG, showsMarkdownPreview { setMarkdownPreview(false) }
         document = new
         controller.show(new)
-        updateLargeViewer()
+        updateViewer()
         controller.restorePosition()
         languageFor = new.location
         trackLocation()
+        openSVGAsPicture()
         arrive()
     }
 

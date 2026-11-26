@@ -342,3 +342,22 @@ summary { font-weight: 700; cursor: default; }
 details > :last-child { margin-bottom: 0.3rem; }
 
 p[align="center"], div[align="center"] { text-align: center; }
+
+/* MARK: SVG (MarkdownPage.svgHTML) */
+
+/* An SVG file's picture: centered on the paper, the page's full width. */
+.page:has(> .svg-view) { max-width: none; min-height: 100vh; display: flex; }
+.svg-view {
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.svg-view img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 7rem);
+  /* An icon shows larger, and one without a size of its own gets room. */
+  min-width: min(16rem, 100%);
+  object-fit: contain;
+}

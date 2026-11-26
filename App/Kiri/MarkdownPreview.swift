@@ -31,8 +31,9 @@ import WebKit
     private var shellLoaded = false
     private var mermaidLoaded = false
     private var style: MarkdownPage.Style
-    /// The text rendered, and its HTML.
+    /// The text rendered (and whether as an SVG's picture), and its HTML.
     private var renderedText: String?
+    private var renderedSVG = false
     private var html: String?
     private var hasMermaid = false
     /// Bumped by each `show`: an older rendering that finishes late is dropped.
@@ -72,8 +73,9 @@ import WebKit
 
     /// Renders `text` (a file in `folder`, which images resolve against)
     /// and calls `ready` once the page shows it, scrolled to the block at
-    /// `line` (1-based) if given.
-    func show(text: String, folder: URL?, line: Int?, ready: (() -> Void)? = nil) {
+    /// `line` (1-based) if given. `svg`: the text is an SVG file's, and
+    /// the page shows its picture (`MarkdownPage.svgHTML`).
+    func show(text: String, folder: URL?, line: Int?, svg: Bool = false, ready: (() -> Void)? = nil) {
         generation += 1
         let generation = generation
         if let ready { waiting.append(ready) }
@@ -84,22 +86,28 @@ import WebKit
             baseURL = base
             loadShell()
         }
-        guard text != renderedText || html == nil else {
+        guard text != renderedText || svg != renderedSVG || html == nil else {
             fill()
+            return
+        }
+        if svg {
+            rendered(html: MarkdownPage.svgHTML(text), hasMermaid: false, of: text, svg: true, generation: generation)
             return
         }
         Task.detached(priority: .userInitiated) { [weak self] in
             let rendering = MarkdownHTML.render(text, highlight: MarkdownPreview.highlight)
-            await self?.rendered(rendering, of: text, generation: generation)
+            await self?.rendered(html: rendering.html, hasMermaid: rendering.hasMermaid, of: text, svg: false,
+                                 generation: generation)
         }
     }
 
-    private func rendered(_ rendering: MarkdownRendering, of text: String, generation: Int) {
+    private func rendered(html: String, hasMermaid: Bool, of text: String, svg: Bool, generation: Int) {
         guard generation == self.generation else { return }
         renderedText = text
-        html = rendering.html
-        if rendering.hasMermaid, !hasMermaid { Telemetry.track("markdown_mermaid") }
-        hasMermaid = rendering.hasMermaid
+        renderedSVG = svg
+        self.html = html
+        if hasMermaid, !self.hasMermaid { Telemetry.track("markdown_mermaid") }
+        self.hasMermaid = hasMermaid
         fill()
     }
 
@@ -354,28 +362,37 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
 
 extension DocumentTab {
     /// The tab can show a preview: its language is Markdown (from the
-    /// file's name or picked), and it isn't a large file (read-only).
-    var canPreviewMarkdown: Bool { model.language == .markdown && !document.isLargeFile }
+    /// file's name or picked), or it is an SVG file (shown as XML), and it
+    /// isn't a large file (read-only).
+    var canPreviewMarkdown: Bool {
+        (model.language == .markdown || isSVG && model.language == .xml) && !document.isReadOnly
+    }
+
+    /// The file is an SVG: its preview is its picture.
+    var isSVG: Bool { document.location?.pathExtension.lowercased() == "svg" }
 
     /// Switches between the text and the preview.
     func setMarkdownPreview(_ on: Bool) {
         if on {
             guard canPreviewMarkdown, !showsMarkdownPreview else { return }
             showsMarkdownPreview = true
-            Telemetry.track("markdown_preview")
+            Telemetry.track(isSVG ? "svg_preview" : "markdown_preview")
             let preview = markdownPreview ?? MarkdownPreview(tab: self)
             markdownPreview = preview
             // The page is laid out and scrolled at the size it will show at:
             // at another width the same scroll offset is another part of it.
             if preview.webView.superview == nil, container.bounds.width > 0 { preview.webView.frame = container.frame }
             let line = (controller.currentPosition()?.topLine ?? 0) + 1
-            preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line) { [weak self] in
+            preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line,
+                         svg: isSVG) { [weak self] in
                 guard let self, self.showsMarkdownPreview else { return }
+                self.opensInPreview = false
                 self.showInSlot(focus: true)
             }
         } else {
             guard showsMarkdownPreview else { return }
             showsMarkdownPreview = false
+            opensInPreview = false
             let preview = markdownPreview
             let hadKeyboard = preview.map { $0.webView.window?.firstResponder === $0.webView } ?? false
             showInSlot(focus: false)
@@ -395,7 +412,7 @@ extension DocumentTab {
             guard let self, self.showsMarkdownPreview else { return }
             guard self.canPreviewMarkdown else { return self.setMarkdownPreview(false) }
             self.markdownPreview?.show(text: self.markdownText, folder: self.document.location?.deletingLastPathComponent(),
-                                       line: nil)
+                                       line: nil, svg: self.isSVG)
         }
     }
 

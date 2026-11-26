@@ -112,6 +112,21 @@ import os
             }
             return
         }
+        // -KiriViewerTest YES: the viewers' checks (`ViewerSelfTest.swift`),
+        // in a launch with any small file.
+        if UserDefaults.standard.bool(forKey: "KiriViewerTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                Task { @MainActor in
+                    await viewerStage()
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE viewer")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // The Markdown preview's flags (`MarkdownPreviewSelfTest.swift`).
         if markdownFlags(textView) { return }
         // The command palette's flags (`PaletteSelfTest.swift`).

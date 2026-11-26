@@ -34,6 +34,11 @@ import SwiftUI
     @ObservationIgnored weak var large: LargeFileViewer?
     /// What the status bar says of a large file, while the tab shows one.
     var largeStatus: LargeFileStatus?
+    /// The viewer, when the tab shows a picture, a video or an archive.
+    @ObservationIgnored weak var media: MediaViewer?
+    /// What the status bar says of it: the tab shows no text, so it has
+    /// no position, language or format either.
+    var mediaStatus: MediaStatus?
     /// Find and replace (⌘F) and the command palette (⌘K): the glass bars
     /// that float over the top of the editor, one at a time (opening one
     /// closes the other). Go to Line (⌘L) is the palette's `:` mode, and
@@ -120,9 +125,22 @@ final class TabEditorSlot: NSView {
             showLarge(tab, large.view)
             return
         }
-        if tab.showsMarkdownPreview, let preview = tab.markdownPreview, preview.isReady {
-            showPreview(tab, preview.webView)
+        if let media = tab.mediaViewer {
+            showMedia(tab, media.view)
             return
+        }
+        if tab.showsMarkdownPreview, let preview = tab.markdownPreview {
+            if preview.isReady {
+                showPreview(tab, preview.webView)
+                return
+            }
+            // An SVG opening on its picture: the paper, until it is drawn.
+            if tab.opensInPreview {
+                for view in subviews { view.removeFromSuperview() }
+                self.tab = tab
+                tab.arriving = false
+                return
+            }
         }
         let editor = tab.container
         if self.tab !== tab || editor.superview !== self {
@@ -171,6 +189,26 @@ final class TabEditorSlot: NSView {
         }
     }
 
+    /// A picture, a video or an archive goes in the editor's place
+    /// (`MediaViewer`), and fades in as a file's text does.
+    private func showMedia(_ tab: DocumentTab, _ view: NSView) {
+        if self.tab !== tab || view.superview !== self {
+            for other in subviews where other !== view { other.removeFromSuperview() }
+            self.tab = tab
+            view.frame = bounds
+            view.autoresizingMask = [.width, .height]
+            if view.superview !== self { addSubview(view) }
+        }
+        if tab.arriving { arrive(tab) }
+        if !tab.installed, window != nil {
+            tab.installed = true
+            LaunchTimer.editorShown()
+            #if DEBUG || KIRI_SELFTEST
+            SelfTest.mediaShown(tab)
+            #endif
+        }
+    }
+
     /// The Markdown preview goes in the editor's place (`MarkdownPreview`).
     private func showPreview(_ tab: DocumentTab, _ view: PreviewWebView) {
         tab.arriving = false
@@ -186,9 +224,10 @@ final class TabEditorSlot: NSView {
     func arrive(_ tab: DocumentTab) {
         tab.arriving = false
         guard tab.largeViewer == nil else { return }
-        guard arrival != .none, tab.container.superview === self else { return }
-        tab.container.wantsLayer = true
-        guard let layer = tab.container.layer else { return }
+        let shown: NSView = tab.mediaViewer?.view ?? tab.container
+        guard arrival != .none, shown.superview === self else { return }
+        shown.wantsLayer = true
+        guard let layer = shown.layer else { return }
         let rise = arrival == .rise
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0
@@ -523,6 +562,8 @@ final class TabEditorSlot: NSView {
 
     /// Moves the caret to a 1-based line (and column) and scrolls to it.
     func goTo(line: Int, column: Int = 1) {
+        // A picture has no lines.
+        if tab?.mediaViewer != nil { return }
         if let large = tab?.largeViewer?.view {
             large.mark(line: nil)
             large.goTo(line: line - 1, column: column - 1)
@@ -541,6 +582,7 @@ final class TabEditorSlot: NSView {
     /// and marked (a pulse, or a steady band without motion), while the
     /// keyboard stays in the Go to Line field.
     func previewLine(_ line: Int, column: Int = 1) {
+        if tab?.mediaViewer != nil { return }
         if let large = tab?.largeViewer?.view {
             large.goTo(line: line - 1, column: column - 1)
             large.mark(line: line - 1)
@@ -648,6 +690,10 @@ final class TabEditorSlot: NSView {
     func focus() {
         if let large = tab?.largeViewer?.view {
             large.window?.makeFirstResponder(large)
+            return
+        }
+        if let media = tab?.mediaViewer {
+            media.view.window?.makeFirstResponder(media.keyView)
             return
         }
         if let tab, tab.showsMarkdownPreview, let web = tab.markdownPreview?.webView, web.window != nil {

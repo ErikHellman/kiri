@@ -100,6 +100,18 @@ public enum MarkdownPage {
         }.joined(separator: "\n")
     }
 
+    // MARK: SVG
+
+    /// What the page shows for an SVG file's `text`: the picture, drawn by
+    /// WebKit as an image. As an image it runs none of the file's scripts
+    /// and loads nothing it points to, whatever the file says. It fits
+    /// the page, and a small one (an icon) shows larger: an SVG is sharp
+    /// at any size.
+    public static func svgHTML(_ text: String) -> String {
+        let data = Data(text.utf8).base64EncodedString()
+        return "<figure class=\"svg-view\" data-line=\"1\"><img src=\"data:image/svg+xml;base64,\(data)\" alt=\"\"></figure>"
+    }
+
     // MARK: The page's files
 
     /// The stylesheet (`Web/preview.css`).

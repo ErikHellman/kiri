@@ -20,7 +20,10 @@ struct FileIconTests {
         #expect(FileIcon.forFile(named: "Makefile") == FileIcon.of(.makefile))
         #expect(FileIcon.forFile(named: ".env.local") == FileIcon.of(.ini))
         #expect(FileIcon.forFile(named: "LICENSE") == .document)
-        #expect(FileIcon.forFile(named: "photo.heic") == .document)
+        // Pictures, videos and archives open in a viewer, and show what they are.
+        #expect(FileIcon.forFile(named: "photo.heic") == .image)
+        #expect(FileIcon.forFile(named: "clip.mov") == .video)
+        #expect(FileIcon.forFile(named: "site.tar.gz") == .archive)
     }
 
     @Test func aShapeForEachKindSoColorIsNotAllThatTellsThem() {
