@@ -76,18 +76,27 @@ final class KiriTextView: NSTextView {
     // would be typed into the document. Anything else that is dragged
     // here (text) drops into the text as it always did.
 
+    // Files go to the window, which knows which side of the editors they
+    // are over (`DocumentNSWindow.dropSide`).
+
     private func carriesFiles(_ sender: any NSDraggingInfo) -> Bool { !FileDrop.urls(sender.draggingPasteboard).isEmpty }
+    private var documentWindow: DocumentNSWindow? { window as? DocumentNSWindow }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        carriesFiles(sender) ? FileDrop.operation(sender) : super.draggingEntered(sender)
+        guard carriesFiles(sender) else { return super.draggingEntered(sender) }
+        return documentWindow?.draggingEntered(sender) ?? FileDrop.operation(sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        carriesFiles(sender) ? FileDrop.operation(sender) : super.draggingUpdated(sender)
+        guard carriesFiles(sender) else { return super.draggingUpdated(sender) }
+        return documentWindow?.draggingUpdated(sender) ?? FileDrop.operation(sender)
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
-        if let sender, carriesFiles(sender) { return }
+        if let sender, carriesFiles(sender) {
+            documentWindow?.draggingExited(sender)
+            return
+        }
         super.draggingExited(sender)
     }
 
@@ -97,6 +106,7 @@ final class KiriTextView: NSTextView {
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         guard carriesFiles(sender), let window else { return super.performDragOperation(sender) }
+        if let documentWindow { return documentWindow.performDragOperation(sender) }
         return FileDrop.perform(sender, in: window)
     }
 

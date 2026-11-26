@@ -1,4 +1,5 @@
 import AppKit
+import KiriKit
 
 /// A tab dragged out of its strip (`HoneyTabStrip`'s `onDragOut`): dropped
 /// on another Kiri window it joins that window's tabs, after the tab that
@@ -38,16 +39,22 @@ import AppKit
         return tab
     }
 
-    /// A move onto another window; nothing on the tab's own.
-    static func operation(_ info: any NSDraggingInfo, in window: DocumentNSWindow) -> NSDragOperation {
-        guard let tab = tab(in: info), tab.window !== window, !window.closing else { return [] }
+    /// A move onto another window; on the tab's own, only onto a side of
+    /// its editors (`side`): the tab shows there.
+    static func operation(_ info: any NSDraggingInfo, in window: DocumentNSWindow, side: SplitLayout.Side? = nil) -> NSDragOperation {
+        guard let tab = tab(in: info), !window.closing, tab.window !== window || side != nil else { return [] }
         return .move
     }
 
-    static func perform(_ info: any NSDraggingInfo, in window: DocumentNSWindow) -> Bool {
-        guard let tab = tab(in: info), tab.window !== window, !window.closing else { return false }
+    static func perform(_ info: any NSDraggingInfo, in window: DocumentNSWindow, side: SplitLayout.Side? = nil) -> Bool {
+        guard let tab = tab(in: info), !window.closing, tab.window !== window || side != nil else { return false }
         Source.shared.dropped = true
-        window.tabs.insert(tab)
+        if let side {
+            if tab.window !== window { window.tabs.insert(tab, select: false) }
+            if !window.tabs.show(tab, on: side, source: .drag), tab.window === window { window.tabs.select(tab) }
+        } else {
+            window.tabs.insert(tab)
+        }
         window.makeKeyAndOrderFront(nil)
         return true
     }

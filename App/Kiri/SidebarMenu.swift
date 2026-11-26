@@ -29,6 +29,7 @@ enum SidebarEdit: Equatable {
         case root
     }
 
+    static let openToSide = WindowTabs.openToSideTitle
     static let openInNewWindow = "Open in New Window"
     static let reveal = "Reveal in Finder"
     static let copyPath = "Copy Path"
@@ -52,7 +53,10 @@ enum SidebarEdit: Equatable {
         }
         switch target {
         case .file(let url):
-            return [[SidebarMenuItem(title: openInNewWindow) { SidebarFiles.openInNewWindow(url, isDirectory: false) }],
+            return [[SidebarMenuItem(title: openToSide, enabled: window != nil) {
+                        if let window { SidebarOpen.open(url, keep: true, from: window, keyboard: .editor, toSide: .sidebar) }
+                     },
+                     SidebarMenuItem(title: openInNewWindow) { SidebarFiles.openInNewWindow(url, isDirectory: false) }],
                     finder(url),
                     // A name is the folder's to change.
                     [SidebarMenuItem(title: rename, enabled: writable(url.deletingLastPathComponent())) { session.beginRename(url, in: window) }]]

@@ -17,13 +17,13 @@ struct EditorScreen: View {
     }
 }
 
-/// What a window shows of its selected tab.
+/// What a window shows of its selected tab: the top bar, and the tab's
+/// editor on its panel, or two tabs side by side (`WindowTabs.panels`).
 private struct TabScreen: View {
     let tabs: WindowTabs
     let tab: DocumentTab
     private var model: EditorModel { tab.model }
     private var document: KiriDocument { tab.document }
-    @State private var commandLineTool = CommandLineTool.shared
     @State private var whatsNew = WhatsNew.shared
     @State private var saveState = HoneyTaskState.idle
     @State private var saver = SaveObserver()
@@ -34,13 +34,6 @@ private struct TabScreen: View {
     @State private var sidebarWidth = SidebarWidth.shared
     /// How wide the row of sidebar and editor is, once it has been laid out.
     @State private var rowWidth = 0.0
-    /// The editor panel's size: the command palette shows as many rows as
-    /// it has room for, and fewer words in a narrow one.
-    @State private var panelSize = DocumentWindow.defaultSize
-    @AppStorage(Prefs.textScaleKey) private var textScale = 1.0
-    @State private var editorFont = EditorFont.shared
-    @AppStorage(Prefs.wrapLinesKey) private var wrapLines = true
-    @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @Environment(\.openWindow) private var openWindow
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -48,6 +41,20 @@ private struct TabScreen: View {
     /// Where the document's file is: nil until it is saved, and it follows
     /// Save As and a move in Finder.
     private var fileURL: URL? { document.location }
+
+    /// The least the editors keep beside the sidebar: one editor's
+    /// minimum, or two and their gap.
+    private var editorsMinimum: Double {
+        tabs.isSplit ? SplitLayout.minimumRow(gap: Honey.gap) : SidebarLayout.editorMinimum
+    }
+
+    /// The narrowest the window gets: with two editors, what holds them
+    /// (and the narrowest sidebar).
+    private var minimumWidth: Double {
+        guard tabs.isSplit else { return SidebarLayout.narrowestWindow }
+        let sidebar = tabs.folder != nil && sidebarShown ? SidebarLayout.widths.lowerBound + Honey.gap : 0
+        return max(SidebarLayout.narrowestWindow, SplitLayout.minimumRow(gap: Honey.gap) + sidebar + 2 * Honey.gap)
+    }
 
     var body: some View {
         VStack(spacing: Honey.gap) {
@@ -57,9 +64,10 @@ private struct TabScreen: View {
                     // The sidebar and, in the gap between the panels, the
                     // edge that is dragged to make it narrower or wider. A
                     // window too narrow for the width asked for shows what
-                    // leaves the editor its minimum.
-                    let widest = SidebarLayout.widest(in: rowWidth, gap: Honey.gap)
-                    let width = SidebarLayout.shown(preferred: sidebarWidth.preferred, available: rowWidth, gap: Honey.gap)
+                    // leaves the editors their minimum.
+                    let widest = SidebarLayout.widest(in: rowWidth, gap: Honey.gap, editors: editorsMinimum)
+                    let width = SidebarLayout.shown(preferred: sidebarWidth.preferred, available: rowWidth, gap: Honey.gap,
+                                                    editors: editorsMinimum)
                     HStack(spacing: 0) {
                         FolderSidebar(session: folder, model: model, tabs: tabs, currentFile: fileURL?.standardizedFileURL,
                                       width: width)
@@ -67,9 +75,12 @@ private struct TabScreen: View {
                     }
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                editor
+                EditorPanels(tabs: tabs)
             }
-            .onGeometryChange(for: Double.self) { $0.size.width } action: { rowWidth = $0 }
+            .onGeometryChange(for: Double.self) { $0.size.width } action: {
+                rowWidth = $0
+                tabs.rowWidth = $0
+            }
             // Only Show/Hide Sidebar slides it. A new tab of a folder window
             // gets the folder as it opens, and must not slide it in again.
             .onChange(of: tabs.folder?.sidebarVisible, initial: true) { old, new in
@@ -79,12 +90,13 @@ private struct TabScreen: View {
                 } else {
                     withAnimation(HoneyMotion(appearance, systemReduced: reduceMotion).shape) { sidebarShown = show }
                 }
+                tabs.sidebarInRow = show
             }
         }
         .padding(.horizontal, Honey.gap)
         .padding(.bottom, Honey.gap)
         .ignoresSafeArea(.container, edges: .top)
-        .frame(minWidth: SidebarLayout.narrowestWindow, minHeight: 280)
+        .frame(minWidth: minimumWidth, minHeight: 280)
         .honeyCanvas()
         .background(WindowReader {
             // The menus act on the window that is in front.
@@ -105,67 +117,15 @@ private struct TabScreen: View {
         .onChange(of: tab.id) { saveState = .idle }
         // The first tab to show after an update has What's new, and it
         // stays in front in its window: another tab coming forward (the
-        // next file of a launch's, say) takes it along.
+        // next file of a launch's, say) takes it along. (Not the keyboard
+        // going to the other side of a split: both show.)
         .onChange(of: tab.id, initial: true) { old, new in
-            if old != new, let previous = tabs.tab(id: old)?.model { whatsNew.follow(from: previous, to: model, document: document) }
+            if old != new, let previous = tabs.tab(id: old), !tabs.isShown(previous) {
+                whatsNew.follow(from: previous.model, to: model, document: document)
+            }
             whatsNew.offer(model, document: document)
         }
         .onChange(of: ObjectIdentifier(document)) { saveState = .idle }
-        // Picking another language leaves the preview (Markdown only).
-        .onChange(of: model.language) { if !tab.canPreviewMarkdown { tab.setMarkdownPreview(false) } }
-    }
-
-
-    private var editor: some View {
-        let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
-        // The bars pop in; with Reduce Motion they fade.
-        let arrive: AnyTransition = motion.reduced ? .opacity : .honeyPop
-        // A file that arrives (a new tab, or the preview tab taking another
-        // file) fades in on the paper, which stays put: the file arriving
-        // is told in the content, never by the window.
-        return EditorView(tab: tab, fontScale: textScale, fontFamily: editorFont.shown, language: model.language,
-                   isUntitled: fileURL == nil, wrapLines: wrapLines,
-                   animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                      typingAnimations: typingAnimations),
-                   arrival: motion.off ? .none : motion.reduced ? .fade : .rise)
-            // Under the bars: the first-run hint, on the paper of an empty
-            // untitled document until something is typed into it. (Not
-            // while the palette is open: its list would lie over the
-            // hint's lines, glass over words.) After an update, What's new
-            // takes its place until it is closed, in its look; over text,
-            // on a panel of its own. (Neither under the find bar either.)
-            .overlay {
-                if whatsNew.shows(in: model), !model.palette.isOpen, !model.find.isOpen {
-                    WhatsNewNotice(notes: whatsNew.notes, onPaper: model.showsStartHint)
-                        .padding(.bottom, StartHint.bottomClearance)
-                        .transition(.opacity)
-                } else if model.showsStartHint, !model.palette.isOpen {
-                    StartHint(commandLineTool: commandLineTool.status) { model.palette.open() }
-                        .padding(.bottom, StartHint.bottomClearance)
-                        .transition(.opacity)
-                }
-            }
-            .honeyPanel()
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { panelSize = $0 }
-            .overlay(alignment: .bottom) {
-                EditorStatusBar(model: model, document: document, encoding: encodingBinding, lineEnding: lineEndingBinding,
-                                byteOrderMark: bomBinding)
-            }
-            .overlay(alignment: .top) {
-                // One at a time: opening one closes the others.
-                if model.find.isOpen {
-                    FindBar(find: model.find).padding(.top, EditorBar.topPadding).transition(arrive)
-                } else if model.palette.isOpen {
-                    CommandPalette(palette: model.palette, lineCount: model.lineCount,
-                                   rowsThatFit: CommandPalette.rowsThatFit(in: panelSize.height), panelWidth: panelSize.width)
-                        .padding(.top, EditorBar.topPadding).transition(arrive)
-                }
-            }
-            .animation(motion.shape, value: model.find.isOpen)
-            .animation(motion.shape, value: model.palette.isOpen)
-            // The hint fades out; with reduced motion it is simply gone.
-            .animation(motion.reduced ? nil : motion.quick, value: model.showsStartHint && !model.palette.isOpen)
-            .animation(motion.reduced ? nil : motion.quick, value: whatsNew.shows(in: model))
     }
 
     /// The toolbar row on the canvas, level with the traffic lights: in a
@@ -198,7 +158,9 @@ private struct TabScreen: View {
                                       selection: Binding(get: { tabs.selected }, set: { tabs.select($0) }),
                                       scrollOffset: Binding(get: { tabs.stripOffset }, set: { tabs.stripOffset = $0 }),
                                       onClose: { tabs.close($0) }, onKeep: { tabs.keep($0) },
-                                      onDragOut: { id in tabs.tab(id: id).map(TabDrag.begin) })
+                                      onDragOut: { id in tabs.tab(id: id).map(TabDrag.begin) },
+                                      onOptionClick: { id in tabs.tab(id: id).map { _ = tabs.openToSide($0, source: .tab) } },
+                                      menu: { tabs.menu(for: $0) })
                     }
                     Button {
                         NSDocumentController.shared.newDocument(nil)
@@ -238,19 +200,6 @@ private struct TabScreen: View {
             guard saved else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + Honey.doneHold) { saveState = .idle }
         }
-    }
-
-    // Changing the save format is an undoable edit of the document.
-    private var encodingBinding: Binding<TextEncoding> {
-        Binding(get: { document.encoding }, set: { document.setEncoding($0) })
-    }
-
-    private var lineEndingBinding: Binding<LineEnding> {
-        Binding(get: { document.lineEnding }, set: { document.setLineEnding($0) })
-    }
-
-    private var bomBinding: Binding<Bool> {
-        Binding(get: { document.hasBOM }, set: { document.setByteOrderMark($0) })
     }
 
 }

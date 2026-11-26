@@ -432,7 +432,7 @@ struct FolderSidebar: View {
                         let marks = tabs.openFiles
                         ForEach(session.root.children) { node in
                             FileRow(node: node, depth: 0, session: session, tabs: tabs, currentFile: currentFile, marks: marks,
-                                    keyboardFocus: showsKeyboard, open: open)
+                                    keyboardFocus: showsKeyboard, open: { open($0, keep: $1, toSide: $2) })
                         }
                     }
                     .padding(.horizontal, 6)
@@ -486,7 +486,9 @@ struct FolderSidebar: View {
         .onKeyPress(.pageDown) { typing ? .ignored : move(12) }
         .onKeyPress(.leftArrow) { typing ? .ignored : collapseOrParent() }
         .onKeyPress(.rightArrow) { typing ? .ignored : expandOrChild() }
-        .onKeyPress(.return) { typing ? .ignored : activate(thenEdit: true) }
+        .onKeyPress(.return, phases: [.down, .repeat]) { press in
+            typing ? .ignored : activate(thenEdit: true, toSide: press.modifiers.contains(.option))
+        }
         .onKeyPress(.space) { typing ? .ignored : activate(thenEdit: false) }
         .onKeyPress(.escape) {
             // (A name's field takes Escape itself; should the keyboard not
@@ -631,12 +633,15 @@ struct FolderSidebar: View {
 
     /// Return and Space: a folder opens or closes, a file opens. Space
     /// shows it in the preview tab and the keyboard stays here; Return
-    /// opens it to stay and moves the keyboard to its editor.
-    private func activate(thenEdit: Bool) -> KeyPress.Result {
+    /// opens it to stay and moves the keyboard to its editor; ⌥↩ does
+    /// that on the side without the keyboard (Open to the Side).
+    private func activate(thenEdit: Bool, toSide: Bool = false) -> KeyPress.Result {
         guard let i = cursorIndex else { return move(0) }
         let node = rows[i].node
         if node.isDirectory {
             withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
+        } else if toSide {
+            open(node.url, keep: true, toSide: true)
         } else if let window = tabs.window {
             SidebarOpen.open(node.url, keep: thenEdit, from: window, keyboard: thenEdit ? .editor : .sidebar)
         }
@@ -644,10 +649,15 @@ struct FolderSidebar: View {
     }
 
     /// A click on a file's row shows it in the preview tab; the second
-    /// click of a double-click keeps it.
-    private func open(_ url: URL, keep: Bool) {
+    /// click of a double-click keeps it. ⌥-click opens it to the side, to
+    /// stay, with the keyboard in its editor.
+    private func open(_ url: URL, keep: Bool, toSide: Bool = false) {
         guard let window = tabs.window else { return }
-        SidebarOpen.open(url, keep: keep, from: window)
+        if toSide {
+            SidebarOpen.open(url, keep: true, from: window, keyboard: .editor, toSide: .sidebar)
+        } else {
+            SidebarOpen.open(url, keep: keep, from: window)
+        }
     }
 
     /// Typing a name's first letters jumps to the next row that starts with
@@ -686,8 +696,8 @@ private struct FileRow: View {
     /// the tabs' amber dot at the row's end.
     let marks: [URL: WindowTabs.FileMark]
     let keyboardFocus: Bool
-    /// Shows the file; `keep` for a double-click.
-    let open: (URL, Bool) -> Void
+    /// Shows the file; `keep` for a double-click, `toSide` for a ⌥-click.
+    let open: (URL, Bool, Bool) -> Void
     @State private var hovering = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
@@ -711,7 +721,8 @@ private struct FileRow: View {
                     if node.isDirectory {
                         withAnimation(HoneyMotion(appearance, systemReduced: reduce).quick) { session.toggle(node) }
                     } else {
-                        open(node.url, false)
+                        // ⌥-click: to the side, to stay.
+                        open(node.url, false, NSEvent.modifierFlags.contains(.option))
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -765,8 +776,9 @@ private struct FileRow: View {
                 .buttonStyle(.plain)
                 // A double-click keeps the file's tab. Beside the button, not in
                 // its place: the first click shows the file at once.
-                .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true) } })
-                .modifier(KeepOpenAction(isFile: !node.isDirectory) { open(node.url, true) })
+                .simultaneousGesture(TapGesture(count: 2).onEnded { if !node.isDirectory { open(node.url, true, false) } })
+                .modifier(KeepOpenAction(isFile: !node.isDirectory, keep: { open(node.url, true, false) },
+                                         toSide: { open(node.url, true, true) }))
                 .contextMenu {
                     SidebarMenuItems(groups: SidebarMenu.groups(for: node.isDirectory ? .folder(node.url) : .file(node.url),
                                                                 session: session, window: tabs.window))
@@ -811,14 +823,17 @@ extension FileRow {
 }
 
 /// "Open in a Tab" for VoiceOver and Voice Control, which have no
-/// double-click: what a double-click on a file's row does.
+/// double-click: what a double-click on a file's row does; and "Open to
+/// the Side", a ⌥-click.
 private struct KeepOpenAction: ViewModifier {
     let isFile: Bool
     let keep: () -> Void
+    let toSide: () -> Void
 
     func body(content: Content) -> some View {
         if isFile {
             content.accessibilityAction(named: "Open in a Tab", keep)
+                .accessibilityAction(named: WindowTabs.openToSideTitle, toSide)
         } else {
             content
         }

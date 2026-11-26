@@ -276,6 +276,10 @@ import KiriKit
         var folder: FolderSession?
         weak var host: DocumentNSWindow?
         weak var after: NSDocument?
+        /// It opens to the side (`WindowTabs.openToSide`), from there.
+        var toSide: SplitSource?
+        /// The side it opens on; nil for the one without the keyboard.
+        var side: SplitLayout.Side?
     }
     static var next: Placement?
 

@@ -373,10 +373,10 @@ extension SelfTest {
         let finder = [Menu.reveal, Menu.copyPath, Menu.copyRelativePath]
         let targets: [Menu.Target] = [.file(f.file("b.md")), .folder(sub), .root]
         let allOn = targets.allSatisfy { groups($0).joined().allSatisfy(\.enabled) }
-        report(titles(targets[0]) == [[Menu.openInNewWindow], finder, [Menu.rename]]
+        report(titles(targets[0]) == [[Menu.openToSide, Menu.openInNewWindow], finder, [Menu.rename]]
                && titles(targets[1]) == [[Menu.newFile], [Menu.openInNewWindow], finder]
                && titles(targets[2]) == [[Menu.newFile], [Menu.reveal, Menu.copyPath]] && allOn,
-               "a file's menu has Open in New Window, Reveal in Finder, Copy Path, Copy Relative Path and Rename…; a folder's has New File… and no Rename…; the empty area's is the folder's own (\(titles(targets[0]).joined().count), \(titles(targets[1]).joined().count) and \(titles(targets[2]).joined().count) items, all on)")
+               "a file's menu has Open to the Side, Open in New Window, Reveal in Finder, Copy Path, Copy Relative Path and Rename…; a folder's has New File… and no Rename…; the empty area's is the folder's own (\(titles(targets[0]).joined().count), \(titles(targets[1]).joined().count) and \(titles(targets[2]).joined().count) items, all on)")
         // The menus the sidebar really shows are made of the same values;
         // AppKit asks the window for them as a right-click would, without
         // one being shown: on a file's row, a folder's, and the empty area.

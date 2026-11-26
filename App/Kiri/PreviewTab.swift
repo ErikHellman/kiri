@@ -75,10 +75,13 @@ import KiriKit
     /// neither, it opens as a new tab after this one. Unless `keep`, the
     /// tab it shows in is the preview from then on.
     ///
+    /// - Parameter toSide: Open to the Side (⌥-click, ⌥↩), and from where:
+    ///   the file shows on the side without the keyboard, in a tab of its
+    ///   own (never the preview tab), and the keyboard goes with it.
     /// - Parameter done: called with the window the file shows in, or nil
     ///   when it could not be opened or another file was asked for first.
-    static func open(_ url: URL, keep: Bool, from window: NSWindow, keyboard: Keyboard = .stays,
-                     then done: ((NSWindow?) -> Void)? = nil) {
+    static func open(_ url: URL, keep: Bool, from window: NSWindow, keyboard: Keyboard = .stays, toSide: SplitSource? = nil,
+                     side: SplitLayout.Side? = nil, then done: ((NSWindow?) -> Void)? = nil) {
         let url = url.standardizedFileURL
         request += 1
         requested = url
@@ -98,13 +101,25 @@ import KiriKit
             case .editor: editor.controller?.focus()
             }
         }
-        /// `shown` is a tab that was there already: it comes forward.
-        func finish(_ shown: DocumentTab) {
+        /// `shown` is a tab that was there already: it comes forward (on
+        /// the keyboard's side, or to the side asked for). A preview tab
+        /// that has just taken the file (`reused`) comes to the keyboard's
+        /// side if it showed on the other; a file that shows already gets
+        /// the keyboard where it is.
+        func finish(_ shown: DocumentTab, reused: Bool = false) {
             if keep { PreviewTabs.keep(shown) }
             guard let window = shown.window else { done?(nil); return }
-            window.tabs.select(shown)
+            if let toSide {
+                if !window.tabs.show(shown, on: side ?? window.tabs.keyboardSide?.other ?? .right, source: toSide) {
+                    window.tabs.select(shown)
+                }
+            } else if reused, shown === window.tabs.besideTab, let side = window.tabs.keyboardSide {
+                window.tabs.show(shown, on: side, source: .sidebar)
+            } else {
+                window.tabs.select(shown)
+            }
             window.makeKeyAndOrderFront(nil)
-            place(in: window)
+            if toSide == nil { place(in: window) }
             done?(window)
         }
         if let open = NSDocumentController.shared.document(for: url), let shown = DocumentWindow.tab(of: open) {
@@ -140,7 +155,7 @@ import KiriKit
                 if !NSDocumentController.shared.documents.contains(document) {
                     NSDocumentController.shared.addDocument(document)
                 }
-                if let tab = reusableTab(for: window) {
+                if toSide == nil, let tab = reusableTab(for: window) {
                     // Said first, so the strip shows the new title and
                     // whether it slants in one step.
                     // (The document that is there now is on its way out:
@@ -148,13 +163,15 @@ import KiriKit
                     let was = PreviewTabs.isPreview(tab)
                     if keep { PreviewTabs.unmark(tab) } else { PreviewTabs.mark(tab) }
                     if DocumentWindow.show(document, in: tab) {
-                        finish(tab)
+                        finish(tab, reused: true)
                         return
                     }
                     if was { PreviewTabs.mark(tab) } else { PreviewTabs.unmark(tab) }
                 }
                 // A tab of its own, after the one it was picked in.
-                if let host = window as? DocumentNSWindow { WindowPlacement.next = .init(host: host, after: host.tabs.document) }
+                if let host = window as? DocumentNSWindow {
+                    WindowPlacement.next = .init(host: host, after: host.tabs.document, toSide: toSide, side: side)
+                }
                 document.makeWindowControllers()
                 WindowPlacement.next = nil
                 guard let shown = DocumentWindow.tab(of: document), let shownWindow = shown.window else {
@@ -164,7 +181,7 @@ import KiriKit
                 }
                 if keep { recents?.kept(url) } else { PreviewTabs.mark(shown) }
                 document.showWindows()
-                place(in: shownWindow)
+                if toSide == nil { place(in: shownWindow) }
                 done?(shownWindow)
             }
         }

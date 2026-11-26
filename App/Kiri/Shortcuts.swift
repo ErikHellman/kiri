@@ -48,6 +48,13 @@ enum Keys {
     static let openFolder = KeyboardShortcut("o", modifiers: [.shift, .command])
     static let toggleSidebar = KeyboardShortcut("s", modifiers: [.control, .command])
     static let focusSidebar = KeyboardShortcut("e", modifiers: [.shift, .command])
+    /// Side by side: the tab before beside this one, and back to one.
+    static let splitEditor = KeyboardShortcut("\\", modifiers: .command)
+    /// The keyboard to the left or the right side of a split window.
+    static let focusLeftSide = KeyboardShortcut(.leftArrow, modifiers: [.option, .command])
+    static let focusRightSide = KeyboardShortcut(.rightArrow, modifiers: [.option, .command])
+    /// The Markdown preview beside its text: the preview's key with Option.
+    static let previewToSide = KeyboardShortcut("p", modifiers: [.option, .control, .command])
 
     /// ⌘1 … ⌘9 pick a tab by position.
     static func tab(_ n: Int) -> KeyboardShortcut {
@@ -115,6 +122,7 @@ extension KeyEquivalent {
             case "+": "Plus"
             case "-": "Minus"
             case "`": "Backtick"
+            case "\\": "Backslash"
             default: String(character).uppercased()
             }
         }
@@ -163,6 +171,17 @@ struct ShortcutGroup: Identifiable {
             Item("Next / previous tab", "⌃⇥  ⌃⇧⇥"),
             Item("Go to tab 1 – 9", "⌘1 – ⌘9"),
             Item("Cycle windows", "⌘`"),
+        ]),
+        ShortcutGroup(title: "Side by side", systemImage: "rectangle.split.2x1", items: [
+            Item("Split editor / close split", Keys.splitEditor),
+            Item("Open a file or tab to the side", "⌥-click it"),
+            Item("Open the sidebar's or the palette's file to the side", "⌥↩"),
+            Item("Open to the side by dragging", "Drag a tab or a file to a side"),
+            Item("Keyboard to the left / right side", "\(Keys.focusLeftSide.glyphs)  \(Keys.focusRightSide.glyphs)"),
+            Item("Markdown or SVG preview beside its text", Keys.previewToSide),
+            Item("Swap sides", "View menu"),
+            Item("Move tab to the other side", "Window menu"),
+            Item("Half and half", "Double-click the gap"),
         ]),
         ShortcutGroup(title: "Editing", systemImage: "pencil", items: [
             Item("Undo", "⌘Z"),

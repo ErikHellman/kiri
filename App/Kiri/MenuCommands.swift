@@ -163,7 +163,12 @@ struct MenuCommand: Equatable, Identifiable {
         guard let (menu, index) = find(command.path) else { return false }
         menu.update()
         guard menu.items[index].isEnabled else { return false }
+        performing = true
+        defer { performing = false }
         menu.performActionForItem(at: index)
         return true
     }
+
+    /// A command is being run from the palette (`SplitSource`).
+    private(set) static var performing = false
 }

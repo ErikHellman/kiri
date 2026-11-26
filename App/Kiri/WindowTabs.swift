@@ -50,6 +50,8 @@ import SwiftUI
     /// The read-only viewer that shows a picture, a video or an archive in
     /// the editor's place (`KiriDocument.media`).
     @ObservationIgnored private(set) var mediaViewer: MediaViewer?
+    /// The preview beside the text renders again a moment after the last key.
+    @ObservationIgnored var besideRender: DispatchWorkItem?
     /// The tab opened on an SVG file's picture, which isn't drawn yet: the
     /// slot shows the paper until it is, not the text (`TabEditorSlot.show`).
     @ObservationIgnored var opensInPreview = false
@@ -84,7 +86,7 @@ import SwiftUI
         // (Read-only files have no preview.)
         if document.isReadOnly { showsMarkdownPreview = false }
         updateViewer()
-        if let slot = window?.editorSlot, window?.tabs.selectedTab === self { slot.show(self) }
+        window?.slot(for: self)?.show(self)
     }
 
     /// A large file shows in a viewer of its own, as does a picture, a
@@ -121,7 +123,7 @@ import SwiftUI
     /// The text fades in: now, if the tab shows, or when it next does.
     func arrive() {
         arriving = true
-        if let slot = window?.editorSlot, slot.tab === self { slot.arrive(self) }
+        if let slot = window?.slot(for: self), slot.tab === self { slot.arrive(self) }
     }
 
     /// Another file takes this tab (the preview tab going from file to
@@ -140,6 +142,14 @@ import SwiftUI
         trackLocation()
         openSVGAsPicture()
         arrive()
+    }
+
+    /// `responder` is one of this tab's views: its editor, or what shows
+    /// in the editor's place (a viewer, the Markdown preview).
+    func holds(_ responder: NSResponder?) -> Bool {
+        guard let view = responder as? NSView else { return false }
+        let mine: [NSView?] = [container, markdownPreview?.webView, largeViewer?.view, mediaViewer?.view]
+        return mine.contains { $0.map(view.isDescendant(of:)) ?? false }
     }
 
     /// The language follows the file's name: Save As, a rename, a move in
@@ -185,6 +195,8 @@ import SwiftUI
         let dirty: Bool
         /// The folder sidebar's preview tab (`PreviewTabs`).
         let preview: Bool
+        /// It shows on the other side of the split, beside the selected tab.
+        var beside = false
     }
 
     /// The items as tabs: each with its path as a tooltip (`~` for the home
@@ -196,7 +208,7 @@ import SwiftUI
         return zip(items, details).map { item, detail in
             HoneyTab(id: item.id, title: item.title, detail: detail,
                      tooltip: item.path.map { TabNames.abbreviatingHome($0, home: home) }, dirty: item.dirty,
-                     preview: item.preview)
+                     preview: item.preview, beside: item.beside)
         }
     }
 
@@ -222,10 +234,106 @@ import SwiftUI
     private(set) var list: [DocumentTab] = []
     /// What the strip shows of them (`refresh`).
     private(set) var items: [Item] = []
-    /// The id of the tab that shows.
+    /// The id of the tab that shows: the one with the keyboard, in a
+    /// window split side by side.
     private(set) var selected = 0
-    /// The tab that shows.
+    /// The tab that shows (with the keyboard).
     var selectedTab: DocumentTab? { list.first { $0.id == selected } ?? list.first }
+
+    // MARK: Side by side
+
+    typealias Side = SplitLayout.Side
+
+    /// What the other side of a split window shows.
+    enum Beside: Equatable {
+        /// Another of the window's tabs.
+        case tab(Int)
+        /// The selected tab's Markdown or SVG preview, beside its text
+        /// (View ▸ Preview to the Side).
+        case preview
+    }
+
+    /// One of the editor panels of the window, left to right.
+    struct Panel: Identifiable {
+        /// Which of the window's two editor slots (`TabEditorSlot`) it is:
+        /// it stays with its panel while the other comes and goes, while
+        /// the keyboard moves between them and while they swap places.
+        let slot: Int
+        let tab: DocumentTab
+        /// It shows `tab`'s preview, beside its text.
+        let preview: Bool
+        /// It has the keyboard: its tab is the selected one (or, beside
+        /// the text, it is the preview the keyboard is in).
+        let keyboard: Bool
+        let side: Side
+        var id: Int { slot }
+    }
+
+    /// What the other side shows; nil while the window shows one tab.
+    private(set) var beside: Beside?
+    /// The slot the selected tab's text is in.
+    private(set) var mainSlot = 0
+    /// The other side is the left one.
+    private(set) var besideIsLeft = false
+    /// Beside its text, the keyboard is in the preview.
+    private(set) var keyboardInPreview = false
+    /// The left side's share of the editors' row (`SplitLayout`).
+    var splitFraction = SplitLayout.defaultFraction
+    /// Where something dragged over the editors would go, while it is
+    /// (the drop zone the window draws).
+    var dropZone: Side?
+    /// How wide the row of sidebar and editors is, as last laid out, and
+    /// whether the sidebar is in it: how much a window has to grow to show
+    /// two editors.
+    @ObservationIgnored var rowWidth = 0.0
+    @ObservationIgnored var sidebarInRow = false
+    /// The tabs that have had the keyboard, newest first (Split Editor
+    /// shows the one before).
+    @ObservationIgnored private(set) var recent: [Int] = []
+    /// The window's keyboard is being moved from here: what it lands on
+    /// is not news (`keyboardMoved`).
+    @ObservationIgnored private(set) var movingKeyboard = false
+
+    var isSplit: Bool { beside != nil }
+
+    /// The tab the other side shows.
+    var besideTab: DocumentTab? {
+        guard case .tab(let id)? = beside else { return nil }
+        return tab(id: id)
+    }
+
+    /// The editor panels, left to right: one, or two side by side.
+    var panels: [Panel] {
+        guard let main = selectedTab else { return [] }
+        let mainSide: Side = beside == nil ? .left : besideIsLeft ? .right : .left
+        let first = Panel(slot: mainSlot, tab: main, preview: false, keyboard: beside != .preview || !keyboardInPreview,
+                          side: mainSide)
+        let other: Panel
+        switch beside {
+        case nil:
+            return [first]
+        case .tab:
+            guard let tab = besideTab, tab !== main else { return [first] }
+            other = Panel(slot: 1 - mainSlot, tab: tab, preview: false, keyboard: false, side: mainSide.other)
+        case .preview:
+            other = Panel(slot: 1 - mainSlot, tab: main, preview: true, keyboard: keyboardInPreview, side: mainSide.other)
+        }
+        return besideIsLeft ? [other, first] : [first, other]
+    }
+
+    /// The side the keyboard is on, in a split window.
+    var keyboardSide: Side? {
+        guard isSplit else { return nil }
+        return panels.first { $0.keyboard }?.side
+    }
+
+    /// The side that shows `tab`'s text, if it shows.
+    func side(of tab: DocumentTab) -> Side? {
+        panels.first { $0.tab === tab && !$0.preview }?.side
+    }
+
+    /// `tab` shows, on one side or the other (or alone).
+    func isShown(_ tab: DocumentTab) -> Bool { panels.contains { $0.tab === tab } }
     /// The document that shows has unsaved changes.
     private(set) var dirty = false
     /// The folder this window's sidebar shows (`kiri <folder>`).
@@ -306,7 +414,11 @@ import SwiftUI
             if select { self.select(tab) }
             return
         }
-        tab.window?.tabs.remove(tab)
+        if let from = tab.window?.tabs, from !== self {
+            // A tab that shows leaves its window: that window's split ends.
+            if from.isShown(tab) { from.closeSplit() }
+            from.remove(tab)
+        }
         tab.window = window
         let position: Int
         if let index {
@@ -327,10 +439,22 @@ import SwiftUI
     /// tabs, the window closes.
     func remove(_ tab: DocumentTab) {
         guard let index = list.firstIndex(where: { $0 === tab }) else { return }
-        if tab.id == selected, list.count > 1 {
-            select(list[index + 1 < list.count ? index + 1 : index - 1])
+        if besideTab === tab {
+            // The other side's tab went: the split ends, the keyboard's side stays.
+            endSplit()
+        } else if tab.id == selected, list.count > 1 {
+            // Its side shows its neighbour, never the tab beside it; with
+            // only that one left, it has the window to itself.
+            if beside == .preview { endSplit() }
+            if let next = SplitLayout.neighbour(of: tab.id, in: list.map(\.id), beside: besideTab?.id).flatMap(self.tab(id:)) {
+                select(next)
+            } else if let other = besideTab, let side = side(of: other) {
+                focus(side, force: true)
+                endSplit()
+            }
         }
         list.remove(at: index)
+        recent.removeAll { $0 == tab.id }
         if tab.window === window { tab.window = nil }
         if tab.container.superview != nil, tab.container.window === window { tab.container.removeFromSuperview() }
         if list.isEmpty {
@@ -362,34 +486,74 @@ import SwiftUI
     /// AppKit's document machinery—the title, the edited dot, Save—follows
     /// the tab that shows), and its editor takes the editor's place.
     /// Not while a sheet is up: it asks about the tab that shows.
+    ///
+    /// In a split window the tab shows on the keyboard's side; the tab
+    /// beside it is not shown twice: the keyboard goes to it instead.
     func select(_ tab: DocumentTab) {
         guard let window, list.contains(where: { $0 === tab }) else { return }
+        if tab === besideTab, let side = side(of: tab) {
+            focus(side)
+            return
+        }
         guard tab.id != selected || window.windowController?.document !== tab.document else { refresh(); return }
         if window.attachedSheet != nil, selected != 0, tab.id != selected { return }
+        // The preview beside the text was the tab's.
+        if beside == .preview, tab.id != selected { endSplit() }
+        takeKeyboard(tab, show: true)
+    }
+
+    /// `tab` becomes the selected tab: its document takes the window's
+    /// controller, and the keyboard goes to it if it was in the tab before.
+    /// - Parameter show: its editor goes in the keyboard side's slot now
+    ///   (false: it is in a slot already).
+    /// - Parameter outgoing: what had the keyboard in the tab before, if
+    ///   the window's first responder has already moved on.
+    private func takeKeyboard(_ tab: DocumentTab, show: Bool, outgoing: NSResponder? = nil) {
+        guard let window else { return }
         let old = list.first { $0.id == selected && $0 !== tab }
+        let leaving = outgoing ?? window.firstResponder
         if let old {
-            old.lastResponder = window.firstResponder
+            old.lastResponder = leaving
             // The sidebar's keyboard is the window's, not the tab's.
             tab.model.sidebarHasFocus = old.model.sidebarHasFocus
             tab.model.sidebarShowsKeyboard = old.model.sidebarShowsKeyboard
         }
         selected = tab.id
+        recent.removeAll { $0 == tab.id }
+        recent.insert(tab.id, at: 0)
+        if recent.count > 32 { recent.removeLast() }
         DocumentWindow.attachController(of: window, to: tab.document)
-        let hadEditor = old.map { o in window.firstResponder.map { Self.isInside($0, o.container) } ?? true } ?? false
-        window.editorSlot?.show(tab)
+        let hadEditor = old.map { o in leaving.map { o.holds($0) } ?? true } ?? false
+        if show { window.slot(identity: mainSlot)?.show(tab) }
         // The keyboard goes to the editor of the tab that shows, where it
         // was in that tab, if it was in the editor of the tab before.
         if hadEditor || window.firstResponder === window || window.firstResponder == nil {
-            let target = tab.lastResponder.flatMap { Self.isInside($0, tab.container) ? $0 : nil } ?? tab.container.textView
-            window.makeFirstResponder(target)
+            // (Once: a tab whose editor isn't in the window yet leaves the
+            // keyboard where the window's first view to take it puts it.)
+            giveKeyboard(to: tab, tries: show ? 40 : 0)
         }
         FrontEditor.shared.selectionChanged(in: window)
         refresh()
         window.invalidateRestorableState()
     }
 
-    private static func isInside(_ responder: NSResponder, _ container: NSView) -> Bool {
-        (responder as? NSView)?.isDescendant(of: container) ?? false
+    /// The keyboard goes to `tab`'s editor, where it was in that tab: now,
+    /// or once its panel is on screen (a side that has just opened isn't,
+    /// for a turn or two).
+    private func giveKeyboard(to tab: DocumentTab, preview: Bool = false, tries: Int = 0) {
+        guard let window, list.contains(where: { $0 === tab }) else { return }
+        let target: NSView? = preview ? tab.markdownPreview?.webView
+            : (tab.lastResponder.flatMap { tab.holds($0) ? $0 as? NSView : nil } ?? tab.container.textView)
+        if let target, target.window === window {
+            movingKeyboard = true
+            window.makeFirstResponder(target)
+            movingKeyboard = false
+        } else if tries < 40 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self, weak tab] in
+                guard let self, let tab, tab.id == self.selected else { return }
+                self.giveKeyboard(to: tab, preview: preview, tries: tries + 1)
+            }
+        }
     }
 
     /// ⌘1 … ⌘9: the tab at `position` (0-based).
@@ -401,10 +565,12 @@ import SwiftUI
     func selectNext() { step(1) }
     func selectPrevious() { step(-1) }
 
-    /// The next or previous tab, round from the last to the first.
+    /// The next or previous tab, round from the last to the first, on the
+    /// keyboard's side: passing over the tab beside it.
     private func step(_ by: Int) {
-        guard list.count > 1, let current = list.firstIndex(where: { $0.id == selected }) else { return }
-        select(list[(current + by + list.count) % list.count].id)
+        guard list.count > 1,
+              let next = SplitLayout.step(from: selected, by: by, in: list.map(\.id), beside: besideTab?.id) else { return }
+        select(next)
     }
 
     // MARK: Closing
@@ -445,9 +611,12 @@ import SwiftUI
         for tab in list where tab.preview && tab.document.isDocumentEdited {
             PreviewTabs.keep(tab)
         }
+        // A tab beside that has gone (by a path none of the above saw).
+        if case .tab(let id)? = beside, tab(id: id) == nil || id == selected { endSplit() }
+        let besideID = besideTab?.id
         show(list.map { tab in
             Item(id: tab.id, title: tab.document.displayName, path: tab.document.fileURL?.path,
-                 dirty: tab.document.isDocumentEdited, preview: tab.preview)
+                 dirty: tab.document.isDocumentEdited, preview: tab.preview, beside: tab.id == besideID)
         })
         let d = selectedTab?.document.isDocumentEdited ?? false
         if d != dirty { dirty = d }
@@ -500,6 +669,254 @@ import SwiftUI
         tokens = []
         safetyNet?.invalidate()
         safetyNet = nil
+    }
+}
+
+/// Where a split was asked for, for the one event it sends (`Telemetry`).
+enum SplitSource: String {
+    case sidebar, tab, palette, drag, key, menu
+
+    /// A menu item's: the palette's when it runs the command, a key's when
+    /// one was pressed for it, the menu's when it was chosen there.
+    @MainActor static var ofMenuItem: SplitSource {
+        if MenuCommands.performing { return .palette }
+        return NSApp.currentEvent?.type == .keyDown ? .key : .menu
+    }
+}
+
+// MARK: Side by side
+
+extension WindowTabs {
+    /// Shows `tab` on `side`, the keyboard with it (Open to the Side, a
+    /// tab or a file dropped on that half of the editors). The other side
+    /// keeps what it shows; a window that showed one tab shows that one on
+    /// the other side. A tab that shows already moves to `side`.
+    ///
+    /// False, with nothing changed, when it can't be: the tab is the only
+    /// one, or the window can't be made wide enough for two editors.
+    @discardableResult
+    func show(_ tab: DocumentTab, on side: Side, source: SplitSource) -> Bool {
+        guard list.contains(where: { $0 === tab }), let current = selectedTab else { return false }
+        if beside == .preview { endSplit() }
+        let other: DocumentTab?
+        if let shown = besideTab {
+            if tab === shown { other = current }
+            else if tab === current { other = shown }
+            else { other = keyboardSide == side ? shown : current }
+        } else {
+            other = tab === current ? previousTab(of: current) : current
+        }
+        guard let other, other !== tab else { return false }
+        return arrange(keyboard: tab, keyboardSide: side, other: other, source: source)
+    }
+
+    /// Open to the Side: `tab` on the side without the keyboard (the right
+    /// one in a window that shows one tab), the keyboard with it.
+    @discardableResult
+    func openToSide(_ tab: DocumentTab, source: SplitSource) -> Bool {
+        show(tab, on: keyboardSide?.other ?? .right, source: source)
+    }
+
+    /// View ▸ Split Editor (⌘\): the tab that showed before this one, on
+    /// the right, the keyboard staying where it is. False with only one
+    /// tab (the caller then offers Go to File, to the side).
+    @discardableResult
+    func splitEditor(source: SplitSource) -> Bool {
+        guard !isSplit, let current = selectedTab, let other = previousTab(of: current) else { return false }
+        return arrange(keyboard: current, keyboardSide: .left, other: other, source: source)
+    }
+
+    /// The tab that had the keyboard before `tab`, or its neighbour.
+    private func previousTab(of tab: DocumentTab) -> DocumentTab? {
+        SplitLayout.previous(of: tab.id, recent: recent, tabs: list.map(\.id)).flatMap(self.tab(id:))
+    }
+
+    /// Two tabs side by side: `keyboard` on `keyboardSide` with the
+    /// keyboard, `other` on the other side. A tab that shows already keeps
+    /// its slot (its editor stays where it is in the window), so nothing
+    /// that doesn't change is put in place again.
+    private func arrange(keyboard k: DocumentTab, keyboardSide: Side, other o: DocumentTab, source: SplitSource) -> Bool {
+        guard let window, window.attachedSheet == nil || k === selectedTab else { return false }
+        let wasSplit = isSplit
+        if !wasSplit, !makeRoom() {
+            NSSound.beep()
+            return false
+        }
+        let before = panels
+        let kSlot = before.first { $0.tab === k && !$0.preview }?.slot
+            ?? before.first { $0.tab === o && !$0.preview }.map { 1 - $0.slot } ?? mainSlot
+        let outgoing = selectedTab
+        if let outgoing, outgoing !== k { closeBars(of: outgoing) }
+        keyboardInPreview = false
+        beside = .tab(o.id)
+        mainSlot = kSlot
+        besideIsLeft = keyboardSide == .right
+        if k !== outgoing {
+            // (Shown already, it is in its slot: else the slot is new, and
+            // SwiftUI puts it there.)
+            takeKeyboard(k, show: false)
+            if !wasSplit || window.firstResponder.map({ o.holds($0) }) == true { giveKeyboard(to: k) }
+        } else {
+            refresh()
+            window.invalidateRestorableState()
+        }
+        // The other side's editor shows where it was the last time.
+        o.arriving = !before.contains { $0.tab === o }
+        if !wasSplit { Telemetry.track("split_open", ["source": source.rawValue, "kind": "tabs"]) }
+        return true
+    }
+
+    /// The keyboard goes to `side`, if it is the other one (a click there,
+    /// ⌥⌘← and ⌥⌘→, the tab beside clicked in the strip). Nothing moves:
+    /// the tab there becomes the selected one, and the one that was takes
+    /// its place beside.
+    /// - Parameter outgoing: what had the keyboard, when it has already
+    ///   moved there (a click).
+    func focus(_ side: Side, outgoing: NSResponder? = nil, force: Bool = false) {
+        guard let window, let panel = panels.first(where: { $0.side == side }), !panel.keyboard else { return }
+        guard force || window.attachedSheet == nil else { return }
+        if beside == .preview {
+            keyboardInPreview = panel.preview
+            if outgoing == nil { giveKeyboard(to: panel.tab, preview: panel.preview) }
+            refresh()
+            return
+        }
+        guard let current = selectedTab, panel.tab !== current else { return }
+        closeBars(of: current)
+        beside = .tab(current.id)
+        mainSlot = panel.slot
+        besideIsLeft.toggle()
+        takeKeyboard(panel.tab, show: false, outgoing: outgoing)
+    }
+
+    /// The window's keyboard moved to `responder` (a click in the other
+    /// side's text, its find bar or its preview): that side is the
+    /// keyboard's from now on. Anywhere else (the sidebar, the top bar)
+    /// changes nothing.
+    func keyboardMoved(to responder: NSResponder?, from outgoing: NSResponder?) {
+        guard isSplit, !movingKeyboard, let window, let side = window.side(holding: responder), side != keyboardSide else { return }
+        focus(side, outgoing: outgoing)
+    }
+
+    /// The bars of a side the keyboard leaves: the palette is the
+    /// keyboard's and goes (the find bar stays, as it does between tabs).
+    private func closeBars(of tab: DocumentTab) {
+        if tab.model.palette.isOpen { tab.model.palette.close(focusEditor: false) }
+    }
+
+    /// View ▸ Close Split (⌘\ again): the side with the keyboard stays.
+    /// (The preview beside the text, with the keyboard in it, stays as the
+    /// tab's preview.)
+    func closeSplit() {
+        guard isSplit else { return }
+        let previewStays = beside == .preview && keyboardInPreview
+        endSplit()
+        if previewStays { selectedTab?.setMarkdownPreview(true) }
+    }
+
+    /// The other side goes.
+    func endSplit() {
+        guard isSplit else { return }
+        beside = nil
+        keyboardInPreview = false
+        dropZone = nil
+        refresh()
+        window?.invalidateRestorableState()
+    }
+
+    /// View ▸ Swap Sides.
+    func swapSides() {
+        guard isSplit else { return }
+        besideIsLeft.toggle()
+        window?.invalidateRestorableState()
+    }
+
+    /// Window ▸ Move Tab to Other Side: the keyboard's tab goes to the
+    /// other side, the keyboard with it.
+    @discardableResult
+    func moveToOtherSide(source: SplitSource) -> Bool {
+        guard let current = selectedTab else { return false }
+        return show(current, on: keyboardSide?.other ?? .right, source: source)
+    }
+
+    /// View ▸ Preview to the Side (⌥⌃⌘P): the selected tab's text on the
+    /// left and its Markdown rendered (or its SVG drawn) on the right,
+    /// following the text as it is typed; again, the text alone.
+    @discardableResult
+    func togglePreviewBeside(source: SplitSource) -> Bool {
+        if beside == .preview {
+            endSplit()
+            return true
+        }
+        guard let window, let tab = selectedTab, tab.canPreviewMarkdown, window.attachedSheet == nil else { return false }
+        let wasSplit = isSplit
+        if !wasSplit, !makeRoom() {
+            NSSound.beep()
+            return false
+        }
+        // The text on its side, the preview on the other.
+        if tab.showsMarkdownPreview { tab.setMarkdownPreview(false) }
+        keyboardInPreview = false
+        beside = .preview
+        besideIsLeft = false
+        tab.startPreviewBeside()
+        refresh()
+        window.invalidateRestorableState()
+        if !wasSplit { Telemetry.track("split_open", ["source": source.rawValue, "kind": "preview"]) }
+        return true
+    }
+
+    /// A tab's context menu in the strip.
+    static let openToSideTitle = "Open to the Side"
+    func menu(for id: Int) -> [[HoneyTabAction]] {
+        guard let tab = tab(id: id) else { return [] }
+        let alone = list.count < 2
+        return [[HoneyTabAction(Self.openToSideTitle, enabled: !alone) { [weak self] in _ = self?.openToSide(tab, source: .tab) }],
+                [HoneyTabAction("Move Tab to New Window", enabled: !alone) { DocumentWindow.moveToNewWindow(tab) }],
+                [HoneyTabAction("Close Tab") { [weak self] in self?.close(id) }]]
+    }
+
+    /// The window grows to hold two editors side by side, within its
+    /// screen. False when the screen can't hold it (or it is full screen
+    /// and too narrow).
+    func makeRoom() -> Bool {
+        guard let window, rowWidth > 0 else { return true }
+        let needed = SplitLayout.minimumRow(gap: Honey.gap)
+            + (sidebarInRow ? SidebarLayout.widths.lowerBound + Honey.gap : 0)
+        let grow = needed - rowWidth
+        guard grow > 0.5 else { return true }
+        guard !window.styleMask.contains(.fullScreen), let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        else { return false }
+        var frame = window.frame
+        frame.size.width += ceil(grow)
+        guard frame.width <= screen.width else { return false }
+        if frame.maxX > screen.maxX { frame.origin.x = screen.maxX - frame.width }
+        if frame.minX < screen.minX { frame.origin.x = screen.minX }
+        window.setFrame(frame, display: true)
+        rowWidth += ceil(grow)
+        return true
+    }
+
+    /// A window coming back at launch: `tab` beside the selected one, as
+    /// it was (`TabRestoration`).
+    func restoreBeside(_ tab: DocumentTab, besideIsLeft left: Bool, fraction: Double) {
+        guard !isSplit, tab !== selectedTab, list.contains(where: { $0 === tab }) else { return }
+        beside = .tab(tab.id)
+        mainSlot = 0
+        besideIsLeft = left
+        splitFraction = fraction
+        refresh()
+    }
+
+    /// A window coming back with the selected tab's preview beside it.
+    func restorePreviewBeside(besideIsLeft left: Bool, fraction: Double) {
+        guard !isSplit, let tab = selectedTab, tab.canPreviewMarkdown else { return }
+        if tab.showsMarkdownPreview { tab.setMarkdownPreview(false) }
+        beside = .preview
+        besideIsLeft = left
+        splitFraction = fraction
+        tab.startPreviewBeside()
+        refresh()
     }
 }
 

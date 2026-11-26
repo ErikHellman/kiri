@@ -64,6 +64,20 @@ struct CommandPalette: View {
                     list
                 }
             }
+            // ⌥ held on a file or a tab: what ⌥↩ does.
+            if palette.optionHeld, palette.selectedOpensToSide, palette.lineStatus == nil, !palette.toSide {
+                Rectangle().fill(Color.honeyLine).frame(height: 1)
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    Image(systemName: "rectangle.righthalf.inset.filled").font(.system(size: 10, weight: .semibold))
+                    Text("⌥↩ to the side").font(.honey(.caption, weight: .semibold))
+                }
+                .foregroundStyle(Color.honeyMuted)
+                .padding(.horizontal, 14)
+                .frame(height: 24)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Option Return opens it to the side")
+            }
         }
         .frame(maxWidth: Self.width)
         .honeyGlass(.chrome, in: shape)
@@ -89,6 +103,7 @@ struct CommandPalette: View {
 
     private var prompt: String {
         if palette.kind == .language { return panelWidth < 360 ? "Language" : "Search languages by name or file extension" }
+        if palette.toSide { return panelWidth < 360 ? "To the side" : "A file or tab to show to the side" }
         return panelWidth < 360 ? "Search" : "Search files, tabs and commands"
     }
 
@@ -111,6 +126,13 @@ struct CommandPalette: View {
                 .onKeyPress(.downArrow) { palette.move(by: 1); return .handled }
                 .onKeyPress(.pageUp) { palette.move(by: -rowsThatFit); return .handled }
                 .onKeyPress(.pageDown) { palette.move(by: rowsThatFit); return .handled }
+                // ⌥↩: a file or a tab to the side (before the field takes
+                // it as a line break).
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.option), palette.selectedOpensToSide else { return .ignored }
+                    palette.commit(toSide: true)
+                    return .handled
+                }
                 .onSubmit { palette.commit() }
                 .accessibilityLabel(name)
                 .accessibilityHint(palette.kind == .language
