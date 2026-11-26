@@ -21,8 +21,31 @@ import WebKit
 extension SelfTest {
     private static var splitStarted = false
 
+    /// Also, for pictures: `-KiriSplitWith <path>` opens that file to the
+    /// side of the front window, `-KiriSplitPreviewShow YES` shows its tab's
+    /// preview beside the text, `-KiriDropZoneShow left|right` draws the
+    /// drop zone, and `-KiriSplitFocus left|right` puts the keyboard there.
     static func splitFlags(_ textView: NSTextView) -> Bool {
-        guard UserDefaults.standard.bool(forKey: "KiriSplitTest") else { return false }
+        let defaults = UserDefaults.standard
+        let picture = ["KiriSplitWith", "KiriSplitPreviewShow", "KiriDropZoneShow", "KiriSplitFocus"].contains { defaults.object(forKey: $0) != nil }
+        if picture, !splitStarted {
+            splitStarted = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                guard let window = DocumentWindow.all.first(where: { FolderSessions.session(for: $0) != nil })
+                    ?? DocumentWindow.front ?? textView.window as? DocumentNSWindow else { return }
+                if let path = defaults.string(forKey: "KiriSplitWith") {
+                    SidebarOpen.open(URL(fileURLWithPath: path), keep: true, from: window, keyboard: .editor, toSide: .menu)
+                }
+                if defaults.bool(forKey: "KiriSplitPreviewShow") { _ = window.tabs.togglePreviewBeside(source: .menu) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    if let side = defaults.string(forKey: "KiriSplitFocus").flatMap(SplitLayout.Side.init) { window.tabs.focus(side) }
+                    if let side = defaults.string(forKey: "KiriDropZoneShow").flatMap(SplitLayout.Side.init) { window.tabs.dropZone = side }
+                    print("SELFTEST info split picture ready: \(window.tabs.panels.map { $0.tab.document.displayName })")
+                    fflush(stdout)
+                }
+            }
+        }
+        guard defaults.bool(forKey: "KiriSplitTest") else { return false }
         guard !splitStarted else { return true }
         splitStarted = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

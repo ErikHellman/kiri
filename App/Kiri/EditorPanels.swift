@@ -37,7 +37,9 @@ struct EditorPanels: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay { DropZone(side: tabs.dropZone, split: split, leftWidth: left) }
+        // (Only while something is dragged over the editors: nothing of it
+        // is made at launch.)
+        .overlay { if let zone = tabs.dropZone { DropZone(side: zone, split: split, leftWidth: left) } }
         .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
         .animation(motion.shape, value: panels.map(\.id))
         .animation(motion.reduced ? nil : motion.quick, value: tabs.dropZone)
@@ -242,30 +244,29 @@ private struct SplitEdge: View {
 /// Where something dragged over the editors would go, while it is: that
 /// side's half (or panel) under glass, with the focus color's outline.
 private struct DropZone: View {
-    let side: SplitLayout.Side?
+    let side: SplitLayout.Side
     let split: Bool
     let leftWidth: Double
 
     var body: some View {
         GeometryReader { geometry in
-            if let side {
-                let total = geometry.size.width
-                let half = split ? (side == .left ? leftWidth : total - leftWidth - Honey.gap) : (total - Honey.gap) / 2
-                let shape = RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous)
-                shape.fill(Color.honeyAccentSoft.opacity(0.35))
-                    .honeyGlass(.chrome, in: shape)
-                    .overlay { shape.strokeBorder(Color.honeyFocus, lineWidth: 2) }
-                    .overlay {
-                        Image(systemName: side == .left ? "rectangle.lefthalf.inset.filled" : "rectangle.righthalf.inset.filled")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(Color.honeyAccentInk)
-                    }
-                    .frame(width: max(half, 0), height: geometry.size.height)
-                    .offset(x: side == .left ? 0 : total - max(half, 0))
-                    .transition(.opacity)
-                    .accessibilityHidden(true)
-            }
+            let total = geometry.size.width
+            let half = split ? (side == .left ? leftWidth : total - leftWidth - Honey.gap) : (total - Honey.gap) / 2
+            let shape = RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous)
+            shape.fill(Color.honeyAccentSoft.opacity(0.35))
+                .honeyGlass(.chrome, in: shape)
+                .overlay { shape.strokeBorder(Color.honeyFocus, lineWidth: 2) }
+                .overlay {
+                    Image(systemName: side == .left ? "rectangle.lefthalf.inset.filled" : "rectangle.righthalf.inset.filled")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Color.honeyAccentInk)
+                }
+                .frame(width: max(half, 0), height: geometry.size.height)
+                .offset(x: side == .left ? 0 : total - max(half, 0))
+                .transition(.opacity)
+                .accessibilityHidden(true)
         }
+        .transition(.opacity)
         .allowsHitTesting(false)
     }
 }
