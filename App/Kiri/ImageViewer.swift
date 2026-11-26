@@ -28,6 +28,8 @@ import KiriKit
     /// Fitted to the panel (as it opens, and after a double-click): it
     /// fits again as the panel changes size.
     private var fitted = true
+    /// Fitted, but the panel hasn't been laid out yet: the zoom isn't known.
+    private var awaitingRoom = false
 
     #if DEBUG || KIRI_SELFTEST
     /// Frames drawn by the animation, for the self-test.
@@ -61,6 +63,7 @@ import KiriKit
                                                queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.fitted = false
+                self?.awaitingRoom = false
                 self?.zoomChanged()
             }
         }
@@ -168,6 +171,13 @@ import KiriKit
         fitted = true
         guard size.width > 0, size.height > 0 else { return }
         let room = scroll.bounds.size
+        // A tab that isn't laid out yet has no room: it fits when it gets
+        // some (`panelResized`), instead of at the smallest zoom first.
+        awaitingRoom = room.width <= 2 * Self.margin || room.height <= 2 * Self.statusRoom
+        if awaitingRoom {
+            zoomChanged()
+            return
+        }
         let scale = min(1, (room.width - 2 * Self.margin) / size.width, (room.height - 2 * Self.statusRoom) / size.height)
         scroll.magnification = max(scroll.minMagnification, scale)
         zoomChanged()
@@ -193,6 +203,7 @@ import KiriKit
             to = 1
         }
         fitted = false
+        awaitingRoom = false
         let center = NSPoint(x: scroll.contentView.bounds.midX, y: scroll.contentView.bounds.midY)
         scroll.setMagnification(to, centeredAt: center)
         zoomChanged()
@@ -216,7 +227,7 @@ import KiriKit
         var details: [String] = []
         if pixels.width > 0 { details.append(MediaText.dimensions(pixels.width, pixels.height)) }
         if frames > 1 { details.append(animates ? "\(frames) frames" : "\(frames) images") }
-        if size != .zero { details.append("\(Int((scroll.magnification * 100).rounded()))%") }
+        if size != .zero, !awaitingRoom { details.append("\(Int((scroll.magnification * 100).rounded()))%") }
         onDetails?(details)
     }
 

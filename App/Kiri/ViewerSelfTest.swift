@@ -53,7 +53,7 @@ extension SelfTest {
         guard let pngDoc = await open(png), let pngTab = DocumentWindow.tab(of: pngDoc) else {
             report(false, "a PNG opens"); return
         }
-        await waitFor { status(pngTab).contains("40 × 30") }
+        await waitFor { status(pngTab).contains("%") }
         report(pngDoc.media?.kind == .image("PNG") && pngDoc.isReadOnly && pngDoc.text.isEmpty, "a PNG opens as a picture")
         report(pngTab.mediaViewer?.view.window != nil && pngTab.container.superview == nil,
                "a picture shows in its viewer, not the editor")
@@ -80,8 +80,9 @@ extension SelfTest {
             report(false, "a GIF to open"); return
         }
         guard let gifDoc = await open(gif), let gifTab = DocumentWindow.tab(of: gifDoc) else { report(false, "a GIF opens"); return }
-        await waitFor { status(gifTab).contains("3 frames") }
-        report(status(gifTab).contains("3 frames"), "an animated GIF says its frames (\(status(gifTab)))")
+        await waitFor { status(gifTab).contains("%") }
+        report(status(gifTab).hasPrefix("GIF · 40 × 30 · 3 frames · 100%"),
+               "an animated GIF says its frames, fitted at its own size (\(status(gifTab)))")
         let gifViewer = gifTab.mediaViewer?.contentForTests as? ImageViewer
         await waitFor { (gifViewer?.framesShown ?? 0) > 3 }
         report((gifViewer?.framesShown ?? 0) > 3, "an animated GIF plays (\(gifViewer?.framesShown ?? 0) frames shown)")
