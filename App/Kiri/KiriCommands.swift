@@ -5,7 +5,8 @@ import SwiftUI
 /// The menus. Every feature is in one, so the keyboard reaches all of it
 /// (⌃F2 opens the menu bar), and the common ones have keys of their own.
 /// Help ▸ Keyboard Shortcuts lists them; its contents live next to the keys
-/// in `Shortcuts.swift`.
+/// in `Shortcuts.swift`. Every item of Kiri's own has its key from
+/// `Keys`, which Settings ▸ Shortcuts changes (`ShortcutStore`).
 ///
 /// What an item acts on is the front document window (`FrontEditor`).
 struct KiriCommands: Commands {
@@ -48,6 +49,7 @@ struct KiriCommands: Commands {
         // can't update itself (no feed or key: see `Updater`).
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") { Updater.shared.checkForUpdates() }
+                .keyboardShortcut(Keys.checkForUpdates)
                 .disabled(!Updater.shared.canCheck)
         }
 
@@ -58,6 +60,7 @@ struct KiriCommands: Commands {
             // Below Settings…, where apps keep such one-time setup. Settings
             // and the first-run hint offer it too, and say whether it is done.
             Button("Install Command Line Tool…") { CLIInstaller.install() }
+                .keyboardShortcut(Keys.installCommandLineTool)
         }
 
         CommandGroup(before: .sidebar) {
@@ -80,6 +83,7 @@ struct KiriCommands: Commands {
             .keyboardShortcut(Keys.focusSidebar)
             .disabled(folder == nil || editor == nil)
             Button("Refresh Folder") { folder?.refresh() }
+                .keyboardShortcut(Keys.refreshFolder)
                 .disabled(folder == nil)
         }
 
@@ -140,6 +144,7 @@ struct KiriCommands: Commands {
                 .disabled(document == nil)
             // Back to the file as it was last saved; the document asks first.
             Button("Revert to Saved", systemImage: "arrow.counterclockwise") { document?.revertToSaved(nil) }
+                .keyboardShortcut(Keys.revertToSaved)
                 .disabled(document?.location == nil || tabs?.dirty != true)
         }
 
@@ -174,12 +179,15 @@ struct KiriCommands: Commands {
                 Button("Make Upper Case", systemImage: "characters.uppercase") {
                     EditAction.send(#selector(NSResponder.uppercaseWord(_:)))
                 }
+                .keyboardShortcut(Keys.makeUpperCase)
                 Button("Make Lower Case", systemImage: "characters.lowercase") {
                     EditAction.send(#selector(NSResponder.lowercaseWord(_:)))
                 }
+                .keyboardShortcut(Keys.makeLowerCase)
                 Button("Capitalize", systemImage: "textformat.characters") {
                     EditAction.send(#selector(NSResponder.capitalizeWord(_:)))
                 }
+                .keyboardShortcut(Keys.capitalize)
             }
             Divider()
             Button("Go to Line…") { editor?.goToLine.open() }
@@ -222,6 +230,7 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.previewToSide)
                 .disabled(!(tab?.canPreviewMarkdown ?? false))
             Button("Swap Sides") { tabs?.swapSides() }
+                .keyboardShortcut(Keys.swapSides)
                 .disabled(tabs?.isSplit != true)
             Button("Focus Left Side") { tabs?.focus(.left) }
                 .keyboardShortcut(Keys.focusLeftSide)
@@ -240,6 +249,7 @@ struct KiriCommands: Commands {
                 ForEach(HoneyMotionLevel.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             Toggle("Typing Animations", isOn: $typingAnimations)
+                .keyboardShortcut(Keys.typingAnimations)
                 .disabled(motion == .off)
             Divider()
         }
@@ -260,6 +270,7 @@ struct KiriCommands: Commands {
             }
             .disabled(document == nil)
             Toggle("Byte Order Mark", isOn: Binding(get: { document?.hasBOM ?? false }, set: { document?.setByteOrderMark($0) }))
+                .keyboardShortcut(Keys.byteOrderMark)
                 .disabled(!(document?.encoding.isUnicode ?? false))
             Picker("Line Endings", selection: Binding(get: { document?.lineEnding }, set: { if let new = $0 { document?.setLineEnding(new) } })) {
                 ForEach(LineEnding.allCases, id: \.self) { Text($0.menuName).tag(Optional($0)) }
@@ -297,15 +308,19 @@ struct KiriCommands: Commands {
             Divider()
             Divider()
             Button("Move Tab to New Window", systemImage: "macwindow.badge.plus") { WindowAction.moveTabToNewWindow() }
+                .keyboardShortcut(Keys.moveTabToNewWindow)
                 .disabled((tabs?.items.count ?? 0) < 2)
             Button(Self.moveToOtherSideTitle, systemImage: "rectangle.righthalf.inset.filled") {
                 _ = tabs?.moveToOtherSide(source: .ofMenuItem)
             }
+            .keyboardShortcut(Keys.moveToOtherSide)
             .disabled((tabs?.items.count ?? 0) < 2)
             Button("Merge All Windows", systemImage: "rectangle.stack") { WindowAction.mergeAllWindows() }
+                .keyboardShortcut(Keys.mergeAllWindows)
                 .disabled(tabs == nil || DocumentWindow.all.count < 2)
             Divider()
             Button("Bring All to Front", systemImage: "macwindow.on.rectangle") { NSApp.arrangeInFront(nil) }
+                .keyboardShortcut(Keys.bringAllToFront)
         }
 
         // Help: there is no help book, so Kiri Help becomes the shortcuts.
@@ -314,12 +329,15 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.shortcuts)
             // The `kiri` command: options and examples, piping among them.
             Button("Command Line Tool", systemImage: "terminal") { openWindow(id: CommandLineHelpView.windowID) }
+                .keyboardShortcut(Keys.commandLineHelp)
             // The newest release notes in the app (`WhatsNew`).
             Button("What's New in Kiri", systemImage: "sparkles") { WhatsNew.showLatest() }
+                .keyboardShortcut(Keys.whatsNew)
                 .disabled(WhatsNew.latest == nil)
             Divider()
             // Anonymous, through Vaka (`FeedbackWindow`, `Telemetry`).
             Button("Send Feedback…", systemImage: "bubble.left") { FeedbackWindow.show() }
+                .keyboardShortcut(Keys.sendFeedback)
         }
     }
 

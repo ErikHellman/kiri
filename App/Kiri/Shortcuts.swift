@@ -1,64 +1,74 @@
 import SwiftUI
 
-/// Kiri's own key equivalents, shared by the menus and the Keyboard
-/// Shortcuts window so the two can't drift apart.
-enum Keys {
-    static let new = KeyboardShortcut("n", modifiers: .command)
-    static let open = KeyboardShortcut("o", modifiers: .command)
-    static let save = KeyboardShortcut("s", modifiers: .command)
-    static let saveAs = KeyboardShortcut("s", modifiers: [.shift, .command])
-    static let close = KeyboardShortcut("w", modifiers: .command)
-    static let closeAll = KeyboardShortcut("w", modifiers: [.option, .command])
-    static let closeWindow = KeyboardShortcut("w", modifiers: [.shift, .command])
-    static let settings = KeyboardShortcut(",", modifiers: .command)
-    static let newTab = KeyboardShortcut("t", modifiers: .command)
-    static let find = KeyboardShortcut("f", modifiers: .command)
-    static let findAndReplace = KeyboardShortcut("f", modifiers: [.option, .command])
-    static let findNext = KeyboardShortcut("g", modifiers: .command)
-    static let findPrevious = KeyboardShortcut("g", modifiers: [.shift, .command])
-    static let useSelectionForFind = KeyboardShortcut("e", modifiers: .command)
-    static let jumpToSelection = KeyboardShortcut("j", modifiers: .command)
-    static let goToLine = KeyboardShortcut("l", modifiers: .command)
-    static let palette = KeyboardShortcut("k", modifiers: .command)
-    /// The palette too, by the key other editors find a file with.
-    static let goToFile = KeyboardShortcut("p", modifiers: .command)
-    /// The language picker: L for language, with the Control the other
-    /// "set how this document shows" keys have (⌃⌘W, ⌃⌘S). ⌘L is Go to
-    /// Line, and ⇧⌘L is macOS's Search With Google service.
-    static let chooseLanguage = KeyboardShortcut("l", modifiers: [.control, .command])
-    static let shiftRight = KeyboardShortcut("]", modifiers: .command)
-    static let shiftLeft = KeyboardShortcut("[", modifiers: .command)
-    static let bigger = KeyboardShortcut("+", modifiers: .command)
-    static let smaller = KeyboardShortcut("-", modifiers: .command)
-    static let actualSize = KeyboardShortcut("0", modifiers: .command)
-    static let wrapLines = KeyboardShortcut("w", modifiers: [.control, .command])
-    /// The Markdown preview: P for preview, with the Control of the other
-    /// "how this document shows" keys. (⌘P is Go to File.)
-    static let markdownPreview = KeyboardShortcut("p", modifiers: [.control, .command])
-    static let nextTab = KeyboardShortcut("]", modifiers: [.shift, .command])
-    static let previousTab = KeyboardShortcut("[", modifiers: [.shift, .command])
-    static let toggleComment = KeyboardShortcut("/", modifiers: .command)
-    /// ⌘?, the Help key (⇧⌘/ on the keyboard). Written as "?" with
-    /// Command, as AppKit's own Help items are: an item on "/" with Shift
-    /// and Command is not matched by the key press, whose character is
-    /// "?". (macOS has a shortcut of its own on this key, "Show Help
-    /// menu": where that is on, the key opens the Help menu, whose one
-    /// item this is.)
-    static let shortcuts = KeyboardShortcut("?", modifiers: .command)
-    static let openFolder = KeyboardShortcut("o", modifiers: [.shift, .command])
-    static let toggleSidebar = KeyboardShortcut("s", modifiers: [.control, .command])
-    static let focusSidebar = KeyboardShortcut("e", modifiers: [.shift, .command])
-    /// Side by side: the tab before beside this one, and back to one.
-    static let splitEditor = KeyboardShortcut("\\", modifiers: .command)
-    /// The keyboard to the left or the right side of a split window.
-    static let focusLeftSide = KeyboardShortcut(.leftArrow, modifiers: [.option, .command])
-    static let focusRightSide = KeyboardShortcut(.rightArrow, modifiers: [.option, .command])
-    /// The Markdown preview beside its text: the preview's key with Option.
-    static let previewToSide = KeyboardShortcut("p", modifiers: [.option, .control, .command])
+/// The menus' keys, as they are now: what Kiri comes with
+/// (`ShortcutCommand.defaults`) or what was set in Settings ▸ Shortcuts
+/// (`ShortcutStore`). The menus, the tooltips and the Keyboard Shortcuts
+/// window all read them here, so they can't drift apart. Nil: the command
+/// has no key.
+@MainActor enum Keys {
+    static var settings: KeyboardShortcut? { ShortcutStore.shared.shortcut(.settings) }
+    static var installCommandLineTool: KeyboardShortcut? { ShortcutStore.shared.shortcut(.installCommandLineTool) }
+    static var checkForUpdates: KeyboardShortcut? { ShortcutStore.shared.shortcut(.checkForUpdates) }
+    static var new: KeyboardShortcut? { ShortcutStore.shared.shortcut(.new) }
+    static var newTab: KeyboardShortcut? { ShortcutStore.shared.shortcut(.newTab) }
+    static var open: KeyboardShortcut? { ShortcutStore.shared.shortcut(.open) }
+    static var openFolder: KeyboardShortcut? { ShortcutStore.shared.shortcut(.openFolder) }
+    static var goToFile: KeyboardShortcut? { ShortcutStore.shared.shortcut(.goToFile) }
+    static var close: KeyboardShortcut? { ShortcutStore.shared.shortcut(.close) }
+    static var closeWindow: KeyboardShortcut? { ShortcutStore.shared.shortcut(.closeWindow) }
+    static var closeAll: KeyboardShortcut? { ShortcutStore.shared.shortcut(.closeAll) }
+    static var save: KeyboardShortcut? { ShortcutStore.shared.shortcut(.save) }
+    static var saveAs: KeyboardShortcut? { ShortcutStore.shared.shortcut(.saveAs) }
+    static var revertToSaved: KeyboardShortcut? { ShortcutStore.shared.shortcut(.revertToSaved) }
+    static var find: KeyboardShortcut? { ShortcutStore.shared.shortcut(.find) }
+    static var findAndReplace: KeyboardShortcut? { ShortcutStore.shared.shortcut(.findAndReplace) }
+    static var findNext: KeyboardShortcut? { ShortcutStore.shared.shortcut(.findNext) }
+    static var findPrevious: KeyboardShortcut? { ShortcutStore.shared.shortcut(.findPrevious) }
+    static var useSelectionForFind: KeyboardShortcut? { ShortcutStore.shared.shortcut(.useSelectionForFind) }
+    static var jumpToSelection: KeyboardShortcut? { ShortcutStore.shared.shortcut(.jumpToSelection) }
+    static var makeUpperCase: KeyboardShortcut? { ShortcutStore.shared.shortcut(.makeUpperCase) }
+    static var makeLowerCase: KeyboardShortcut? { ShortcutStore.shared.shortcut(.makeLowerCase) }
+    static var capitalize: KeyboardShortcut? { ShortcutStore.shared.shortcut(.capitalize) }
+    static var goToLine: KeyboardShortcut? { ShortcutStore.shared.shortcut(.goToLine) }
+    static var palette: KeyboardShortcut? { ShortcutStore.shared.shortcut(.palette) }
+    static var toggleSidebar: KeyboardShortcut? { ShortcutStore.shared.shortcut(.toggleSidebar) }
+    static var focusSidebar: KeyboardShortcut? { ShortcutStore.shared.shortcut(.focusSidebar) }
+    static var refreshFolder: KeyboardShortcut? { ShortcutStore.shared.shortcut(.refreshFolder) }
+    static var bigger: KeyboardShortcut? { ShortcutStore.shared.shortcut(.bigger) }
+    static var smaller: KeyboardShortcut? { ShortcutStore.shared.shortcut(.smaller) }
+    static var actualSize: KeyboardShortcut? { ShortcutStore.shared.shortcut(.actualSize) }
+    static var wrapLines: KeyboardShortcut? { ShortcutStore.shared.shortcut(.wrapLines) }
+    static var markdownPreview: KeyboardShortcut? { ShortcutStore.shared.shortcut(.markdownPreview) }
+    static var splitEditor: KeyboardShortcut? { ShortcutStore.shared.shortcut(.splitEditor) }
+    static var previewToSide: KeyboardShortcut? { ShortcutStore.shared.shortcut(.previewToSide) }
+    static var swapSides: KeyboardShortcut? { ShortcutStore.shared.shortcut(.swapSides) }
+    static var focusLeftSide: KeyboardShortcut? { ShortcutStore.shared.shortcut(.focusLeftSide) }
+    static var focusRightSide: KeyboardShortcut? { ShortcutStore.shared.shortcut(.focusRightSide) }
+    static var typingAnimations: KeyboardShortcut? { ShortcutStore.shared.shortcut(.typingAnimations) }
+    static var chooseLanguage: KeyboardShortcut? { ShortcutStore.shared.shortcut(.chooseLanguage) }
+    static var byteOrderMark: KeyboardShortcut? { ShortcutStore.shared.shortcut(.byteOrderMark) }
+    static var shiftRight: KeyboardShortcut? { ShortcutStore.shared.shortcut(.shiftRight) }
+    static var shiftLeft: KeyboardShortcut? { ShortcutStore.shared.shortcut(.shiftLeft) }
+    static var toggleComment: KeyboardShortcut? { ShortcutStore.shared.shortcut(.toggleComment) }
+    static var nextTab: KeyboardShortcut? { ShortcutStore.shared.shortcut(.nextTab) }
+    static var previousTab: KeyboardShortcut? { ShortcutStore.shared.shortcut(.previousTab) }
+    static var moveTabToNewWindow: KeyboardShortcut? { ShortcutStore.shared.shortcut(.moveTabToNewWindow) }
+    static var moveToOtherSide: KeyboardShortcut? { ShortcutStore.shared.shortcut(.moveToOtherSide) }
+    static var mergeAllWindows: KeyboardShortcut? { ShortcutStore.shared.shortcut(.mergeAllWindows) }
+    static var bringAllToFront: KeyboardShortcut? { ShortcutStore.shared.shortcut(.bringAllToFront) }
+    static var shortcuts: KeyboardShortcut? { ShortcutStore.shared.shortcut(.shortcuts) }
+    static var commandLineHelp: KeyboardShortcut? { ShortcutStore.shared.shortcut(.commandLineHelp) }
+    static var whatsNew: KeyboardShortcut? { ShortcutStore.shared.shortcut(.whatsNew) }
+    static var sendFeedback: KeyboardShortcut? { ShortcutStore.shared.shortcut(.sendFeedback) }
 
-    /// ⌘1 … ⌘9 pick a tab by position.
+    /// ⌘1 … ⌘9 pick a tab by position. (Not changeable: `FixedKey.kiri`.)
     static func tab(_ n: Int) -> KeyboardShortcut {
         KeyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: .command)
+    }
+
+    /// "Go to Line (⌘L)", or the name alone for a command with no key.
+    static func help(_ text: String, _ command: ShortcutCommand) -> String {
+        ShortcutStore.shared[command].map { "\(text) (\($0.glyphs))" } ?? text
     }
 }
 
@@ -142,8 +152,9 @@ struct ShortcutGroup: Identifiable {
             self.keys = keys
         }
 
-        init(_ title: String, _ shortcut: KeyboardShortcut) {
-            self.init(title, shortcut.glyphs)
+        /// A command's key, or a note that it has none (set one in Settings ▸ Shortcuts).
+        init(_ title: String, _ shortcut: KeyboardShortcut?) {
+            self.init(title, shortcut?.glyphs ?? "No key")
         }
     }
 
@@ -152,7 +163,9 @@ struct ShortcutGroup: Identifiable {
     let items: [Item]
     var id: String { title }
 
-    static let all: [ShortcutGroup] = [
+    /// Built when asked, from the keys as they are now.
+    @MainActor static var all: [ShortcutGroup] {
+        [
         ShortcutGroup(title: "Files", systemImage: "doc", items: [
             Item("New document", Keys.new),
             Item("New tab", Keys.newTab),
@@ -177,7 +190,7 @@ struct ShortcutGroup: Identifiable {
             Item("Open a file or tab to the side", "⌥-click it"),
             Item("Open the sidebar's or the palette's file to the side", "⌥↩"),
             Item("Open to the side by dragging", "Drag a tab or a file to a side"),
-            Item("Keyboard to the left / right side", "\(Keys.focusLeftSide.glyphs)  \(Keys.focusRightSide.glyphs)"),
+            Item("Keyboard to the left / right side", "\(g(Keys.focusLeftSide))  \(g(Keys.focusRightSide))"),
             Item("Markdown or SVG preview beside its text", Keys.previewToSide),
             Item("Swap sides", "View menu"),
             Item("Move tab to the other side", "Window menu"),
@@ -215,7 +228,7 @@ struct ShortcutGroup: Identifiable {
             Item("Find next", Keys.findNext),
             Item("Find previous", Keys.findPrevious),
             Item("Find in the sidebar, when it has the keyboard", Keys.find),
-            Item("Next / previous file found, in the sidebar", "\(Keys.findNext.glyphs)  \(Keys.findPrevious.glyphs)"),
+            Item("Next / previous file found, in the sidebar", "\(g(Keys.findNext))  \(g(Keys.findPrevious))"),
             Item("Next / previous match, in the find field", "↩  ⇧↩"),
             Item("Replace and find the next, in the replace field", "↩"),
             Item("Between the find and replace fields", "⇥  ⇧⇥"),
@@ -263,5 +276,9 @@ struct ShortcutGroup: Identifiable {
             Item("The kiri command's options and examples", "Help menu"),
             Item("Send feedback", "Help menu"),
         ]),
-    ]
+        ]
+    }
+
+    /// A key in a line with others: "—" for one that has none.
+    @MainActor private static func g(_ shortcut: KeyboardShortcut?) -> String { shortcut?.glyphs ?? "—" }
 }

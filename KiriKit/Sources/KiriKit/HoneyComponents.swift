@@ -1117,14 +1117,27 @@ public struct HoneyPill: View {
 public struct HoneySearchField: View {
     let prompt: String
     @Binding var text: String
-    @FocusState private var focused: Bool
+    @FocusState private var ownFocus: Bool
+    /// The caller's, to put the keyboard in the field (Settings ▸ Shortcuts).
+    private let externalFocus: FocusState<Bool>.Binding?
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduce
 
     public init(_ prompt: String, text: Binding<String>) {
         self.prompt = prompt
         _text = text
+        externalFocus = nil
     }
+
+    /// A field whose keyboard focus is the caller's `focused`.
+    public init(_ prompt: String, text: Binding<String>, focused: FocusState<Bool>.Binding) {
+        self.prompt = prompt
+        _text = text
+        externalFocus = focused
+    }
+
+    private var focusBinding: FocusState<Bool>.Binding { externalFocus ?? $ownFocus }
+    private var focused: Bool { focusBinding.wrappedValue }
 
     public var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
@@ -1134,7 +1147,7 @@ public struct HoneySearchField: View {
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.honey(.body))
-                .focused($focused)
+                .focused(focusBinding)
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Color.honeyMuted)
