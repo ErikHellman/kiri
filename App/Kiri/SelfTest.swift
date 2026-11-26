@@ -2743,8 +2743,31 @@ import os
         _ = press(help.item(withTitle: "Keyboard Shortcuts"))
         let opened = await wait { shortcutsWindow() != nil }
         report(opened && ktv.string == original, "⌘? (⇧⌘/ as the keyboard sends it) opens Keyboard Shortcuts and leaves the text alone")
+        /// Escape in a window that has just opened, nothing in it focused.
+        func escapeCloses(_ shown: () -> NSWindow?) async -> Bool {
+            guard let w = shown() else { return false }
+            await settle(300)
+            pressKey("\u{1B}", unmodified: "\u{1B}", code: 53, [], in: w)
+            return await wait { shown() == nil }
+        }
+        report(await escapeCloses(shortcutsWindow), "Escape closes Keyboard Shortcuts")
         shortcutsWindow()?.close()
         _ = await wait { shortcutsWindow() == nil }
+
+        // Kiri ▸ Settings…, closed with Escape too.
+        func settingsWindow() -> NSWindow? {
+            NSApp.windows.first { $0.identifier?.rawValue == SettingsView.windowID && $0.isVisible }
+        }
+        updateMenu(main)
+        if let app = main.items.first?.submenu, let i = app.items.firstIndex(where: { $0.title == "Settings…" }) {
+            app.performActionForItem(at: i)
+            _ = await wait { settingsWindow() != nil }
+            report(await escapeCloses(settingsWindow), "Escape closes Settings")
+            settingsWindow()?.close()
+            _ = await wait { settingsWindow() == nil }
+        } else {
+            report(false, "Kiri ▸ Settings… exists")
+        }
 
         // Help ▸ Command Line Tool: the `kiri` command's options and examples.
         func commandLineWindow() -> NSWindow? {
@@ -2755,6 +2778,7 @@ import os
             help.performActionForItem(at: i)
             let shown = await wait { commandLineWindow() != nil }
             report(shown && ktv.string == original, "Help ▸ Command Line Tool opens the command's options and examples")
+            report(await escapeCloses(commandLineWindow), "Escape closes Command Line Tool")
             commandLineWindow()?.close()
             _ = await wait { commandLineWindow() == nil }
         } else {

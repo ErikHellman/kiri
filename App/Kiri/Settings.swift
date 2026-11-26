@@ -51,6 +51,7 @@ struct SettingsView: View {
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
+    @Environment(\.dismiss) private var dismiss
     /// Off for an offscreen render (`ImageRenderer` draws no scroll view).
     private let scrolls: Bool
     init(scrolls: Bool = true) { self.scrolls = scrolls }
@@ -62,6 +63,7 @@ struct SettingsView: View {
             .onAppear { Telemetry.screen("Settings") }
             .padding([.horizontal, .bottom], Honey.gap)
             .honeyCanvas()
+            .escapeCloses { dismiss() }
             // Honey on macOS (DESIGN.md §5): no title bar. The title sits on
             // the canvas in the band the hidden title bar leaves (the top
             // safe area), level with the traffic lights, the panel below it.

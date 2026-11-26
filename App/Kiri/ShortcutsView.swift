@@ -65,7 +65,7 @@ struct ShortcutsView: View {
         .onAppear { Telemetry.screen("Keyboard Shortcuts") }
         .honeyCanvas()
         .ignoresSafeArea(.container, edges: .top)
-        .onExitCommand {
+        .escapeCloses {
             if filter.isEmpty { dismiss() } else { filter = "" }
         }
     }
