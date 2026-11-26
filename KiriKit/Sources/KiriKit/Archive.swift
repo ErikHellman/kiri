@@ -1,6 +1,6 @@
 import Foundation
-#if canImport(Compression)
-import Compression
+#if canImport(zlib)
+import zlib
 #endif
 
 // What a zip or tar archive holds, for the archive viewer: each file's
@@ -77,8 +77,8 @@ public enum ArchiveReader {
         case .tar, .tarGzip:
             try handle.seek(toOffset: 0)
             var parser = TarParser()
-            #if canImport(Compression)
-            let gzip = format == .tarGzip ? GzipDecoder() : nil
+            #if canImport(zlib)
+            let gzip = format == .tarGzip ? try GzipDecoder() : nil
             #else
             if format == .tarGzip { throw ArchiveError.unsupported("gzip here") }
             let gzip: Never? = nil
@@ -87,7 +87,7 @@ public enum ArchiveReader {
             while !parser.isFinished, let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
                 if isCancelled() { throw CancellationError() }
                 read += Int64(chunk.count)
-                #if canImport(Compression)
+                #if canImport(zlib)
                 if let gzip {
                     try gzip.decode(chunk) { try parser.consume($0) }
                     if gzip.isFinished { break }
@@ -412,129 +412,89 @@ public struct TarParser: Sendable {
 
 // MARK: Gzip
 
-#if canImport(Compression)
-/// Decompresses gzip as it comes, a chunk at a time: the header, then the
-/// DEFLATE stream (with the Compression framework), member after member.
+#if canImport(zlib)
+/// Decompresses gzip as it comes, a chunk at a time, member after member
+/// (pigz and bgzip write several), with zlib: it reads the headers and
+/// trailers itself, and says where each member ends. (The Compression
+/// framework's decoder takes in all it is given and can't say where a
+/// member ended, so the next one would be lost.)
 public final class GzipDecoder {
     private enum State {
-        /// Reading a member's header; `pending` holds what came of it.
-        case header
-        case body
-        /// Skipping a member's 8-byte trailer (its CRC and length).
-        case trailer(Int)
+        case member
+        /// A member has ended: is another one next?
+        case between
         case finished
     }
 
-    private var state = State.header
-    private var pending: [UInt8] = []
-    private let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
-    private var streamOpen = false
+    private var state = State.member
+    private let stream = UnsafeMutablePointer<z_stream>.allocate(capacity: 1)
     private let output = UnsafeMutablePointer<UInt8>.allocate(capacity: 1 << 18)
     private let outputSize = 1 << 18
 
-    public init() {}
+    public init() throws {
+        stream.initialize(to: z_stream())
+        // 16 + 15: a gzip header and trailer around a 32 KB-window stream.
+        guard inflateInit2_(stream, 16 + MAX_WBITS, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            stream.deallocate()
+            output.deallocate()
+            throw ArchiveError.damaged("it can’t be decompressed")
+        }
+    }
 
     deinit {
-        if streamOpen { compression_stream_destroy(stream) }
+        inflateEnd(stream)
         stream.deallocate()
         output.deallocate()
     }
 
-    /// The last member has ended (and something that isn't gzip followed,
-    /// or nothing).
+    /// The last member has ended, and something that isn't gzip followed
+    /// it (trailing zeros, say).
     public var isFinished: Bool { if case .finished = state { true } else { false } }
 
     /// Decompresses the next bytes, handing what they come to to `sink`.
     public func decode(_ data: Data, sink: (Data) throws -> Void) throws {
         var bytes = [UInt8](data)
-        var i = 0
-        while i < bytes.count {
-            switch state {
-            case .finished:
-                return
-            case .trailer(let left):
-                let take = min(left, bytes.count - i)
-                i += take
-                state = left - take == 0 ? .header : .trailer(left - take)
-            case .header:
-                pending.append(contentsOf: bytes[i...])
-                i = bytes.count
-                guard let length = try Self.headerLength(pending) else { continue }
-                // Not gzip after a member: the end (trailing zeros, say).
-                if length < 0 {
-                    state = .finished
-                    return
-                }
-                guard compression_stream_init(stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else {
-                    throw ArchiveError.damaged("it can’t be decompressed")
-                }
-                streamOpen = true
-                state = .body
-                bytes = Array(pending[length...])
-                pending = []
-                i = 0
-            case .body:
-                let used = try inflate(bytes, from: i, sink: sink)
-                i += used
-            }
-        }
-    }
-
-    /// Runs the DEFLATE stream over `bytes[from...]`; how many it took.
-    private func inflate(_ bytes: [UInt8], from start: Int, sink: (Data) throws -> Void) throws -> Int {
-        try bytes.withUnsafeBufferPointer { buffer in
-            let base = buffer.baseAddress!.advanced(by: start)
-            let count = buffer.count - start
-            stream.pointee.src_ptr = UnsafePointer(base)
-            stream.pointee.src_size = count
+        guard !bytes.isEmpty else { return }
+        try bytes.withUnsafeMutableBufferPointer { buffer in
+            stream.pointee.next_in = buffer.baseAddress
+            stream.pointee.avail_in = UInt32(buffer.count)
             while true {
-                let before = stream.pointee.src_size
-                stream.pointee.dst_ptr = output
-                stream.pointee.dst_size = outputSize
-                let status = compression_stream_process(stream, 0)
-                let produced = outputSize - stream.pointee.dst_size
-                let left = stream.pointee.src_size
-                if produced > 0 { try sink(Data(bytes: output, count: produced)) }
-                switch status {
-                case COMPRESSION_STATUS_END:
-                    compression_stream_destroy(stream)
-                    streamOpen = false
-                    state = .trailer(8)
-                    return count - left
-                case COMPRESSION_STATUS_OK:
-                    // All taken, and nothing more to give until more comes.
-                    if left == 0, produced < outputSize { return count }
-                    // (No progress at all: wait for more input.)
-                    if produced == 0, left == before { return count - left }
-                default:
-                    throw ArchiveError.damaged("its compressed data is broken")
+                switch state {
+                case .finished:
+                    return
+                case .between:
+                    guard stream.pointee.avail_in > 0 else { return }
+                    // Another member starts with gzip's magic number (a
+                    // single byte left of it is taken to be one).
+                    let next = stream.pointee.next_in!
+                    guard next[0] == 0x1F, stream.pointee.avail_in < 2 || next[1] == 0x8B else {
+                        state = .finished
+                        return
+                    }
+                    inflateReset(stream)
+                    state = .member
+                case .member:
+                    stream.pointee.next_out = output
+                    stream.pointee.avail_out = UInt32(outputSize)
+                    let status = inflate(stream, Z_NO_FLUSH)
+                    let produced = outputSize - Int(stream.pointee.avail_out)
+                    if produced > 0 { try sink(Data(bytes: output, count: produced)) }
+                    switch status {
+                    case Z_STREAM_END:
+                        state = .between
+                    case Z_OK, Z_BUF_ERROR:
+                        // All taken, and the output not full (zlib holds
+                        // nothing back): wait for more.
+                        if stream.pointee.avail_in == 0, produced < outputSize { return }
+                        // No progress at all is Z_BUF_ERROR: wait for more too.
+                        if status == Z_BUF_ERROR, produced == 0 { return }
+                    default:
+                        throw ArchiveError.damaged("its compressed data is broken")
+                    }
                 }
             }
         }
-    }
-
-    /// The length of the gzip header `b` starts with; nil if more bytes
-    /// are needed, -1 if it isn't gzip.
-    static func headerLength(_ b: [UInt8]) throws -> Int? {
-        guard b.count >= 10 else { return b.count >= 2 && !(b[0] == 0x1F && b[1] == 0x8B) ? -1 : nil }
-        guard b[0] == 0x1F, b[1] == 0x8B else { return -1 }
-        guard b[2] == 8 else { throw ArchiveError.unsupported("this kind of gzip compression") }
-        let flags = b[3]
-        var i = 10
-        if flags & 0x04 != 0 { // FEXTRA
-            guard i + 2 <= b.count else { return nil }
-            i += 2 + (Int(b[i]) | Int(b[i + 1]) << 8)
-        }
-        if flags & 0x08 != 0 { // FNAME
-            guard let zero = b[min(i, b.count)...].firstIndex(of: 0) else { return nil }
-            i = zero + 1
-        }
-        if flags & 0x10 != 0 { // FCOMMENT
-            guard let zero = b[min(i, b.count)...].firstIndex(of: 0) else { return nil }
-            i = zero + 1
-        }
-        if flags & 0x02 != 0 { i += 2 } // FHCRC
-        return i <= b.count ? i : nil
+        stream.pointee.next_in = nil
     }
 }
 #endif

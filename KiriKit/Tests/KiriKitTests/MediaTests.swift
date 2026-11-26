@@ -232,7 +232,7 @@ import Testing
 
     // MARK: Gzip
 
-    #if canImport(Compression)
+    #if canImport(zlib)
     /// Python's tarfile (pax format), gzipped: a folder, a 700-byte file,
     /// a 164-character name and an empty file.
     static let paxTarGz = Data(base64Encoded: """
@@ -262,12 +262,26 @@ import Testing
         #expect(fractions.last == 1)
     }
 
-    @Test func gzipHeaders() throws {
-        #expect(try GzipDecoder.headerLength([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 3]) == 10)
-        // With a file name, given in pieces.
-        #expect(try GzipDecoder.headerLength([0x1F, 0x8B, 8, 0x08, 0, 0, 0, 0, 0, 3, 0x61]) == nil)
-        #expect(try GzipDecoder.headerLength([0x1F, 0x8B, 8, 0x08, 0, 0, 0, 0, 0, 3, 0x61, 0]) == 12)
-        #expect(try GzipDecoder.headerLength([0, 0, 0]) == -1)
+    /// Given a byte at a time, both members come out whole, and zeros
+    /// after the last one end it.
+    @Test func gzipInPiecesAndPadded() throws {
+        let gzip = try GzipDecoder()
+        var out = Data()
+        for byte in Self.twoMemberTarGz + Data(count: 512) {
+            try gzip.decode(Data([byte])) { out.append($0) }
+        }
+        #expect(out.count == 10240)
+        #expect(gzip.isFinished)
+        var parser = TarParser()
+        try parser.consume(out)
+        #expect(parser.entries.map(\.path) == Self.expected)
+    }
+
+    @Test func gzipThatIsBroken() throws {
+        var damaged = Self.paxTarGz
+        damaged.replaceSubrange(20..<40, with: Data(repeating: 0xFF, count: 20))
+        let url = try write(damaged, "broken.tar.gz")
+        #expect(throws: ArchiveError.self) { try ArchiveReader.listing(of: url, format: .tarGzip) }
     }
     #endif
 
