@@ -42,6 +42,15 @@ struct KiriApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // Help ▸ Command Line Tool: the `kiri` command's options and examples.
+        Window("Command Line Tool", id: CommandLineHelpView.windowID) {
+            AppearanceRoot { CommandLineHelpView() }
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 720, height: 700)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         // The component gallery is a development tool: Debug builds only,
         // so Release has neither the window nor its Window-menu entry.
         #if DEBUG

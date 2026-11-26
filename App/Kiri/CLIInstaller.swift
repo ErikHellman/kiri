@@ -60,7 +60,8 @@ import Observation
 
     private static var usage: String {
         "Open a terminal and run kiri --help. Try kiri file.txt, kiri file.txt:12, kiri ~/project or git diff | kiri -.\n\n"
-            + "To use Kiri as git's editor: git config --global core.editor \"kiri -w\""
+            + "To use Kiri as git's editor: git config --global core.editor \"kiri -w\"\n\n"
+            + "Help ▸ Command Line Tool lists every option, with examples."
     }
 
     /// `osascript … with administrator privileges` shows the system's
