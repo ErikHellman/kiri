@@ -1,6 +1,15 @@
 {
-  "originHash" : "2a520aa1fd2893ae9d830e9dfd1fa34852197c8a3dde2acd4f3b0fb5eb01afc1",
+  "originHash" : "ea00e32aba1d87db60c43baaef1d60f8836d5fc2adc38e74d328c3b3d09fdc31",
   "pins" : [
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
+        "version" : "2.10.1"
+      }
+    },
     {
       "identity" : "swift-cmark",
       "kind" : "remoteSourceControl",
@@ -197,6 +206,15 @@
       "state" : {
         "revision" : "b670c8df85a1568f498aa5c8cae42f51a90473c0",
         "version" : "1.1.2"
+      }
+    },
+    {
+      "identity" : "vaka",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ErikHellman/vaka",
+      "state" : {
+        "revision" : "5e3b5a861759907217ec79cd5d05ee9ff614a182",
+        "version" : "0.5.0"
       }
     }
   ],
