@@ -58,7 +58,10 @@ struct EditorStatusBar: View {
 
     private func bar(_ items: Set<Item>, _ resting: Bool) -> some View {
         HoneyStatusBar(resting: resting) {
-            if let large = model.largeStatus {
+            if let media = model.mediaStatus {
+                // A picture, a video or an archive: what it is, and no more.
+                mediaFile(media)
+            } else if let large = model.largeStatus {
                 // A large file: where the caret is, and the file itself.
                 position
                 if items.contains(.encoding) { largeFile(large) }
@@ -83,6 +86,15 @@ struct EditorStatusBar: View {
             .help("Large files open read-only, for reading and searching")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(text)
+            .accessibilityAddTraits(.isStaticText)
+    }
+
+    /// "PNG · 1920 × 1080 · 100% · 2.4 MB".
+    private func mediaFile(_ status: MediaStatus) -> some View {
+        HoneyStatusItem(status.text, systemImage: status.symbol)
+            .help(status.help)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(status.text.replacingOccurrences(of: " · ", with: ", "))
             .accessibilityAddTraits(.isStaticText)
     }
 

@@ -214,8 +214,9 @@ private struct TabScreen: View {
                 MarkdownSwitch(tab: tab).transition(.opacity)
             }
             HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, pending: tabs.dirty, action: save)
-                .help(document.isLargeFile ? "Read-only: large files open for reading and searching" : "Save (⌘S)")
-                .disabled(document.isLargeFile)
+                .help(document.isLargeFile ? "Read-only: large files open for reading and searching"
+                      : document.isReadOnly ? "Read-only: Kiri shows this file, it doesn’t change it" : "Save (⌘S)")
+                .disabled(document.isReadOnly)
         }
         // The whole row moves with Save's outline, on the same spring: the
         // strip takes up or gives back the width without a jump.
@@ -230,7 +231,7 @@ private struct TabScreen: View {
     }
 
     private func save() {
-        guard saveState == .idle, let doc = tabs.document, !document.isLargeFile else { return }
+        guard saveState == .idle, let doc = tabs.document, !document.isReadOnly else { return }
         saveState = .busy
         saver.save(doc) { saved in
             saveState = saved ? .done : .idle
@@ -254,15 +255,16 @@ private struct TabScreen: View {
 
 }
 
-/// Text or Preview, for a Markdown file (View ▸ Markdown Preview, ⌃⌘P).
+/// Text or Preview, for a Markdown or SVG file (View ▸ Markdown Preview, ⌃⌘P).
 private struct MarkdownSwitch: View {
     let tab: DocumentTab
 
     var body: some View {
         HoneySegmentedPicker([(value: false, label: "Text"), (value: true, label: "Preview")],
                              selection: Binding(get: { tab.showsMarkdownPreview }, set: { tab.setMarkdownPreview($0) }))
-            .accessibilityLabel("Show Markdown as")
-            .help("Show the text or the rendered Markdown (\(Keys.markdownPreview.glyphs))")
+            .accessibilityLabel(tab.isSVG ? "Show SVG as" : "Show Markdown as")
+            .help(tab.isSVG ? "Show the text or the picture (\(Keys.markdownPreview.glyphs))"
+                  : "Show the text or the rendered Markdown (\(Keys.markdownPreview.glyphs))")
     }
 }
 

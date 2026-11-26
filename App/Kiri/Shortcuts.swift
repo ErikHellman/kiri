@@ -232,7 +232,7 @@ struct ShortcutGroup: Identifiable {
             Item("Smaller text", Keys.smaller),
             Item("Actual size", Keys.actualSize),
             Item("Wrap lines", Keys.wrapLines),
-            Item("Markdown preview / text", Keys.markdownPreview),
+            Item("Markdown or SVG preview / text", Keys.markdownPreview),
             Item("Full screen", "⌃⌘F"),
             Item("Keyboard shortcuts", Keys.shortcuts),
         ]),

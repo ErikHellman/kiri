@@ -4,6 +4,15 @@ import Testing
 @testable import KiriMarkdown
 
 @Suite struct MarkdownHTMLTests {
+    @Test func svgShowsAsAnImage() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"
+        let html = MarkdownPage.svgHTML(svg)
+        // As an image (no script of it runs), with the file's bytes as they are.
+        #expect(html.hasPrefix("<figure class=\"svg-view\" data-line=\"1\"><img src=\"data:image/svg+xml;base64,"))
+        #expect(html.contains(Data(svg.utf8).base64EncodedString()))
+        #expect(!html.contains("<script"))
+    }
+
     @Test func blocksSayTheirLine() {
         let html = MarkdownHTML.render("# Title\n\nSome *text* and `code`.\n\n- one\n- two\n").html
         #expect(html.contains("<h1 id=\"title\" data-line=\"1\">Title</h1>"))
