@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kiri: a beautiful text editor for quick edits</title>
-  <meta name="description" content="Kiri is a native SwiftUI text editor for macOS. It launches instantly, opens the files you reach for every day, highlights the syntax of common programming languages, previews Markdown and opens logs of any size.">
+  <meta name="description" content="Kiri is a native SwiftUI text editor for macOS. It launches instantly, opens the files you reach for every day, highlights the syntax of common programming languages, previews Markdown and SVG, shows pictures, videos and archives, and opens logs of any size.">
   <meta name="theme-color" content="#F5EEE1" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16120E" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://kiri.hellsoft.se/">
@@ -44,7 +44,7 @@
       <div class="hero-text">
         <img class="hero-icon" src="assets/icon.png" alt="The Kiri app icon: a letter in a frosted glass envelope with a honey seal" width="128" height="128">
         <h1>A beautiful text editor for quick&nbsp;edits.</h1>
-        <p class="lead">Kiri is a native Mac app that opens in an instant, reads the files you reach for every day and colors their code. Open a file, make the change, get back to work.</p>
+        <p class="lead">Kiri is a native Mac app that opens in an instant, reads the files you reach for every day and colors their code. Pictures, videos and archives open right there too. Open a file, make the change, get back to work.</p>
         <div class="cta">
           <a class="btn js-download" href="https://github.com/ErikHellman/kiri/releases/latest">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -126,6 +126,26 @@
           <h3>Keeps up with the disk</h3>
           <p>When git or a formatter changes an open file, Kiri shows the new text. If you have unsaved changes, Save asks before writing over theirs.</p>
         </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg></div>
+          <h3>Pictures that play</h3>
+          <p>JPEG, PNG, HEIC, WebP, TIFF and more open in a viewer, and animated GIF, WebP and APNG play. Pinch or ⌘+ to zoom.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3z"/><path d="m10 9 5 3-5 3z"/></svg></div>
+          <h3>Video and sound</h3>
+          <p>MP4, QuickTime and MPEG videos, and sounds such as MP3 and M4A, play right in the window. Space plays and pauses.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3h14v18H5z"/><path d="M12 3v2m0 2v2m0 2v2"/><path d="M10.5 13h3v4h-3z"/></svg></div>
+          <h3>Archives at a glance</h3>
+          <p>A zip, tar or tar.gz shows what it holds as a tree, with every file's size unpacked, without unpacking anything.</p>
+        </article>
+        <article class="card">
+          <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20C6 12 12 6 20 4"/><circle cx="20" cy="4" r="1.6"/><circle cx="4" cy="20" r="1.6"/><path d="M4 4h6M4 4v6"/></svg></div>
+          <h3>SVG preview</h3>
+          <p>An SVG opens on its picture. The Text / Preview switch, or ⌃⌘P, shows its text to edit.</p>
+        </article>
       </div>
     </section>
 
@@ -161,6 +181,23 @@
 <span class="n"> 88 931</span>  09:02:47 ERROR upstream <span class="m cur">timeout</span> /sync
 <span class="n">402 117</span>  11:38:12 WARN  pool <span class="m">timeout</span>, retrying
 <span class="n">918 650</span>  14:55:29 ERROR upstream <span class="m">timeout</span> /feed</code></pre>
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <h2>Pictures, videos and archives, opened in place</h2>
+          <p>A picture opens at its own size, or fitted to the window, and an animated one plays. Videos and sounds play in the same tab, with the system's controls.</p>
+          <p>A zip or a tarball shows what is inside as folders and files, each with its size unpacked, so you know what you downloaded before you unpack it. Kiri reads only the archive's list, so even a big one opens at once.</p>
+        </div>
+        <pre class="term logview archview" aria-label="An illustration of Kiri's archive viewer: site-backup.zip as a tree of folders and files with their sizes unpacked, 36 files and 19.2 MB in all"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="bar">site-backup.zip · ZIP · 36 files · 19.2 MB unpacked</span><code><span class="h">NAME                                      SIZE</span>
+<span class="t">▾</span> <span class="d">site</span>                    <span class="c">36 files</span>     19.2 MB
+  <span class="t">▸</span> <span class="d">assets</span>                <span class="c">22 files</span>     16.9 MB
+  <span class="t">▸</span> <span class="d">fonts</span>                  <span class="c">5 files</span>      412 KB
+  <span class="t">▾</span> <span class="d">shots</span>                  <span class="c">7 files</span>      1.9 MB
+      find.webp                          70 KB
+      hero-dark.webp                     66 KB
+      markdown.webp                      55 KB
+    index.html                           12 KB
+    style.css                             9 KB</code></pre>
       </div>
     </section>
 

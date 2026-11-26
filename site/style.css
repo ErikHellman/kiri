@@ -235,6 +235,10 @@ p { margin: 0; }
 .logview .n { color: #7D6C5E; user-select: none; }
 .logview .m { background: rgba(242, 169, 59, 0.22); color: #FFD58A; border-radius: 4px; padding: 1px 2px; }
 .logview .m.cur { background: #F2A93B; color: #2A1D0C; }
+/* The archive viewer: folders in amber, as the app draws them. */
+.archview .h { color: #7D6C5E; font-weight: 700; }
+.archview .t { color: #7D6C5E; }
+.archview .d { color: #FFD58A; font-weight: 700; }
 
 /* Get Kiri */
 .get { text-align: center; padding-bottom: 96px; }
