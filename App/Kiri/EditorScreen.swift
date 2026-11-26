@@ -91,6 +91,9 @@ private struct TabScreen: View {
                     withAnimation(HoneyMotion(appearance, systemReduced: reduceMotion).shape) { sidebarShown = show }
                 }
                 tabs.sidebarInRow = show
+                // The sidebar coming back in a split window: room for it
+                // and both editors.
+                if show, tabs.isSplit, old == false { _ = tabs.makeRoom() }
             }
         }
         .padding(.horizontal, Honey.gap)
