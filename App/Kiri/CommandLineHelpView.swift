@@ -48,7 +48,7 @@ struct CommandLineHelpView: View {
         .onAppear { Telemetry.screen("Command Line Tool") }
         .honeyCanvas()
         .ignoresSafeArea(.container, edges: .top)
-        .onExitCommand { dismiss() }
+        .escapeCloses { dismiss() }
     }
 
     /// Installed, or a button that installs it.
