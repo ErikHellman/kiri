@@ -10,3 +10,6 @@ App/Kiri.xcodeproj/
 App/build/
 App/Kiri/Info.plist
 build/
+
+# Python bytecode (scripts/fake-log.py)
+__pycache__/
