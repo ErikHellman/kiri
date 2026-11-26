@@ -217,6 +217,40 @@ extension SelfTest {
         let closeAsked = model.pending?.owners == [.close] && settings.isVisible
         _ = handle("\u{1B}", [], 53)
         report(closeAsked, "⌘W while recording is a key for the command (Close's, so asked about), and the window stays open")
+        // The same through the event loop, as the keyboard and the pointer
+        // send them: the monitor gets Escape before the window's Cancel
+        // key, and a click outside the row ends a recording.
+        func post(_ event: NSEvent?) async {
+            guard let event else { return }
+            NSApp.postEvent(event, atStart: false)
+            await settle(250)
+        }
+        model.startRecording(.save)
+        await settle(150)
+        await post(keyEvent("w", .command, 13, settings))
+        let postedW = model.pending?.owners == [.close] && settings.isVisible
+        await post(keyEvent("\u{1B}", [], 53, settings))
+        let postedEscape = model.recording == nil && settings.isVisible && store[.save] == KeyCombo("s", .command)
+        model.startRecording(.save)
+        await settle(150)
+        // A click on the row's own name (not its buttons) keeps it recording.
+        let row = model.recordingFrame
+        let inside = NSPoint(x: row.minX + 30, y: settings.frame.height - row.midY)
+        await post(NSEvent.mouseEvent(with: .leftMouseDown, location: inside, modifierFlags: [], timestamp: 0,
+                                      windowNumber: settings.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        await post(NSEvent.mouseEvent(with: .leftMouseUp, location: inside, modifierFlags: [], timestamp: 0,
+                                      windowNumber: settings.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        let clickedInside = model.recording == .save && row.height > 0
+        let corner = NSPoint(x: 20, y: 20) // the window's bottom left: the footer, not the row
+        await post(NSEvent.mouseEvent(with: .leftMouseDown, location: corner, modifierFlags: [], timestamp: 0,
+                                      windowNumber: settings.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        await post(NSEvent.mouseEvent(with: .leftMouseUp, location: corner, modifierFlags: [], timestamp: 0,
+                                      windowNumber: settings.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        let clickedAway = model.recording == nil
+        model.cancel()
+        report(postedW && postedEscape && clickedInside && clickedAway,
+               "through the event loop, ⌘W is recorded and Escape cancels without closing Settings; a click on the recording row keeps it, one outside ends it (\(postedW), \(postedEscape), \(clickedInside) \(row), \(clickedAway))")
+
         // Delete: no key; Return: back to the default.
         model.startRecording(.save)
         _ = handle("\u{7F}", [], 51)

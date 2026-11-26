@@ -174,6 +174,7 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
         KeyCombo(.tab, .control): "the next tab",
         KeyCombo(.tab, [.shift, .control]): "the previous tab",
         KeyCombo(.function(2), .control): "the menu bar",
+        KeyCombo("f", [.control, .command]): "full screen",
     ]
 
     /// Keys a text view on the Mac moves or edits with. A menu item on one
