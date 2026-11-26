@@ -290,6 +290,9 @@ import SwiftUI
     /// The tabs that have had the keyboard, newest first (Split Editor
     /// shows the one before).
     @ObservationIgnored private(set) var recent: [Int] = []
+    /// The tab beside that is being asked about closing (it came forward
+    /// for the question): closed, the split ends as for the tab beside.
+    @ObservationIgnored var closingFromBeside: Int?
     /// The window's keyboard is being moved from here: what it lands on
     /// is not news (`keyboardMoved`).
     @ObservationIgnored private(set) var movingKeyboard = false
@@ -442,6 +445,10 @@ import SwiftUI
         if besideTab === tab {
             // The other side's tab went: the split ends, the keyboard's side stays.
             endSplit()
+        } else if closingFromBeside == tab.id, tab.id == selected, let other = besideTab, let side = side(of: other) {
+            // It was beside the other until it came forward to be asked about.
+            focus(side, force: true)
+            endSplit()
         } else if tab.id == selected, list.count > 1 {
             // Its side shows its neighbour, never the tab beside it; with
             // only that one left, it has the window to itself.
@@ -455,6 +462,7 @@ import SwiftUI
         }
         list.remove(at: index)
         recent.removeAll { $0 == tab.id }
+        if closingFromBeside == tab.id { closingFromBeside = nil }
         if tab.window === window { tab.window = nil }
         if tab.container.superview != nil, tab.container.window === window { tab.container.removeFromSuperview() }
         if list.isEmpty {
@@ -527,7 +535,9 @@ import SwiftUI
         if show { window.slot(identity: mainSlot)?.show(tab) }
         // The keyboard goes to the editor of the tab that shows, where it
         // was in that tab, if it was in the editor of the tab before.
-        if hadEditor || window.firstResponder === window || window.firstResponder == nil {
+        // (Not when it has gone there already: a click in that side's
+        // text, its find bar or its palette is where it stays.)
+        if outgoing == nil, hadEditor || window.firstResponder === window || window.firstResponder == nil {
             // (Once: a tab whose editor isn't in the window yet leaves the
             // keyboard where the window's first view to take it puts it.)
             giveKeyboard(to: tab, tries: show ? 40 : 0)

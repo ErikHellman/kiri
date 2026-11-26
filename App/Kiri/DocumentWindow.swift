@@ -168,8 +168,13 @@ import SwiftUI
             done?(true)
             return
         }
+        // The tab beside comes forward to be asked about (the question is
+        // the window's): closed, it still ends the split, as it would have
+        // without the question.
+        let tabs = tab.window?.tabs
+        if tabs?.besideTab === tab { tabs?.closingFromBeside = tab.id }
         CloseQuestion.ask(document) { shouldClose in
-            if shouldClose { document.close() }
+            if shouldClose { document.close() } else if tabs?.closingFromBeside == tab.id { tabs?.closingFromBeside = nil }
             done?(shouldClose)
         }
     }

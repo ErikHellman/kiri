@@ -196,6 +196,7 @@ extension SelfTest {
         await roomChecks(f)
         await movingOutChecks(f)
         await restoreChecks(f)
+        await dirtyCloseChecks(f)
         await previewBesideChecks(f)
         shortcutsChecks()
     }
@@ -263,6 +264,18 @@ extension SelfTest {
                "the palette on the side the keyboard leaves closes (\(d.model.palette.isOpen))")
         // The other side's status bar rests; its panel has no accent edge.
         report(f.tabs.panels.filter(\.keyboard).count == 1, "one side at a time has the keyboard")
+        // The other side's find bar taking the keyboard: it stays there.
+        f.tabs.select(d)
+        await settle(150)
+        c.model.find.perform(.show)
+        let inField = await f.wait {
+            (f.window.firstResponder as? NSTextView)?.isFieldEditor == true && f.tabs.selected == c.id
+        }
+        await settle(300)
+        report(inField && (f.window.firstResponder as? NSTextView)?.isFieldEditor == true && f.tabs.selected == c.id,
+               "the other side's find field taking the keyboard makes that side the keyboard's, and the keyboard stays in the field (\(f.layout), \(type(of: f.window.firstResponder as Any)))")
+        c.model.find.close()
+        await settle(200)
     }
 
     /// Swap Sides; Move Tab to Other Side; ⌃⇥, ⌘1–9 and the tab beside.
@@ -549,6 +562,61 @@ extension SelfTest {
         await settle(300)
         f.tabs.closeSplit()
         f.tabs.splitFraction = SplitLayout.defaultFraction
+    }
+
+    /// A side with unsaved changes asks before it closes: Cancel keeps both
+    /// sides as they were; Don't Save on the tab beside ends the split.
+    private static func dirtyCloseChecks(_ f: SplitFixture) async {
+        f.tabs.closeSplit()
+        await settle(150)
+        guard f.tabs.splitEditor(source: .key), let beside = f.tabs.besideTab, let main = f.tabs.selectedTab else {
+            report(false, "a split for the unsaved-changes checks"); return
+        }
+        await settle(300)
+        func press(_ title: String) async -> Bool {
+            func buttons(_ view: NSView?) -> [NSButton] {
+                guard let view else { return [] }
+                return (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+            }
+            guard let sheet = f.window.attachedSheet, let button = buttons(sheet.contentView).first(where: { $0.title == title }) else { return false }
+            button.performClick(nil)
+            return await f.wait { f.window.attachedSheet == nil }
+        }
+        for tab in [beside, main] {
+            tab.container.textView.setSelectedRange(NSRange(location: 0, length: 0))
+            tab.container.textView.insertText("unsaved ", replacementRange: NSRange(location: 0, length: 0))
+            // (No event closes the undo group in a background test: the change is counted by hand.)
+            if !tab.document.isDocumentEdited { tab.document.updateChangeCount(.changeDone) }
+        }
+        _ = await f.wait { beside.document.isDocumentEdited && main.document.isDocumentEdited }
+        let layout = f.layout
+        // The tab beside's close button.
+        f.tabs.close(beside.id)
+        let asked = await f.wait { f.window.attachedSheet != nil }
+        let during = f.layout
+        let cancelled = await press("Cancel")
+        await settle(200)
+        report(asked && cancelled && f.tabs.isSplit && f.tabs.isShown(beside) && f.tabs.isShown(main),
+               "closing the tab beside with unsaved changes asks; Cancel keeps both sides (\(layout) → \(during) → \(f.layout))")
+        // ⌘W on the keyboard's side, Cancel.
+        f.tabs.select(main)
+        await settle(150)
+        f.window.performCloseTab(nil)
+        let asked2 = await f.wait { f.window.attachedSheet != nil }
+        let cancelled2 = await press("Cancel")
+        await settle(200)
+        report(asked2 && cancelled2 && f.tabs.isSplit && f.tabs.selectedTab === main && f.tabs.isShown(beside),
+               "⌘W on a side with unsaved changes asks; Cancel keeps it and the split (\(f.layout))")
+        // Don't Save on the tab beside: it closes, and the split with it.
+        f.tabs.close(beside.id)
+        _ = await f.wait { f.window.attachedSheet != nil }
+        let discarded = await press("Don’t Save")
+        _ = await f.wait { !f.tabs.list.contains { $0 === beside } }
+        await settle(200)
+        report(discarded && !f.tabs.isSplit && f.tabs.list.allSatisfy { $0 !== beside } && f.tabs.selectedTab === main && f.window.isVisible,
+               "Don't Save on the tab beside closes it and ends the split (\(f.layout))")
+        main.container.textView.textStorage?.replaceCharacters(in: NSRange(location: 0, length: 8), with: "")
+        main.document.updateChangeCount(.changeCleared)
     }
 
     /// View ▸ Preview to the Side: a Markdown tab's text on the left and
