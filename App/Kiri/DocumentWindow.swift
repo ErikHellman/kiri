@@ -84,7 +84,14 @@ import SwiftUI
         }
         if let host {
             let after = placement?.after.flatMap { host.tabs.tab(for: $0) }
-            host.tabs.insert(DocumentTab(document: document, arriving: host.isVisible), after: after)
+            let tab = DocumentTab(document: document, arriving: host.isVisible)
+            if let source = placement?.toSide {
+                host.tabs.insert(tab, after: after, select: false)
+                let side = placement?.side ?? host.tabs.keyboardSide?.other ?? .right
+                if !host.tabs.show(tab, on: side, source: source) { host.tabs.select(tab) }
+            } else {
+                host.tabs.insert(tab, after: after)
+            }
         } else {
             let window = makeWindow(folder: placement?.folder)
             window.tabs.insert(DocumentTab(document: document, arriving: false))
@@ -161,8 +168,13 @@ import SwiftUI
             done?(true)
             return
         }
+        // The tab beside comes forward to be asked about (the question is
+        // the window's): closed, it still ends the split, as it would have
+        // without the question.
+        let tabs = tab.window?.tabs
+        if tabs?.besideTab === tab { tabs?.closingFromBeside = tab.id }
         CloseQuestion.ask(document) { shouldClose in
-            if shouldClose { document.close() }
+            if shouldClose { document.close() } else if tabs?.closingFromBeside == tab.id { tabs?.closingFromBeside = nil }
             done?(shouldClose)
         }
     }
@@ -268,8 +280,70 @@ import SwiftUI
 /// `KiriTextView`.)
 final class DocumentNSWindow: NSWindow, NSDraggingDestination {
     let tabs = WindowTabs()
-    /// Where the editor of the tab that shows goes (`TabEditorSlot`).
-    weak var editorSlot: TabEditorSlot?
+    /// The editors' slots (`TabEditorSlot`), by identity: one, or two in a
+    /// window split side by side.
+    private var slots: [Int: WeakSlot] = [:]
+    private struct WeakSlot { weak var slot: TabEditorSlot? }
+
+    /// A slot is on screen in this window.
+    func register(_ slot: TabEditorSlot) { slots[slot.identity] = WeakSlot(slot: slot) }
+
+    func slot(identity: Int) -> TabEditorSlot? {
+        guard let slot = slots[identity]?.slot, slot.window === self else { return nil }
+        return slot
+    }
+
+    /// Where the editor of the tab with the keyboard goes.
+    var editorSlot: TabEditorSlot? { slot(identity: tabs.mainSlot) }
+
+    /// The slot that shows `tab` (its text or a viewer, not the preview
+    /// beside it), if it shows.
+    func slot(for tab: DocumentTab) -> TabEditorSlot? {
+        tabs.panels.first { $0.tab === tab && !$0.preview }.flatMap { slot(identity: $0.slot) }
+    }
+
+    /// The slot that shows `tab`'s preview beside its text.
+    func previewSlot(for tab: DocumentTab) -> TabEditorSlot? {
+        tabs.panels.first { $0.tab === tab && $0.preview }.flatMap { slot(identity: $0.slot) }
+    }
+
+    /// The side of the split whose panel holds `responder` (its text, a
+    /// viewer, its find bar or palette), if one does. Told by where it is
+    /// in the window: the bars over a panel are SwiftUI's, not the slot's,
+    /// and their field editor is the window's.
+    func side(holding responder: NSResponder?) -> SplitLayout.Side? {
+        guard var view = responder as? NSView, view !== contentView else { return nil }
+        if let field = view as? NSTextView, field.isFieldEditor, let owner = field.delegate as? NSView { view = owner }
+        guard view.window === self else { return nil }
+        // In a slot: that slot's side, wherever it is on screen (a side
+        // that is coming in isn't where it will be yet).
+        var ancestor: NSView? = view
+        while let v = ancestor {
+            if let slot = v as? TabEditorSlot {
+                return tabs.panels.first { $0.slot == slot.identity }?.side
+            }
+            ancestor = v.superview
+        }
+        let rect = view.convert(view.bounds, to: nil)
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        for panel in tabs.panels {
+            guard let slot = slot(identity: panel.slot) else { continue }
+            let frame = slot.convert(slot.bounds, to: nil).insetBy(dx: -1, dy: -1)
+            if frame.contains(rect) { return panel.side }
+        }
+        return nil
+    }
+
+    /// A click (or anything) that gives the keyboard to the other side of
+    /// a split window makes that side the keyboard's (`WindowTabs.focus`).
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let before = firstResponder
+        guard super.makeFirstResponder(responder) else { return false }
+        if tabs.isSplit, firstResponder !== before {
+            MainActor.assumeIsolated { tabs.keyboardMoved(to: firstResponder, from: before) }
+        }
+        return true
+    }
     /// The window's controller, kept while the window is open: it moves
     /// from document to document, and none of them keeps it while it moves.
     var keeper: NSWindowController?
@@ -314,16 +388,52 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 
     // MARK: Dropping
 
-    func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { operation(sender) }
-    func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { operation(sender) }
-    func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { !operation(sender).isEmpty }
+    // Over the editors, a tab or a file goes to the side it is over
+    // (`SplitLayout.drop`), and that side shows the drop zone while it is.
+    // (The editor's own views hand their drags to these: `KiriTextView`,
+    // the viewers, the preview.)
+
+    func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { track(sender) }
+    func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { track(sender) }
+    func draggingExited(_ sender: (any NSDraggingInfo)?) { showDropZone(nil) }
+    func draggingEnded(_ sender: any NSDraggingInfo) { showDropZone(nil) }
+    func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { !operation(sender, side: dropSide(sender)).isEmpty }
     func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        if TabDrag.isTabDrag(sender) { return TabDrag.perform(sender, in: self) }
-        return FileDrop.perform(sender, in: self)
+        let side = dropSide(sender)
+        showDropZone(nil)
+        if TabDrag.isTabDrag(sender) { return TabDrag.perform(sender, in: self, side: side) }
+        return FileDrop.perform(sender, in: self, side: side)
     }
 
-    private func operation(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        TabDrag.isTabDrag(sender) ? TabDrag.operation(sender, in: self) : FileDrop.operation(sender)
+    private func track(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let side = dropSide(sender)
+        let operation = operation(sender, side: side)
+        showDropZone(operation.isEmpty ? nil : side)
+        return operation
+    }
+
+    private func operation(_ sender: any NSDraggingInfo, side: SplitLayout.Side?) -> NSDragOperation {
+        TabDrag.isTabDrag(sender) ? TabDrag.operation(sender, in: self, side: side) : FileDrop.operation(sender)
+    }
+
+    private func showDropZone(_ side: SplitLayout.Side?) {
+        MainActor.assumeIsolated { if tabs.dropZone != side { tabs.dropZone = side } }
+    }
+
+    /// The side a drag over the editors would go to: nil outside them, and
+    /// in the middle third for files (they open as tabs there).
+    func dropSide(_ sender: any NSDraggingInfo) -> SplitLayout.Side? {
+        MainActor.assumeIsolated {
+            let frames = tabs.panels.compactMap { panel in slot(identity: panel.slot).map { (panel, $0.convert($0.bounds, to: nil)) } }
+            guard let first = frames.first?.1 else { return nil }
+            let row = frames.dropFirst().reduce(first) { $0.union($1.1) }
+            let point = sender.draggingLocation
+            guard row.contains(point) else { return nil }
+            let divider = frames.count > 1 ? frames.map(\.1).min { $0.minX < $1.minX }.map { $0.maxX + Honey.gap / 2 - row.minX } : nil
+            guard case .side(let side)? = SplitLayout.drop(at: point.x - row.minX, width: row.width, divider: divider.map(Double.init),
+                                                           files: !TabDrag.isTabDrag(sender)) else { return nil }
+            return side
+        }
     }
 
     // MARK: Restoring
@@ -335,6 +445,7 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         super.encodeRestorableState(with: coder)
         MainActor.assumeIsolated {
             coder.encode(TabRestoration.records(of: tabs) as NSArray, forKey: TabRestoration.key)
+            if let split = TabRestoration.split(of: tabs) { coder.encode(split as NSDictionary, forKey: TabRestoration.splitKey) }
             if let root = FolderSessions.session(for: self)?.root.url { coder.encode(root as NSURL, forKey: TabRestoration.folderKey) }
         }
     }
@@ -344,9 +455,11 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         let records = coder.decodeObject(of: [NSArray.self, NSDictionary.self, NSString.self, NSNumber.self, NSData.self],
                                          forKey: TabRestoration.key) as? [[String: Any]]
         let folder = coder.decodeObject(of: NSURL.self, forKey: TabRestoration.folderKey) as URL?
+        let split = coder.decodeObject(of: [NSDictionary.self, NSString.self, NSNumber.self], forKey: TabRestoration.splitKey)
+            as? [String: Any]
         MainActor.assumeIsolated {
             if let folder, FolderSessions.session(for: self) == nil { FolderSessions.set(FolderSession(root: folder), for: self) }
-            if let records { TabRestoration.restore(records, in: self) }
+            if let records { TabRestoration.restore(records, in: self, split: split) }
         }
     }
 }
@@ -358,12 +471,23 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 @MainActor enum TabRestoration {
     static let key = "KiriTabs"
     static let folderKey = "KiriFolder"
+    /// A split window's edge and sides: `fraction`, `besideIsLeft`, and
+    /// `preview` for the selected tab's preview beside its text. (The tab
+    /// beside is the record with `beside`.)
+    static let splitKey = "KiriSplit"
+
+    static func split(of tabs: WindowTabs) -> [String: Any]? {
+        guard let beside = tabs.beside else { return nil }
+        return ["fraction": tabs.splitFraction, "besideIsLeft": tabs.besideIsLeft, "preview": beside == .preview]
+    }
 
     static func records(of tabs: WindowTabs) -> [[String: Any]] {
-        tabs.list.compactMap { tab in
+        let beside = tabs.besideTab
+        return tabs.list.compactMap { tab in
             let document = tab.document
             let selected = tab === tabs.selectedTab
             var record: [String: Any] = ["selected": selected, "preview": tab.preview]
+            if tab === beside { record["beside"] = true }
             if let url = document.fileURL {
                 record["file"] = (try? url.bookmarkData()) ?? Data()
                 record["path"] = url.path
@@ -378,10 +502,17 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
     }
 
     /// Opens the tabs `records` lists around the one AppKit restored into
-    /// `window`, in their order.
-    static func restore(_ records: [[String: Any]], in window: DocumentNSWindow) {
+    /// `window`, in their order; a split window shows its two sides again
+    /// once the tab beside is back (and one side if it never comes).
+    static func restore(_ records: [[String: Any]], in window: DocumentNSWindow, split: [String: Any]? = nil) {
         guard let shown = records.firstIndex(where: { $0["selected"] as? Bool == true }) else { return }
         window.tabs.selectedTab?.restoreIndex = shown
+        let fraction = split?["fraction"] as? Double ?? SplitLayout.defaultFraction
+        let besideIsLeft = split?["besideIsLeft"] as? Bool ?? false
+        if split?["preview"] as? Bool == true {
+            // Once the tab knows its language.
+            DispatchQueue.main.async { window.tabs.restorePreviewBeside(besideIsLeft: besideIsLeft, fraction: fraction) }
+        }
         for (index, record) in records.enumerated() where index != shown {
             var stale = false
             let file = (record["file"] as? Data).flatMap { try? URL(resolvingBookmarkData: $0, bookmarkDataIsStale: &stale) }
@@ -398,6 +529,9 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
                 let position = window.tabs.list.filter { $0 !== tab && ($0.restoreIndex ?? shown) < index }.count
                 window.tabs.insert(tab, at: position, select: false)
                 if preview { PreviewTabs.mark(tab) }
+                if split != nil, record["beside"] as? Bool == true {
+                    window.tabs.restoreBeside(tab, besideIsLeft: besideIsLeft, fraction: fraction)
+                }
             }
             if let file, let open = NSDocumentController.shared.document(for: file) as? KiriDocument {
                 put(open)
@@ -440,11 +574,24 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         return offered.contains(.copy) ? .copy : offered.contains(.generic) ? .generic : []
     }
 
-    static func perform(_ info: any NSDraggingInfo, in window: NSWindow) -> Bool {
+    /// - Parameter side: let go over that side of the editors (`SplitLayout.drop`):
+    ///   the first file shows there, the keyboard with it (the rest open
+    ///   as tabs).
+    static func perform(_ info: any NSDraggingInfo, in window: NSWindow, side: SplitLayout.Side? = nil) -> Bool {
         let urls = urls(info.draggingPasteboard)
         guard !urls.isEmpty else { return false }
         // Once the drag is over: opening shows windows, and may ask.
-        DispatchQueue.main.async { open(urls, in: window) }
+        DispatchQueue.main.async {
+            var isDirectory: ObjCBool = false
+            if let side, let first = urls.first(where: { FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDirectory)
+                                                         && !isDirectory.boolValue }) {
+                SidebarOpen.open(first, keep: true, from: window, keyboard: .editor, toSide: .drag, side: side)
+                let rest = urls.filter { $0 != first }
+                if !rest.isEmpty { open(rest, in: window) }
+            } else {
+                open(urls, in: window)
+            }
+        }
         return true
     }
 

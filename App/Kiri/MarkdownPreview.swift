@@ -315,6 +315,28 @@ final class PreviewWebView: WKWebView {
         // (Another window may have another appearance.)
         if window != nil { onAppearanceChange?() }
     }
+
+    // Files dragged over the preview go to the window, as over the text:
+    // it knows which side of the editors they are over.
+    private var filesWindow: (any NSDraggingInfo) -> DocumentNSWindow? {
+        { [weak self] info in FileDrop.urls(info.draggingPasteboard).isEmpty ? nil : self?.window as? DocumentNSWindow }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        filesWindow(sender)?.draggingEntered(sender) ?? super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        filesWindow(sender)?.draggingUpdated(sender) ?? super.draggingUpdated(sender)
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        if let sender, let window = filesWindow(sender) { window.draggingExited(sender) } else { super.draggingExited(sender) }
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        filesWindow(sender)?.performDragOperation(sender) ?? super.performDragOperation(sender)
+    }
 }
 
 /// What the page loads from `kiri-preview:` URLs: the images next to the
@@ -375,6 +397,8 @@ extension DocumentTab {
     func setMarkdownPreview(_ on: Bool) {
         if on {
             guard canPreviewMarkdown, !showsMarkdownPreview else { return }
+            // In the editor's place, not beside it as well: one web view.
+            if previewsBeside { window?.tabs.endSplit() }
             showsMarkdownPreview = true
             Telemetry.track(isSVG ? "svg_preview" : "markdown_preview")
             let preview = markdownPreview ?? MarkdownPreview(tab: self)
@@ -406,6 +430,7 @@ extension DocumentTab {
     /// on disk, the preview tab took another file): it renders again, or
     /// goes if the tab can't show one any more.
     func markdownTextChanged() {
+        if previewsBeside { return textChangedBesidePreview() }
         guard showsMarkdownPreview else { return }
         // (After the language has followed the new file.)
         DispatchQueue.main.async { [weak self] in
@@ -419,10 +444,56 @@ extension DocumentTab {
     private var markdownText: String { controller.textView?.string ?? document.text }
 
     /// Puts the editor or the preview in the window, if this tab shows.
+    /// (The keyboard goes to the preview only on the keyboard's side.)
     private func showInSlot(focus: Bool) {
-        guard let window, window.tabs.selectedTab === self, let slot = window.editorSlot else { return }
+        guard let window, let slot = window.slot(for: self) else { return }
         slot.show(self)
-        if focus, let web = markdownPreview?.webView, web.window != nil { web.window?.makeFirstResponder(web) }
+        if focus, window.tabs.selectedTab === self, let web = markdownPreview?.webView, web.window != nil {
+            web.window?.makeFirstResponder(web)
+        }
+    }
+
+    // MARK: Beside the text
+
+    /// The window shows this tab's preview beside its text (View ▸ Preview
+    /// to the Side).
+    var previewsBeside: Bool {
+        guard let tabs = window?.tabs else { return false }
+        return tabs.beside == .preview && tabs.selectedTab === self
+    }
+
+    /// The preview beside the text: rendered now, at the part of the file
+    /// at the top of the text, and shown on its side once it is.
+    func startPreviewBeside() {
+        let preview = markdownPreview ?? MarkdownPreview(tab: self)
+        markdownPreview = preview
+        if preview.webView.superview == nil, container.bounds.width > 0 {
+            var frame = container.frame
+            frame.size.width = max(frame.width / 2, 200)
+            preview.webView.frame = frame
+        }
+        let line = (controller.currentPosition()?.topLine ?? 0) + 1
+        preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line, svg: isSVG) { [weak self] in
+            guard let self, self.previewsBeside else { return }
+            self.window?.previewSlot(for: self)?.showPreviewBeside(self)
+        }
+        Telemetry.track(isSVG ? "svg_preview" : "markdown_preview", ["beside": true])
+    }
+
+    /// The text changed while its preview shows beside it: the preview
+    /// follows, a moment after the last key (each rendering is the whole
+    /// file), keeping its place.
+    func textChangedBesidePreview() {
+        guard previewsBeside else { return }
+        besideRender?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.previewsBeside else { return }
+            guard self.canPreviewMarkdown else { self.window?.tabs.endSplit(); return }
+            self.markdownPreview?.show(text: self.markdownText, folder: self.document.location?.deletingLastPathComponent(),
+                                       line: nil, svg: self.isSVG)
+        }
+        besideRender = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 }
 

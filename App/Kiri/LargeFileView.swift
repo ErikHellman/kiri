@@ -792,11 +792,18 @@ struct LargePosition: Comparable, Hashable {
     // MARK: Drops
 
     // Files dropped on the text open, as anywhere else on the window.
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { FileDrop.operation(sender) }
-    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { FileDrop.operation(sender) }
+    // (The window knows which side of the editors they are over.)
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        (window as? DocumentNSWindow)?.draggingEntered(sender) ?? FileDrop.operation(sender)
+    }
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        (window as? DocumentNSWindow)?.draggingUpdated(sender) ?? FileDrop.operation(sender)
+    }
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { (window as? DocumentNSWindow)?.draggingExited(sender) }
     override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { !FileDrop.operation(sender).isEmpty }
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         guard let window else { return false }
+        if let window = window as? DocumentNSWindow { return window.performDragOperation(sender) }
         return FileDrop.perform(sender, in: window)
     }
 }

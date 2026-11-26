@@ -21,6 +21,9 @@ struct EditorStatusBar: View {
     let byteOrderMark: Binding<Bool>
     /// Draws that item as hovered or focused, for pictures.
     var showing: (item: Item, as: HoneyStatusHighlight)?
+    /// It stays at rest: the other side of a split window, without the
+    /// keyboard.
+    var quiet = false
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
@@ -39,7 +42,7 @@ struct EditorStatusBar: View {
         // At rest while the person types or scrolls (it still takes
         // clicks). Not with reduced motion, and not for someone who asked
         // for more contrast.
-        let resting = StatusBarRest.opacity(resting: model.statusRest.isResting, reducedMotion: motion.reduced,
+        let resting = StatusBarRest.opacity(resting: model.statusRest.isResting || quiet, reducedMotion: motion.reduced,
                                             increasedContrast: contrast == .increased) < 1
         ViewThatFits(in: .horizontal) {
             bar(Set(Item.allCases), resting)

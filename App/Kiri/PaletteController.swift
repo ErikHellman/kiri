@@ -354,6 +354,46 @@ struct PaletteRow: Equatable, Identifiable {
         open(.palette, with: prefill)
     }
 
+    /// Split Editor with one tab: the palette, where the file or tab
+    /// chosen opens to the side. (Escape leaves the window as it is.)
+    func openToSide() {
+        open(.palette, with: "")
+        toSide = true
+    }
+
+    /// What Return does with a file or a tab: opens it to the side
+    /// (`openToSide`); ⌥↩ does that any time.
+    private(set) var toSide = false
+    /// ⌥ is held while the palette is open: the footer says what ⌥↩ does.
+    private(set) var optionHeld = false
+    @ObservationIgnored private var flagsMonitor: Any?
+
+    /// The selected row is one that can open to the side.
+    var selectedOpensToSide: Bool {
+        switch selectedRow?.action {
+        case .tab?, .file?: true
+        default: false
+        }
+    }
+
+    private func watchOption() {
+        guard flagsMonitor == nil else { return }
+        optionHeld = NSEvent.modifierFlags.contains(.option)
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            let held = event.modifierFlags.contains(.option)
+            MainActor.assumeIsolated {
+                if self?.optionHeld != held { self?.optionHeld = held }
+            }
+            return event
+        }
+    }
+
+    private func stopWatchingOption() {
+        if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
+        flagsMonitor = nil
+        if optionHeld { optionHeld = false }
+    }
+
     /// ⌃⌘L, or the language in the status bar: opens the language picker
     /// (the palette with only the languages), or closes it.
     func toggleLanguages() {
@@ -394,6 +434,8 @@ struct PaletteRow: Equatable, Identifiable {
         }
         if !isOpen {
             isOpen = true
+            toSide = false
+            watchOption()
             model.overlayChanged()
             Telemetry.track("palette_open", ["kind": kind == .language ? "language" : prefill == ":" ? "go_to_line" : "palette"])
         }
@@ -438,6 +480,7 @@ struct PaletteRow: Equatable, Identifiable {
         // theme or a language that was only being looked at comes down.
         model?.goToLine.cancel(focusEditor: false)
         isOpen = false
+        stopWatchingOption()
         moved = false
         show(nil)
         // (`kind` stays as it was while the panel fades out: each opening says which.)
@@ -537,8 +580,14 @@ struct PaletteRow: Equatable, Identifiable {
     var selectedRow: PaletteRow? { rows.indices.contains(selection) ? rows[selection] : nil }
 
     /// Return: runs the selected row, or in `:` mode keeps the line (what
-    /// is not a line number keeps the palette open, and says so).
-    func commit() {
+    /// is not a line number keeps the palette open, and says so). With
+    /// `toSide` (⌥↩), a file or a tab opens to the side.
+    func commit(toSide: Bool = false) {
+        if toSide || self.toSide, mode != .line, let row = selectedRow, selectedOpensToSide {
+            sideRun = true
+            run(row)
+            return
+        }
         if mode == .line {
             guard isOpen, let goToLine = model?.goToLine else { return }
             // The line is kept and the keyboard is the editor's; then
@@ -574,18 +623,26 @@ struct PaletteRow: Equatable, Identifiable {
         DispatchQueue.main.async { [self] in perform(row) }
     }
 
+    /// The row runs to the side (`commit(toSide:)`).
+    @ObservationIgnored private var sideRun = false
+
     private func perform(_ row: PaletteRow) {
         let window = controller?.textView?.window
+        let side = sideRun
+        sideRun = false
         #if DEBUG || KIRI_SELFTEST
         selfTestRan = (row.id, window?.firstResponder)
         #endif
         switch row.action {
         case .tab(let id):
-            if let window { FrontEditor.shared.tabs(in: window)?.select(id) }
+            guard let window, let tabs = FrontEditor.shared.tabs(in: window) else { break }
+            if side, let tab = tabs.tab(id: id) { tabs.openToSide(tab, source: .palette) } else { tabs.select(id) }
         case .file(let url):
             // As a file opened by name: a tab of this window, to stay,
             // with the keyboard in its editor.
-            if let window { SidebarOpen.open(url, keep: true, from: window, keyboard: .editor) }
+            if let window {
+                SidebarOpen.open(url, keep: true, from: window, keyboard: .editor, toSide: side ? .palette : nil)
+            }
         case .command(let command):
             MenuCommands.perform(command)
         case .language(let language):

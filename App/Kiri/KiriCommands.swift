@@ -28,6 +28,12 @@ struct KiriCommands: Commands {
     static let themeMenu = ["View", "Theme"]
     static let appearanceMenu = ["View", "Appearance"]
     static let languageMenu = ["Format", "Language"]
+    /// View ▸ Split Editor, Close Split, Preview to the Side; Window ▸
+    /// Move Tab to Other Side.
+    static let splitEditorTitle = "Split Editor"
+    static let closeSplitTitle = "Close Split"
+    static let previewToSideTitle = "Preview to the Side"
+    static let moveToOtherSideTitle = "Move Tab to Other Side"
 
     private var editor: EditorModel? { FrontEditor.shared.editor }
     private var folder: FolderSession? { FrontEditor.shared.folder }
@@ -206,6 +212,24 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.markdownPreview)
                 .disabled(!(tab?.canPreviewMarkdown ?? false))
             Divider()
+            // Side by side: two of the window's tabs, or a tab's text and
+            // its preview.
+            Button(tabs?.isSplit == true ? Self.closeSplitTitle : Self.splitEditorTitle) { SplitAction.splitEditor() }
+                .keyboardShortcut(Keys.splitEditor)
+                .disabled(tabs == nil)
+            Toggle(Self.previewToSideTitle, isOn: Binding(get: { tabs?.beside == .preview },
+                                                          set: { _ in SplitAction.togglePreview() }))
+                .keyboardShortcut(Keys.previewToSide)
+                .disabled(!(tab?.canPreviewMarkdown ?? false))
+            Button("Swap Sides") { tabs?.swapSides() }
+                .disabled(tabs?.isSplit != true)
+            Button("Focus Left Side") { tabs?.focus(.left) }
+                .keyboardShortcut(Keys.focusLeftSide)
+                .disabled(tabs?.isSplit != true)
+            Button("Focus Right Side") { tabs?.focus(.right) }
+                .keyboardShortcut(Keys.focusRightSide)
+                .disabled(tabs?.isSplit != true)
+            Divider()
             Picker(Self.themeMenu[1], selection: $colorTheme) {
                 ForEach(Honey.Theme.all) { Text($0.name).tag($0.id) }
             }
@@ -274,6 +298,10 @@ struct KiriCommands: Commands {
             Divider()
             Button("Move Tab to New Window", systemImage: "macwindow.badge.plus") { WindowAction.moveTabToNewWindow() }
                 .disabled((tabs?.items.count ?? 0) < 2)
+            Button(Self.moveToOtherSideTitle, systemImage: "rectangle.righthalf.inset.filled") {
+                _ = tabs?.moveToOtherSide(source: .ofMenuItem)
+            }
+            .disabled((tabs?.items.count ?? 0) < 2)
             Button("Merge All Windows", systemImage: "rectangle.stack") { WindowAction.mergeAllWindows() }
                 .disabled(tabs == nil || DocumentWindow.all.count < 2)
             Divider()
@@ -302,6 +330,29 @@ struct KiriCommands: Commands {
     private func tabTitle(_ n: Int) -> String {
         guard let items = tabs?.items, items.indices.contains(n - 1) else { return "Tab \(n)" }
         return items[n - 1].title
+    }
+}
+
+/// The View menu's side-by-side actions, on the front document window.
+@MainActor enum SplitAction {
+    private static var tabs: WindowTabs? { FrontEditor.shared.tabs }
+
+    /// ⌘\: the tab that showed before beside this one; with only one tab,
+    /// Go to File opens to pick one for the side (Escape leaves the window
+    /// as it was). Again: the side with the keyboard alone.
+    static func splitEditor() {
+        guard let tabs else { return }
+        if tabs.isSplit {
+            tabs.closeSplit()
+        } else if !tabs.splitEditor(source: .ofMenuItem), tabs.list.count < 2 {
+            FrontEditor.shared.editor?.palette.openToSide()
+        }
+    }
+
+    /// ⌥⌃⌘P.
+    static func togglePreview() {
+        guard let tabs, !tabs.togglePreviewBeside(source: .ofMenuItem) else { return }
+        NSSound.beep()
     }
 }
 

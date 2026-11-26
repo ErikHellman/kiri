@@ -8,6 +8,20 @@ import SwiftUI
 
 // MARK: Tab strip
 
+/// An item of a tab's context menu.
+public struct HoneyTabAction: Identifiable {
+    public let title: String
+    public var enabled: Bool
+    public let action: () -> Void
+    public var id: String { title }
+
+    public init(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
+        self.title = title
+        self.enabled = enabled
+        self.action = action
+    }
+}
+
 /// One open document in the tab strip.
 public struct HoneyTab<ID: Hashable & Sendable>: Identifiable, Sendable {
     public let id: ID
@@ -22,15 +36,20 @@ public struct HoneyTab<ID: Hashable & Sendable>: Identifiable, Sendable {
     /// A preview: the tab the next file looked at will take over. Its
     /// title slants until it is kept (a double-click, an edit, a save).
     public var preview: Bool
+    /// It shows beside the selected tab, in the other side of a split
+    /// window: a quieter fill than the selection's, and a small split
+    /// glyph where the close button would be.
+    public var beside: Bool
 
     public init(id: ID, title: String, detail: String? = nil, tooltip: String? = nil, dirty: Bool = false,
-                preview: Bool = false) {
+                preview: Bool = false, beside: Bool = false) {
         self.id = id
         self.title = title
         self.detail = detail
         self.tooltip = tooltip
         self.dirty = dirty
         self.preview = preview
+        self.beside = beside
     }
 
     /// The title and what tells it apart, for menus and VoiceOver.
@@ -59,6 +78,8 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     let onClose: ((ID) -> Void)?
     let onKeep: ((ID) -> Void)?
     let onDragOut: ((ID) -> Void)?
+    let onOptionClick: ((ID) -> Void)?
+    let menu: ((ID) -> [[HoneyTabAction]])?
     let scrollOffset: Binding<CGFloat>?
     @Namespace private var pill
     @FocusState private var focused: ID?
@@ -79,14 +100,21 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     ///   strip, to be dragged to another window or out on its own. Called
     ///   once per drag, while the mouse is still down: the owner starts the
     ///   drag from there.
+    /// - Parameter onOptionClick: a tab was clicked with Option held (in
+    ///   place of selecting it).
+    /// - Parameter menu: a tab's context menu, in groups (a divider
+    ///   between two).
     public init(_ tabs: [HoneyTab<ID>], selection: Binding<ID>, scrollOffset: Binding<CGFloat>? = nil,
-                onClose: ((ID) -> Void)? = nil, onKeep: ((ID) -> Void)? = nil, onDragOut: ((ID) -> Void)? = nil) {
+                onClose: ((ID) -> Void)? = nil, onKeep: ((ID) -> Void)? = nil, onDragOut: ((ID) -> Void)? = nil,
+                onOptionClick: ((ID) -> Void)? = nil, menu: ((ID) -> [[HoneyTabAction]])? = nil) {
         self.tabs = tabs
         _selection = selection
         self.scrollOffset = scrollOffset
         self.onClose = onClose
         self.onKeep = onKeep
         self.onDragOut = onDragOut
+        self.onOptionClick = onOptionClick
+        self.menu = menu
     }
 
     /// How far a tab is pulled across the strip before it comes out of it.
@@ -193,6 +221,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
                     onKeep?(tab.id)
                 }
                 .simultaneousGesture(dragOut(tab.id), isEnabled: onDragOut != nil)
+                .modifier(HoneyTabMenu(groups: menu.map { make in { make(tab.id) } }))
                 .id(tab.id)
                 // A new tab grows in from nothing and a closed one
                 // collapses; with reduced motion they fade.
@@ -202,6 +231,11 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     }
 
     private func select(_ id: ID, _ motion: HoneyMotion) {
+        // ⌥-click: the owner's (Open to the Side), not a selection.
+        if let onOptionClick, NSEvent.modifierFlags.contains(.option) {
+            onOptionClick(id)
+            return
+        }
         withAnimation(motion.shape) { selection = id }
     }
 
@@ -383,14 +417,14 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
 
     var body: some View {
         let motion = HoneyMotion(appearance, systemReduced: reduce)
-        let room = HoneyTabMetrics.titleRoom(width: width, slotInUse: closes || tab.dirty)
+        let room = HoneyTabMetrics.titleRoom(width: width, slotInUse: closes || tab.dirty || tab.beside)
         let text = HoneyTabMetrics.text(tab, selected: selected, room: room)
         // A real button: Tab reaches it with Keyboard Navigation on, Space
         // or Return selects, and VoiceOver hears a button with its state.
         Button(action: select) {
             Text("\(title(text.title))\(folder(text.detail))")
                 .font(.honey(.subheadline, weight: selected ? .bold : .semibold))
-                .foregroundStyle(selected ? Color.honeyFg : Color.honeyMuted)
+                .foregroundStyle(selected || tab.beside ? Color.honeyFg : Color.honeyMuted)
                 .lineLimit(1)
                 // Already shortened to fit, with the extension kept;
                 // SwiftUI must not shorten it again its own way.
@@ -401,6 +435,10 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
                     if selected {
                         Capsule().fill(Color.honeyAccentSoft)
                             .matchedGeometryEffect(id: "selection", in: pill)
+                    } else if tab.beside {
+                        // Shown, but the keyboard is on the other side: a
+                        // quieter fill than the selection's.
+                        Capsule().fill(Color.honeySurface2.opacity(hovering ? 1 : 0.85))
                     } else if hovering {
                         Capsule().fill(Color.honeySurface2.opacity(0.7))
                     }
@@ -416,7 +454,8 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
         .onKeyPress(.return) { select(); return .handled }
         .accessibilityLabel(tab.name(separator: ", "))
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(tab.dirty ? "Edited" : tab.preview ? "Preview" : "")
+        .accessibilityValue([tab.beside ? "Beside" : nil, tab.dirty ? "Edited" : tab.preview ? "Preview" : nil]
+            .compactMap { $0 }.joined(separator: ", "))
         .accessibilityAction(named: "Close") { close() }
         .modifier(HoneyTabKeepAction(preview: tab.preview, keep: keep))
         .overlay {
@@ -466,6 +505,35 @@ private struct HoneyTabItem<ID: Hashable & Sendable>: View {
             Circle().fill(Color.honeyAccent).frame(width: 7, height: 7)
                 .allowsHitTesting(false)
                 .transition(.scale.combined(with: .opacity))
+        } else if tab.beside {
+            // The other side of the split shows it.
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.honeyMuted)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transition(.opacity)
+        }
+    }
+}
+
+/// A tab's context menu, when the strip's owner gives one.
+private struct HoneyTabMenu: ViewModifier {
+    let groups: (() -> [[HoneyTabAction]])?
+
+    func body(content: Content) -> some View {
+        if let groups {
+            content.contextMenu {
+                let made = groups()
+                ForEach(made.indices, id: \.self) { index in
+                    if index > 0 { Divider() }
+                    ForEach(made[index]) { item in
+                        Button(item.title, action: item.action).disabled(!item.enabled)
+                    }
+                }
+            }
+        } else {
+            content
         }
     }
 }

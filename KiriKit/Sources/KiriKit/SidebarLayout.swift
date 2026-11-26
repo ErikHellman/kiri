@@ -24,18 +24,19 @@ public enum SidebarLayout {
 
     /// The widest the sidebar can show in a row `available` wide (the
     /// sidebar, the `gap` its edge is, the editor): what leaves the editor
-    /// its minimum, never under the sidebar's own.
-    public static func widest(in available: Double, gap: Double) -> Double {
+    /// its minimum, never under the sidebar's own. Two editors side by side
+    /// (`SplitLayout`) keep `editors`, both minimums and their gap.
+    public static func widest(in available: Double, gap: Double, editors: Double = editorMinimum) -> Double {
         // Before the row has been measured there is nothing to hold back for.
         guard available > 0 else { return widths.upperBound }
-        return clamped(available - gap - editorMinimum)
+        return clamped(available - gap - editors)
     }
 
     /// The width that shows: the preferred one, or as much of it as the
     /// row has room for. (The preference itself is kept, and shows again
     /// when the window is widened.)
-    public static func shown(preferred: Double, available: Double, gap: Double) -> Double {
-        min(clamped(preferred), widest(in: available, gap: gap))
+    public static func shown(preferred: Double, available: Double, gap: Double, editors: Double = editorMinimum) -> Double {
+        min(clamped(preferred), widest(in: available, gap: gap, editors: editors))
     }
 
     /// Where a drag that began at `start` and has moved `translation`

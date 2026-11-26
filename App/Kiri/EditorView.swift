@@ -64,11 +64,16 @@ import SwiftUI
     }
 }
 
-/// The editor of the tab that shows, as a SwiftUI view. Each tab has an
+/// The editor of a tab that shows, as a SwiftUI view. Each tab has an
 /// editor of its own (`DocumentTab`); this puts the one that shows in
-/// place and keeps it up to date with the settings.
+/// place and keeps it up to date with the settings. A split window has
+/// two, one in each of its slots.
 struct EditorView: NSViewRepresentable {
     let tab: DocumentTab
+    /// Which of the window's two slots this is (`WindowTabs.Panel`).
+    var slot = 0
+    /// It shows the tab's preview, beside its text.
+    var previewBeside = false
     let fontScale: Double
     /// The editor's font family (`EditorFont`), "" for SF Mono.
     let fontFamily: String
@@ -79,10 +84,15 @@ struct EditorView: NSViewRepresentable {
     let animation: EditorAnimation
     let arrival: TabEditorSlot.Arrival
 
-    func makeNSView(context: Context) -> TabEditorSlot { TabEditorSlot(frame: .zero) }
+    func makeNSView(context: Context) -> TabEditorSlot { TabEditorSlot(identity: slot) }
 
     func updateNSView(_ slot: TabEditorSlot, context: Context) {
         slot.arrival = arrival
+        if previewBeside {
+            tab.markdownPreview?.restyle()
+            slot.showPreviewBeside(tab)
+            return
+        }
         let c = tab.controller
         c.setUntitled(isUntitled)
         c.setFont(family: fontFamily, scale: fontScale)
@@ -99,11 +109,32 @@ struct EditorView: NSViewRepresentable {
     }
 }
 
-/// Where a window shows the editor of its selected tab. Switching tabs
-/// swaps the editor in it, at once (`WindowTabs.select`), and SwiftUI's
-/// next update finds it done.
+/// Where a window shows the editor of a tab: the selected tab's, and in a
+/// split window the one beside it in a second slot. Switching tabs swaps
+/// the editor in the keyboard side's slot, at once (`WindowTabs.select`),
+/// and SwiftUI's next update finds it done.
 final class TabEditorSlot: NSView {
     private(set) weak var tab: DocumentTab?
+    /// Which of its window's two slots this is (`WindowTabs.Panel.slot`).
+    let identity: Int
+    /// It shows its tab's preview beside the tab's text.
+    private(set) var showsPreviewBeside = false
+
+    init(identity: Int) {
+        self.identity = identity
+        super.init(frame: .zero)
+        #if DEBUG || KIRI_SELFTEST
+        Self.made += 1
+        #endif
+    }
+
+    #if DEBUG || KIRI_SELFTEST
+    /// How many slots have been made, for the self-test: a side opening
+    /// makes one, and the side that stays keeps its own.
+    static var made = 0
+    #endif
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     /// How a file that arrives comes in: its text fades in on the paper,
     /// 240 ms rising 4 pt; with reduced motion the 140 ms fade alone; with
@@ -116,11 +147,31 @@ final class TabEditorSlot: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window = window as? DocumentNSWindow else { return }
-        window.editorSlot = self
-        if let tab = window.tabs.selectedTab { show(tab) }
+        window.register(self)
+        guard let panel = window.tabs.panels.first(where: { $0.slot == identity }) else { return }
+        if panel.preview { showPreviewBeside(panel.tab) } else { show(panel.tab) }
+    }
+
+    /// The tab's preview, beside its text: the paper until it is drawn.
+    func showPreviewBeside(_ tab: DocumentTab) {
+        showsPreviewBeside = true
+        tab.arriving = false
+        guard let preview = tab.markdownPreview, preview.isReady else {
+            for view in subviews { view.removeFromSuperview() }
+            self.tab = tab
+            return
+        }
+        let view = preview.webView
+        guard self.tab !== tab || view.superview !== self else { return }
+        for other in subviews where other !== view { other.removeFromSuperview() }
+        self.tab = tab
+        view.frame = bounds
+        view.autoresizingMask = [.width, .height]
+        if view.superview !== self { addSubview(view) }
     }
 
     func show(_ tab: DocumentTab) {
+        showsPreviewBeside = false
         if let large = tab.largeViewer {
             showLarge(tab, large.view)
             return
@@ -455,6 +506,8 @@ final class TabEditorSlot: NSView {
         // An edit made while the Markdown preview shows (a menu command,
         // undo) shows the text it changed.
         if tab?.showsMarkdownPreview == true { tab?.setMarkdownPreview(false) }
+        // The preview beside the text follows it.
+        tab?.textChangedBesidePreview()
         // What's new goes with it too, as the hint does.
         WhatsNew.shared.edited(model)
         // The first-run hint goes with the first character and stays gone.

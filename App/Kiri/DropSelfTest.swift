@@ -4,7 +4,7 @@ import KiriKit
 
 /// A drag as a drop target is told of it, made by the self-test around a
 /// pasteboard of its own: never a real drag, which would need the pointer.
-private final class TestDrag: NSObject, NSDraggingInfo {
+final class TestDrag: NSObject, NSDraggingInfo {
     let draggingPasteboard: NSPasteboard
     let draggingDestinationWindow: NSWindow?
     let draggingLocation: NSPoint
@@ -35,7 +35,7 @@ private final class TestDrag: NSObject, NSDraggingInfo {
 extension SelfTest {
     /// A pasteboard as Finder fills one for a drag of `urls`: the files,
     /// and their paths as text beside them.
-    private static func pasteboard(files urls: [URL]) -> NSPasteboard {
+    static func pasteboard(files urls: [URL]) -> NSPasteboard {
         let board = NSPasteboard.withUniqueName()
         board.clearContents()
         board.writeObjects(urls.map { $0 as NSURL })
@@ -47,7 +47,7 @@ extension SelfTest {
     /// What takes a drop at `point` (window coordinates): the deepest view
     /// there that asked for one of the pasteboard's types, or else the
     /// window, as AppKit picks it.
-    private static func dropTarget(in window: NSWindow, at point: NSPoint, for board: NSPasteboard) -> NSDraggingDestination? {
+    static func dropTarget(in window: NSWindow, at point: NSPoint, for board: NSPasteboard) -> NSDraggingDestination? {
         let types = Set(board.types ?? [])
         var view = window.contentView?.superview?.hitTest(point) ?? window.contentView?.hitTest(point)
         while let v = view {
@@ -59,7 +59,7 @@ extension SelfTest {
 
     /// Drops `board` at `point`, the way AppKit walks a target through it.
     @discardableResult
-    private static func drop(_ board: NSPasteboard, on window: NSWindow, at point: NSPoint) -> (target: String, taken: Bool) {
+    static func drop(_ board: NSPasteboard, on window: NSWindow, at point: NSPoint) -> (target: String, taken: Bool) {
         guard let target = dropTarget(in: window, at: point, for: board) else { return ("nothing", false) }
         let drag = TestDrag(board, on: window, at: point)
         let name = "\(type(of: target))"
