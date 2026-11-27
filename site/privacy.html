@@ -69,7 +69,7 @@ defaults write se.hellsoft.kiri usageAnalytics -bool false</code></pre>
     <ul>
       <li>The kind of crash (such as <code>EXC_BAD_ACCESS</code>) and the call stack: memory addresses in Kiri and in the macOS frameworks it uses, with the names of those programs and libraries. Function names are filled in later on the server, from Kiri's own debug files.</li>
       <li>Kiri's version and build, the macOS version, the Mac's model (such as <code>Mac15,6</code>) and processor type.</li>
-      <li>Which of Kiri's own windows were shown last (Settings, Keyboard Shortcuts, Send Feedback), and whether the session ended in a crash.</li>
+      <li>Which of Kiri's own windows were shown last (such as Settings or What's New), and whether the session ended in a crash.</li>
       <li>The random id described above.</li>
     </ul>
     <p>One thing to know: if you keep Kiri in your own <code>Applications</code> folder inside your home folder, rather than the Mac's main Applications folder, the location of Kiri in a crash report includes your Mac user name.</p>
@@ -81,11 +81,16 @@ defaults write se.hellsoft.kiri usageAnalytics -bool false</code></pre>
       <tbody>
         <tr><td>Kiri starts</td><td>The color theme, light or dark, motion setting, line wrapping, typing animations, whether a custom font is set, and the text size</td></tr>
         <tr><td>A file opens</td><td>Its language (such as Swift or Markdown) and a size range (such as 10 to 100 KB)</td></tr>
+        <tr><td>A picture, video or archive opens</td><td>Which of the three, and its format (such as PNG or ZIP)</td></tr>
         <tr><td>A folder opens</td><td>Only that it happened</td></tr>
+        <tr><td>The Markdown or SVG preview opens</td><td>Which of the two, and whether it is beside the text</td></tr>
+        <tr><td>A Markdown preview shows Mermaid diagrams</td><td>Only that it happened</td></tr>
+        <tr><td>Two things are shown side by side</td><td>Whether they are two tabs or a file and its preview, and how it was started (such as from a tab, the sidebar or a key)</td></tr>
         <tr><td>The command palette, Go to Line or the language picker opens</td><td>Which of the three</td></tr>
         <tr><td>Find opens</td><td>Whether it was Find or Find and Replace</td></tr>
-        <tr><td>Settings, Keyboard Shortcuts or Send Feedback opens</td><td>Which window</td></tr>
-        <tr><td>Feedback is sent</td><td>Whether it had a screenshot</td></tr>
+        <tr><td>Find in the folder sidebar opens</td><td>Only that it happened</td></tr>
+        <tr><td>Settings, Keyboard Shortcuts, Send Feedback, What's New or Command Line Tool opens</td><td>Which window</td></tr>
+        <tr><td>Feedback is sent</td><td>Whether it had a screenshot, and whether it was about a crash</td></tr>
         <tr><td>A session starts and ends</td><td>How long Kiri was open, and whether it crashed</td></tr>
       </tbody>
     </table>
@@ -97,10 +102,11 @@ defaults write se.hellsoft.kiri usageAnalytics -bool false</code></pre>
     <h2 id="where">Where it goes and how long it stays</h2>
     <p>Everything goes to <a href="https://vaka.hellsoft.se">Vaka</a>, a crash reporting and analytics service made and run by Hellman Software AB, the company behind Kiri. It is used only to find bugs and decide what to improve. It is never sold, never shared with anyone else and never used for advertising. Crash reports, analytics and feedback are deleted automatically after 90 days.</p>
     <p>Kiri's update check is the only other thing that goes online: once a day it asks GitHub whether there is a new version (Settings ▸ Updates turns that off). It sends nothing about you.</p>
+    <p>A Markdown file can name pictures on the internet, and loading one tells its server that you opened the file. Kiri's preview loads them, and files outside the document's folder, only after you accept (Settings ▸ Privacy can make that always or never).</p>
 
     <h2 id="contact">Questions</h2>
     <p>Write to <a href="https://hellsoft.se">Hellman Software AB</a>, or <a href="https://github.com/ErikHellman/kiri/issues">open an issue</a>. Kiri's source is <a href="https://github.com/ErikHellman/kiri">on GitHub</a>, so you can read exactly what it sends in <a href="https://github.com/ErikHellman/kiri/blob/main/App/Kiri/Telemetry.swift"><code>Telemetry.swift</code></a>.</p>
-    <p class="fine">Last updated 24 November 2026.</p>
+    <p class="fine">Last updated 27 November 2026.</p>
   </main>
 
   <footer class="footer">

@@ -41,7 +41,7 @@ struct StartHint: View {
             StartHintLine("Everything else", shortcut: Keys.palette, hovered: hovered == 2, action: openPalette)
             // Until a terminal has the command (this copy's or another's).
             if commandLineTool == .missing {
-                StartHintLine("Install the kiri command", shortcut: nil, hovered: hovered == 3) {
+                StartHintLine("Install the kiri command", shortcut: nil, link: true, hovered: hovered == 3) {
                     CLIInstaller.install()
                 }
             }
@@ -59,6 +59,8 @@ struct StartHint: View {
 struct StartHintLine: View {
     let title: String
     let shortcut: KeyboardShortcut?
+    /// A link to a page or a setup step, not a command: no key, the accent's ink.
+    let link: Bool
     let hovered: Bool
     let action: () -> Void
     @State private var hovering = false
@@ -66,7 +68,8 @@ struct StartHintLine: View {
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ title: String, shortcut: KeyboardShortcut?, hovered: Bool, action: @escaping () -> Void) {
+    init(_ title: String, shortcut: KeyboardShortcut?, link: Bool = false, hovered: Bool, action: @escaping () -> Void) {
+        self.link = link
         self.title = title
         self.shortcut = shortcut
         self.hovered = hovered
@@ -80,8 +83,8 @@ struct StartHintLine: View {
             HStack(spacing: 12) {
                 Text(title)
                     .font(.honey(.subheadline, weight: .semibold))
-                    .foregroundStyle(shortcut == nil ? Color.honeyAccentInk : active ? Color.honeyFg : Color.honeyMuted)
-                    .underline(shortcut == nil && active)
+                    .foregroundStyle(link ? Color.honeyAccentInk : active ? Color.honeyFg : Color.honeyMuted)
+                    .underline(link && active)
                     .lineLimit(1)
                     .fixedSize()
                 Spacer(minLength: 0)

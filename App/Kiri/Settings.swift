@@ -1,4 +1,5 @@
 import KiriKit
+import KiriMarkdown
 import SwiftUI
 
 /// Persisted preferences (UserDefaults keys and helpers).
@@ -20,6 +21,10 @@ enum Prefs {
     static let crashReportsKey = "crashReports"
     /// Anonymous usage analytics (`Telemetry`); absent means on.
     static let analyticsKey = "usageAnalytics"
+    /// What a preview does with pictures and media from the internet or
+    /// from outside the document's folder (`PreviewExternalContent`);
+    /// absent means ask.
+    static let previewExternalKey = "previewExternalContent"
     /// What's new after an update (`WhatsNew`); absent means on.
     static let whatsNewKey = "whatsNewAfterUpdates"
     /// The version whose notes What's new last showed, or that last
@@ -33,9 +38,11 @@ enum Prefs {
     static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales[0] }
 }
 
-/// Kiri ▸ Settings…, in six groups: Appearance (the color theme, light
-/// or dark), Editor (font, text size, wrapping), Motion, Updates, Privacy
-/// (crash reports, analytics, feedback) and the command line tool.
+/// Kiri ▸ Settings…, in two panes. General has six groups: Appearance
+/// (the color theme, light or dark), Editor (font, text size, wrapping),
+/// Motion, Updates, Privacy (crash reports, analytics, what previews load
+/// from elsewhere, feedback) and the command line tool. Shortcuts has
+/// every command's key (`ShortcutsPane`).
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -47,11 +54,16 @@ struct SettingsView: View {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.crashReportsKey) private var crashReports = true
     @AppStorage(Prefs.analyticsKey) private var analytics = true
+    @AppStorage(Prefs.previewExternalKey) private var previewExternal = PreviewExternalContent.ask
     @AppStorage(Prefs.whatsNewKey) private var whatsNew = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
+    @State private var navigation = SettingsNavigation.shared
+    @State private var shortcuts = ShortcutsPaneModel.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.honeyAppearance) private var appearance
+    @Environment(\.accessibilityReduceMotion) private var reduce
     /// Off for an offscreen render (`ImageRenderer` draws no scroll view).
     private let scrolls: Bool
     init(scrolls: Bool = true) { self.scrolls = scrolls }
@@ -59,11 +71,44 @@ struct SettingsView: View {
     @State private var panelHeight: CGFloat = 0
 
     var body: some View {
-        fittedPanel
-            .onAppear { Telemetry.screen("Settings") }
-            .padding([.horizontal, .bottom], Honey.gap)
-            .honeyCanvas()
-            .escapeCloses { dismiss() }
+        let motion = HoneyMotion(appearance, systemReduced: reduce)
+        VStack(spacing: Honey.gap) {
+            HoneySegmentedPicker(SettingsPane.allCases.map { (value: $0, label: $0.rawValue) }, selection: $navigation.pane)
+                .accessibilityLabel("Settings pane")
+                .help("⌘1 General, ⌘2 Shortcuts")
+            // Both panes stay laid out, the one not chosen hidden, so the
+            // window keeps the General pane's size and nothing jumps.
+            ZStack(alignment: .top) {
+                fittedPanel
+                    .modifier(PaneVisibility(shown: navigation.pane == .general, motion: motion))
+                ShortcutsPane(height: min(panelHeight, Self.tallestPanel))
+                    .modifier(PaneVisibility(shown: navigation.pane == .shortcuts, motion: motion))
+            }
+        }
+        .animation(motion.quick, value: navigation.pane)
+        .onAppear {
+            Telemetry.screen("Settings")
+            shortcuts.appeared()
+            if navigation.pane == .shortcuts { shortcuts.focusSearch() }
+        }
+        .onDisappear { shortcuts.disappeared() }
+        .onChange(of: navigation.pane) { _, pane in
+            Telemetry.screen(pane == .general ? "Settings" : "Settings Shortcuts")
+            shortcuts.cancel()
+            // The keyboard goes where the pane is used from: the search.
+            // Back in General nothing has it, as when the window opens.
+            if pane == .shortcuts {
+                shortcuts.focusSearch()
+            } else if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == Self.windowID }) {
+                window.makeFirstResponder(nil)
+            }
+        }
+        .padding([.horizontal, .bottom], Honey.gap)
+        .honeyCanvas()
+        .escapeCloses {
+            // A search clears first, as in Keyboard Shortcuts.
+            if navigation.pane == .shortcuts, !shortcuts.query.isEmpty { shortcuts.query = "" } else { dismiss() }
+        }
             // Honey on macOS (DESIGN.md §5): no title bar. The title sits on
             // the canvas in the band the hidden title bar leaves (the top
             // safe area), level with the traffic lights, the panel below it.
@@ -97,7 +142,7 @@ struct SettingsView: View {
     }
 
     /// The tallest the panel may be: the screen's visible height less the
-    /// hidden title bar's band, the gap below and some air.
+    /// hidden title bar's band, the pane picker, the gaps and some air.
     private static var tallestPanel: CGFloat {
         var screen = NSScreen.main?.visibleFrame.height ?? .infinity
         #if DEBUG || KIRI_SELFTEST
@@ -105,7 +150,13 @@ struct SettingsView: View {
         let forced = UserDefaults.standard.double(forKey: "KiriSettingsScreenHeight")
         if forced > 0 { screen = forced }
         #endif
-        return screen - 28 - Honey.gap - 24
+        return screen - 28 - Honey.gap - 24 - (30 + Honey.gap)
+    }
+
+    private var textSizeDetail: String {
+        let keys = [Keys.bigger, Keys.smaller].compactMap { $0?.glyphs }
+        return keys.count == 2 ? "The text and line numbers. \(keys[0]) and \(keys[1]) change it from any window."
+            : "The text and line numbers. View ▸ Bigger Text and Smaller Text change it from any window."
     }
 
     /// One panel, the groups on it under quiet titles with a hairline
@@ -162,7 +213,7 @@ struct SettingsView: View {
     private var editorGroup: some View {
         VStack(alignment: .leading, spacing: 14) {
             fontRow
-            row("Text size", detail: "The text and line numbers. ⌘+ and ⌘- change it from any window.") {
+            row("Text size", detail: textSizeDetail) {
                 HStack(spacing: 8) {
                     Button { textScale = Prefs.smaller(textScale) } label: { Label("Smaller Text", systemImage: "minus") }
                         .buttonStyle(.honeyIcon)
@@ -243,8 +294,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Vaka's two switches (`Telemetry`), where to read what they send,
-    /// and the feedback window.
+    /// Vaka's two switches (`Telemetry`), what a preview loads from
+    /// elsewhere, where to read what Kiri sends, and the feedback window.
     private var privacyGroup: some View {
         VStack(alignment: .leading, spacing: 14) {
             row("Crash reports", detail: "When Kiri crashes or stops responding, send an anonymous report so it can be fixed.") {
@@ -252,6 +303,13 @@ struct SettingsView: View {
             }
             row("Usage analytics", detail: "Anonymous counts of which features, settings and languages are used. Never file names or text.") {
                 Toggle("Send usage analytics", isOn: $analytics).toggleStyle(.switch).labelsHidden()
+            }
+            row("Pictures from elsewhere in previews",
+                detail: "Pictures and media a Markdown file loads from the internet or from outside its folder. Loading them can tell a server that you opened the file.") {
+                HoneySegmentedPicker([(value: PreviewExternalContent.ask, label: "Ask"),
+                                      (value: .deny, label: "Always Deny"), (value: .allow, label: "Always Allow")],
+                                     selection: $previewExternal)
+                    .accessibilityLabel("Pictures from elsewhere in previews")
             }
             HStack(spacing: 12) {
                 // In the accent's ink with an arrow, so it reads as a link
@@ -318,6 +376,23 @@ struct SettingsView: View {
     }
 }
 
+
+/// A pane shown, or hidden in place: it keeps its room, and neither the
+/// pointer, the keyboard nor VoiceOver reaches it. The one coming in rises
+/// a little as it fades in (a fade alone with reduced motion).
+private struct PaneVisibility: ViewModifier {
+    let shown: Bool
+    let motion: HoneyMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || motion.reduced ? 0 : 6)
+            .allowsHitTesting(shown)
+            .disabled(!shown)
+            .accessibilityHidden(!shown)
+    }
+}
 
 /// A line of code in the editor's font, size and colors: what the text
 /// will look like.

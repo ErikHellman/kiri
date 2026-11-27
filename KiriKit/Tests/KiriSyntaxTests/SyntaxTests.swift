@@ -144,8 +144,8 @@ func text(of span: SyntaxSpan, in s: String) -> String {
         let reparse = clock.measure { _ = parser.parse(edited, edits: [edit]) }
         print("PERF \(id) \(text.length / 1024) KB: parse \(parse), visible spans \(visible), incremental \(reparse)")
         #expect(!spans.isEmpty)
-        #expect(visible < .milliseconds(50))
-        #expect(reparse < .milliseconds(200))
+        #expect(visible < timeLimit(.milliseconds(50)))
+        #expect(reparse < timeLimit(.milliseconds(200)))
     }
 
     /// A ~4 MB JSON file: full parse in the background is fine, but one
@@ -170,8 +170,8 @@ func text(of span: SyntaxSpan, in s: String) -> String {
         let edit = SyntaxEdit(old: mid..<mid, newLength: 1, before: before, after: LineIndex(edited as String))
         let reparse = clock.measure { _ = parser.parse(edited, edits: [edit]) }
         print("PERF json \(text.utf8.count / 1024) KB: parse \(parse), visible spans \(visible), incremental \(reparse)")
-        #expect(visible < .milliseconds(50))
-        #expect(reparse < .milliseconds(200))
+        #expect(visible < timeLimit(.milliseconds(50)))
+        #expect(reparse < timeLimit(.milliseconds(200)))
     }
 }
 #endif

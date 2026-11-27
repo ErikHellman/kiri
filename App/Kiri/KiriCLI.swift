@@ -25,6 +25,29 @@ enum KiriCLI {
         URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("kiri-cli")
     }
 
+    /// Whether `url` is a file the `kiri` script made for a request: a
+    /// regular file (not a folder, not a link) in `requestDirectory`, links
+    /// in the folders above it resolved. Kiri reads and deletes `stdin`
+    /// and `wait` files and a stream's folder, so a request can't name
+    /// anything else on disk. `inSubfolder`: in a folder of its own inside
+    /// it (a stream's, which goes with it), not in `requestDirectory` itself.
+    static func isRequestFile(_ url: URL, inSubfolder: Bool = false) -> Bool {
+        let url = url.standardizedFileURL
+        guard let folder = realPath(requestDirectory),
+              let parent = realPath(url.deletingLastPathComponent()),
+              inSubfolder ? parent.hasPrefix(folder + "/") : (parent == folder || parent.hasPrefix(folder + "/")),
+              let type = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
+        else { return false }
+        // (attributesOfItem doesn't follow a link: a link is .typeSymbolicLink.)
+        return type == .typeRegular
+    }
+
+    private static func realPath(_ url: URL) -> String? {
+        guard let resolved = realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     struct Request: Equatable {
         enum Entry: Equatable {
             case file(URL, line: Int, column: Int)
@@ -163,14 +186,16 @@ enum KiriCLI {
             switch entry {
             case .file(let url, let line, let column): openFile(url, line: line, column: column)
             case .stdin(let url):
+                // Only a file the script made, in its folder: it's deleted.
+                guard KiriCLI.isRequestFile(url) else { run(); return }
                 let data = (try? Data(contentsOf: url)) ?? Data()
                 try? FileManager.default.removeItem(at: url)
                 let text = (try? TextFile(data: data))?.text ?? String(decoding: data, as: UTF8.self)
                 openUntitled(text: text)
             case .stream(let url):
-                // Only a file the script made, in its folder.
-                guard url.standardizedFileURL.path.hasPrefix(requestDirectory.standardizedFileURL.path + "/"),
-                      FileManager.default.fileExists(atPath: url.path) else { run(); return }
+                // Only a file the script made, in a folder of its own in
+                // the script's: that folder is deleted with it.
+                guard KiriCLI.isRequestFile(url, inSubfolder: true) else { run(); return }
                 (NSDocumentController.shared as? KiriDocumentController)?.stream(url)
                 openFile(url, line: 0, column: 0)
             case .untitled, .folder: openUntitled(text: nil)
@@ -258,7 +283,8 @@ enum KiriCLI {
         }
 
         private func finish() {
-            if let marker = request.waitMarker {
+            // Only a marker the script made, in its folder: it's deleted.
+            if let marker = request.waitMarker, KiriCLI.isRequestFile(marker) {
                 Waits.shared.add(marker: marker, documents: opened)
             }
             completion?()
@@ -332,7 +358,7 @@ final class Waits {
         }
         nc.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
-                for w in Waits.shared.waits { try? FileManager.default.removeItem(at: w.marker) }
+                for w in Waits.shared.waits { Waits.remove(w.marker) }
                 NewFiles.shared.check(all: true)
             }
         }
@@ -349,9 +375,16 @@ final class Waits {
         let open = NSDocumentController.shared.documents
         waits.removeAll { w in
             let done = w.documents.allSatisfy { d in d.doc.map { doc in !open.contains { $0 === doc } } ?? true }
-            if done { try? FileManager.default.removeItem(at: w.marker) }
+            if done { Self.remove(w.marker) }
             return done
         }
+    }
+
+    /// Deletes a marker, if it is still the script's file (never a folder
+    /// or a link put in its place since).
+    private static func remove(_ marker: URL) {
+        guard KiriCLI.isRequestFile(marker) else { return }
+        try? FileManager.default.removeItem(at: marker)
     }
 }
 

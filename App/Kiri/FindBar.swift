@@ -78,12 +78,12 @@ struct FindBar: View {
                         .buttonStyle(BarButtonStyle())
                         .modifier(BarFocusRing())
                         .disabled(!find.hasMatches)
-                        .help("Previous match (⇧⌘G)")
+                        .help(Keys.help("Previous match", .findPrevious))
                     Button { find.step(forward: true) } label: { Label("Next Match", systemImage: "chevron.down") }
                         .buttonStyle(BarButtonStyle())
                         .modifier(BarFocusRing())
                         .disabled(!find.hasMatches)
-                        .help("Next match (⌘G)")
+                        .help(Keys.help("Next match", .findNext))
                     Button { find.close() } label: { Label("Close Find", systemImage: "xmark") }
                         .buttonStyle(BarButtonStyle())
                         .modifier(BarFocusRing())
@@ -129,7 +129,7 @@ struct FindBar: View {
             }
             .buttonStyle(BarButtonStyle())
             .modifier(BarFocusRing())
-            .help(find.showsReplace ? "Hide replace" : "Show replace (⌥⌘F)")
+            .help(find.showsReplace ? "Hide replace" : Keys.help("Show replace", .findAndReplace))
             .frame(height: Self.rowHeight)
           }
         }

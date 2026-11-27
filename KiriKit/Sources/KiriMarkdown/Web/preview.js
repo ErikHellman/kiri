@@ -160,19 +160,72 @@
 
   const waiting = () => document.querySelector("figure.mermaid") !== null && !window.mermaid;
 
+  // MARK: Pictures and media from elsewhere
+
+  // What the path of a file in the document's folder starts with (null
+  // for a document that has no folder yet).
+  let folder = null;
+
+  /**
+   * How many of the page's pictures and media come from the web (`remote`)
+   * and from files outside the document's folder (`outside`). The app
+   * shows its notice by this; what holds them back is the page's Content
+   * Security Policy and the app, which serves the files.
+   */
+  const external = () => {
+    let remote = 0, outside = 0;
+    const count = (value) => {
+      if (!value) return;
+      let url;
+      try { url = new URL(value, document.baseURI); } catch (e) { return; }
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        remote++;
+      } else if (url.protocol === "kiri-preview:" && url.host === "file") {
+        let path = url.pathname;
+        try { path = decodeURIComponent(path); } catch (e) { /* as it is */ }
+        if (folder === null || !path.startsWith(folder)) outside++;
+      }
+    };
+    const page = document.getElementById("kiri-page");
+    for (const el of page.querySelectorAll("img, source, video, audio, track, input[type=image], embed, object")) {
+      count(el.getAttribute("src"));
+      count(el.getAttribute("poster"));
+      count(el.getAttribute("data"));
+      for (const part of (el.getAttribute("srcset") || "").split(",")) count(part.trim().split(/\s+/)[0]);
+    }
+    return { remote, outside };
+  };
+
+  // What `external` can't see (a picture named in a style): the policy
+  // says when it has held one back.
+  let told = false;
+  document.addEventListener("securitypolicyviolation", (e) => {
+    const directive = e.effectiveDirective || e.violatedDirective || "";
+    if (told || !/^(img|media)-src/.test(directive) || !/^https?:/i.test(e.blockedURI || "")) return;
+    told = true;
+    post({ blocked: "remote" });
+  });
+
+  const state = () => Object.assign({ top: topLine(), waiting: waiting() }, external());
+
   window.kiriPreview = {
     /**
      * Shows a rendering: `html` (unchanged when null) in the page's colors
      * `style` (unchanged when null), at the block that has `line` (where
-     * it is when null), its diagrams drawn if Mermaid has loaded. Returns
-     * the line of the block at the top, and whether diagrams wait for
-     * Mermaid (`redraw` once it has loaded).
+     * it is when null), its diagrams drawn if Mermaid has loaded. `inFolder`
+     * comes with `html`: what the paths of files in the document's folder
+     * start with (null without a folder). Returns the line of the block at
+     * the top, whether diagrams wait for Mermaid (`redraw` once it has
+     * loaded), and how many pictures and media come from the web and from
+     * outside the folder.
      */
-    async show(html, style, line) {
+    async show(html, style, line, inFolder) {
       const page = document.getElementById("kiri-page");
       const keep = line === null ? topLine() : line;
       if (style !== null) document.getElementById("kiri-style").textContent = style;
       if (html !== null) {
+        folder = inFolder === undefined ? null : inFolder;
+        told = false;
         page.innerHTML = html;
         addCopyButtons(page);
       }
@@ -181,14 +234,14 @@
         await drawMermaid();
         scrollToLine(keep);
       }
-      return { top: topLine(), waiting: waiting() };
+      return state();
     },
     /** Draws the diagrams again (Mermaid has loaded), keeping the place. */
     async redraw(line) {
       const keep = line === null ? topLine() : line;
       await drawMermaid();
       scrollToLine(keep);
-      return { top: topLine(), waiting: waiting() };
+      return state();
     },
     topLine,
   };

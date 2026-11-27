@@ -114,9 +114,14 @@ final class MediaViewer {
         }
     }
 
+    /// The View menu's key for it now, or its name where it has none.
+    private func keys(_ command: ShortcutCommand) -> String {
+        ShortcutStore.shared[command]?.glyphs ?? command.info.title
+    }
+
     private var help: String {
         switch kind {
-        case .image: "Read-only. Zoom with ⌘+ and ⌘−, ⌘0 for the actual size; double-click to fit."
+        case .image: "Read-only. Zoom with \(keys(.bigger)) and \(keys(.smaller)), \(keys(.actualSize)) for the actual size; double-click to fit."
         case .video: "Read-only. Space plays and pauses."
         case .archive: "Read-only: what the archive holds, with each file’s size unpacked."
         }
