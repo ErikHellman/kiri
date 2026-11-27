@@ -153,6 +153,9 @@ public enum MarkdownPage {
     /// Mermaid (`Web/mermaid.min.js`, MIT): only read when a file has a
     /// diagram, and then once.
     public static var mermaidURL: URL? { Bundle.module.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Web") }
+    /// DOMPurify (`Web/purify.min.js`, Apache-2.0 or MPL-2.0), loaded with
+    /// Mermaid: the page script cleans each drawing with it before it goes in.
+    public static var purifyURL: URL? { Bundle.module.url(forResource: "purify.min", withExtension: "js", subdirectory: "Web") }
 
     private static func resource(_ name: String, _ ext: String) -> String? {
         guard let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Web") else { return nil }

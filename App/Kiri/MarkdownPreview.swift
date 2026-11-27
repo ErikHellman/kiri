@@ -218,11 +218,14 @@ final class MarkdownPreview: NSObject {
         }
     }
 
-    /// Mermaid's script (5 MB), read the first time a file has a diagram.
+    /// DOMPurify, then Mermaid's script (5 MB), read the first time a file
+    /// has a diagram; the page script cleans each drawing with DOMPurify.
     /// (`;true`: its value, Mermaid itself, can't come back to the app.)
-    private static let mermaidSource: String? = MarkdownPage.mermaidURL
-        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-        .map { $0 + "\n;true" }
+    private static let mermaidSource: String? = {
+        let read = { (url: URL?) in url.flatMap { try? String(contentsOf: $0, encoding: .utf8) } }
+        guard let purify = read(MarkdownPage.purifyURL), let mermaid = read(MarkdownPage.mermaidURL) else { return nil }
+        return purify + "\n;\n" + mermaid + "\n;true"
+    }()
 
     private func currentStyle() -> MarkdownPage.Style {
         let appearance = tab?.window?.effectiveAppearance ?? webView.effectiveAppearance

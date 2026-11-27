@@ -25,3 +25,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+== DOMPurify ==
+DOMPurify 3.4.17 (https://github.com/cure53/DOMPurify), as purify.min.js: the npm package
+dompurify@3.4.17 (sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==),
+dist/purify.min.js unchanged. The same version Mermaid bundles. It cleans each Mermaid drawing
+before the preview puts it in the page. Copyright (c) Cure53 and other contributors, released
+under the Apache License 2.0 and the Mozilla Public License 2.0 (either, at your choice):
+https://github.com/cure53/DOMPurify/blob/3.4.17/LICENSE
