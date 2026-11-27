@@ -279,7 +279,7 @@ enum SettingsPane: String, CaseIterable, Sendable {
         // the other window's then.
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil,
                                                                 queue: .main) { note in
-            nonisolated(unsafe) let window = note.object as? NSWindow
+            let window = note.object as? NSWindow
             MainActor.assumeIsolated {
                 if window?.identifier?.rawValue == SettingsView.windowID { ShortcutsPaneModel.shared.cancel() }
             }

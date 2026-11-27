@@ -710,7 +710,7 @@ import os
                     w.tabs.select(t)
                     try? await Task.sleep(for: .milliseconds(300))
                     let tv = t.container.textView
-                    w.makeFirstResponder(tv)
+                    _ = w.makeFirstResponder(tv)
                     tv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
                     // The edit counts once its undo group closes, which
                     // AppKit does after an event; nothing else sends one
@@ -1158,7 +1158,6 @@ import os
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         let failed: Error? = await withCheckedContinuation { done in
             doc.autosave(withImplicitCancellability: false) { error in
-                nonisolated(unsafe) let error = error
                 done.resume(returning: error)
             }
         }

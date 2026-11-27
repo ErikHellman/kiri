@@ -19,10 +19,12 @@ struct KiriCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     /// The palette's own menu items, which it leaves out of its list.
-    static let paletteTitle = "Command Palette…"
-    static let goToFileTitle = "Go to File…"
+    /// (The titles are plain strings, so not the main actor's: the
+    /// shortcut list, `ShortcutCommand.info`, reads them from anywhere.)
+    nonisolated static let paletteTitle = "Command Palette…"
+    nonisolated static let goToFileTitle = "Go to File…"
     /// Format ▸ Choose Language…: the language picker (⌃⌘L).
-    static let chooseLanguageTitle = "Choose Language…"
+    nonisolated static let chooseLanguageTitle = "Choose Language…"
     /// The menus whose choices the palette shows while the selection is
     /// on one of them (`PaletteController.preview`): where they are in
     /// the menu bar, said once for the menus and for the palette.
@@ -31,10 +33,10 @@ struct KiriCommands: Commands {
     static let languageMenu = ["Format", "Language"]
     /// View ▸ Split Editor, Close Split, Preview to the Side; Window ▸
     /// Move Tab to Other Side.
-    static let splitEditorTitle = "Split Editor"
-    static let closeSplitTitle = "Close Split"
-    static let previewToSideTitle = "Preview to the Side"
-    static let moveToOtherSideTitle = "Move Tab to Other Side"
+    nonisolated static let splitEditorTitle = "Split Editor"
+    nonisolated static let closeSplitTitle = "Close Split"
+    nonisolated static let previewToSideTitle = "Preview to the Side"
+    nonisolated static let moveToOtherSideTitle = "Move Tab to Other Side"
 
     private var editor: EditorModel? { FrontEditor.shared.editor }
     private var folder: FolderSession? { FrontEditor.shared.folder }
