@@ -19,7 +19,7 @@ final class TestDrag: NSObject, NSDraggingInfo {
     var springLoadingHighlight: NSSpringLoadingHighlight { .none }
 
     /// - Parameter location: in the window's coordinates.
-    @MainActor init(_ pasteboard: NSPasteboard, on window: NSWindow, at location: NSPoint) {
+    init(_ pasteboard: NSPasteboard, on window: NSWindow, at location: NSPoint) {
         draggingPasteboard = pasteboard
         draggingDestinationWindow = window
         draggingLocation = location

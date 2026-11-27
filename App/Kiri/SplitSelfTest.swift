@@ -1,4 +1,5 @@
 #if DEBUG || KIRI_SELFTEST
+// swiftlint:disable force_unwrapping - in a self-test a nil is a failed test, and the crash says where
 import AppKit
 import KiriKit
 import WebKit
@@ -64,7 +65,7 @@ extension SelfTest {
 
     // MARK: The fixture
 
-    @MainActor private final class SplitFixture {
+    private final class SplitFixture {
         let root: URL
         let window: DocumentNSWindow
         private let clock = ContinuousClock()

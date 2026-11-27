@@ -83,6 +83,7 @@ public struct HoneyTabStrip<ID: Hashable & Sendable>: View {
     let scrollOffset: Binding<CGFloat>?
     @Namespace private var pill
     @FocusState private var focused: ID?
+    // periphery:ignore - used as $position
     @State private var position = ScrollPosition(x: 0)
     @State private var scrolled = HoneyScrollOffset()
     /// The tab `onDragOut` was called for, in the drag under way.

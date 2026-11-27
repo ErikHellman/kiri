@@ -30,6 +30,7 @@ import TreeSitterZig
 
 /// A Tree-sitter grammar and its highlight query.
 public final class SyntaxGrammar: @unchecked Sendable {
+    // periphery:ignore - names the grammar
     public let id: String
     let language: SwiftTreeSitter.Language
     let highlights: Query

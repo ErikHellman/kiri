@@ -8,7 +8,7 @@ import SwiftUI
 /// tar's by reading it through (`ArchiveReader`), off the main thread, with
 /// how far it has got showing meanwhile. A click opens and closes a folder,
 /// Option-click everything in it too.
-@MainActor final class ArchiveViewer: MediaContent {
+final class ArchiveViewer: MediaContent {
     private let format: MediaKind.ArchiveFormat
     private let model: ArchiveModel
     private let host: NSHostingView<ArchiveView>
@@ -83,7 +83,7 @@ import SwiftUI
     func toggle(_ node: ArchiveTree.Node, all: Bool = false) { model.toggle(node, all: all) }
     #endif
 
-    private final class Token: @unchecked Sendable {
+    nonisolated private final class Token: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }
@@ -91,7 +91,7 @@ import SwiftUI
     }
 }
 
-private extension Result where Failure == any Error {
+nonisolated private extension Result where Failure == any Error {
     /// What the viewer says when the list can't be read (nothing, if it was stopped).
     var failureMessage: String? {
         guard case .failure(let error) = self else { return nil }
@@ -102,7 +102,7 @@ private extension Result where Failure == any Error {
 }
 
 /// The archive viewer's state.
-@MainActor @Observable final class ArchiveModel {
+@Observable final class ArchiveModel {
     enum State: Equatable {
         case reading(Double)
         case shown

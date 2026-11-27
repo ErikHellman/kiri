@@ -11,7 +11,7 @@ import KiriKit
 /// The file is read off the main thread; EXIF orientation is applied, and
 /// a picture's size is its pixels at its own resolution (a 144 dpi
 /// screenshot shows pixel for pixel on a Retina display).
-@MainActor final class ImageViewer: MediaContent {
+final class ImageViewer: MediaContent {
     private let scroll: NSScrollView
     private let canvas: ImageCanvas
     private let root: ViewerContainer
@@ -234,7 +234,7 @@ import KiriKit
     private var window: NSWindow? { scroll.window }
 
     /// Says whether an animation is still wanted.
-    private final class Token: @unchecked Sendable {
+    nonisolated private final class Token: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }
@@ -243,7 +243,7 @@ import KiriKit
 }
 
 /// A picture read from its file, off the main thread.
-private struct DecodedImage: @unchecked Sendable {
+nonisolated private struct DecodedImage: @unchecked Sendable {
     var image: CGImage?
     var pixels = (width: 0, height: 0)
     var size = CGSize.zero
@@ -312,7 +312,7 @@ private final class ImageCanvas: NSView {
         layer?.minificationFilter = .trilinear
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() { layer?.contents = image }

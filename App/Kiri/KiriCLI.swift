@@ -18,11 +18,34 @@ import KiriKit
 ///                                  script copies it into, followed read-only as it grows;
 ///                                  deleted, with its folder, when the tab closes)
 ///     untitled                    (a new untitled tab)
-@MainActor enum KiriCLI {
+enum KiriCLI {
     static let scheme = "kiri"
 
     static var requestDirectory: URL {
         URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("kiri-cli")
+    }
+
+    /// Whether `url` is a file the `kiri` script made for a request: a
+    /// regular file (not a folder, not a link) in `requestDirectory`, links
+    /// in the folders above it resolved. Kiri reads and deletes `stdin`
+    /// and `wait` files and a stream's folder, so a request can't name
+    /// anything else on disk. `inSubfolder`: in a folder of its own inside
+    /// it (a stream's, which goes with it), not in `requestDirectory` itself.
+    static func isRequestFile(_ url: URL, inSubfolder: Bool = false) -> Bool {
+        let url = url.standardizedFileURL
+        guard let folder = realPath(requestDirectory),
+              let parent = realPath(url.deletingLastPathComponent()),
+              inSubfolder ? parent.hasPrefix(folder + "/") : (parent == folder || parent.hasPrefix(folder + "/")),
+              let type = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
+        else { return false }
+        // (attributesOfItem doesn't follow a link: a link is .typeSymbolicLink.)
+        return type == .typeRegular
+    }
+
+    private static func realPath(_ url: URL) -> String? {
+        guard let resolved = realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     struct Request: Equatable {
@@ -119,7 +142,7 @@ import KiriKit
 
     /// Opens a request's entries one after another, each tab after the one
     /// before.
-    @MainActor private final class Opener {
+    private final class Opener {
         let request: Request
         var queue: [Request.Entry]
         var opened: [NSDocument] = []
@@ -163,14 +186,16 @@ import KiriKit
             switch entry {
             case .file(let url, let line, let column): openFile(url, line: line, column: column)
             case .stdin(let url):
+                // Only a file the script made, in its folder: it's deleted.
+                guard KiriCLI.isRequestFile(url) else { run(); return }
                 let data = (try? Data(contentsOf: url)) ?? Data()
                 try? FileManager.default.removeItem(at: url)
                 let text = (try? TextFile(data: data))?.text ?? String(decoding: data, as: UTF8.self)
                 openUntitled(text: text)
             case .stream(let url):
-                // Only a file the script made, in its folder.
-                guard url.standardizedFileURL.path.hasPrefix(requestDirectory.standardizedFileURL.path + "/"),
-                      FileManager.default.fileExists(atPath: url.path) else { run(); return }
+                // Only a file the script made, in a folder of its own in
+                // the script's: that folder is deleted with it.
+                guard KiriCLI.isRequestFile(url, inSubfolder: true) else { run(); return }
                 (NSDocumentController.shared as? KiriDocumentController)?.stream(url)
                 openFile(url, line: 0, column: 0)
             case .untitled, .folder: openUntitled(text: nil)
@@ -258,7 +283,8 @@ import KiriKit
         }
 
         private func finish() {
-            if let marker = request.waitMarker {
+            // Only a marker the script made, in its folder: it's deleted.
+            if let marker = request.waitMarker, KiriCLI.isRequestFile(marker) {
                 Waits.shared.add(marker: marker, documents: opened)
             }
             completion?()
@@ -271,7 +297,7 @@ import KiriKit
 /// window's tabs: a window of its own (with a folder sidebar or not), or
 /// among the tabs of `host` (a window files were dropped on), after the
 /// tab of `after`. `DocumentWindow.place` takes it.
-@MainActor enum WindowPlacement {
+enum WindowPlacement {
     struct Placement {
         var folder: FolderSession?
         weak var host: DocumentNSWindow?
@@ -290,7 +316,7 @@ import KiriKit
 }
 
 /// Finds a document's tab and editor.
-@MainActor enum Editors {
+enum Editors {
     /// The window `doc` is a tab of.
     static func window(for doc: NSDocument) -> NSWindow? { DocumentWindow.window(of: doc) }
 
@@ -312,7 +338,7 @@ import KiriKit
 
 /// `kiri -w`: deletes each request's marker once all its documents are
 /// closed (or Kiri quits), which ends the waiting script.
-@MainActor final class Waits {
+final class Waits {
     static let shared = Waits()
     private struct Wait {
         let marker: URL
@@ -332,7 +358,7 @@ import KiriKit
         }
         nc.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
-                for w in Waits.shared.waits { try? FileManager.default.removeItem(at: w.marker) }
+                for w in Waits.shared.waits { Waits.remove(w.marker) }
                 NewFiles.shared.check(all: true)
             }
         }
@@ -349,15 +375,22 @@ import KiriKit
         let open = NSDocumentController.shared.documents
         waits.removeAll { w in
             let done = w.documents.allSatisfy { d in d.doc.map { doc in !open.contains { $0 === doc } } ?? true }
-            if done { try? FileManager.default.removeItem(at: w.marker) }
+            if done { Self.remove(w.marker) }
             return done
         }
+    }
+
+    /// Deletes a marker, if it is still the script's file (never a folder
+    /// or a link put in its place since).
+    private static func remove(_ marker: URL) {
+        guard KiriCLI.isRequestFile(marker) else { return }
+        try? FileManager.default.removeItem(at: marker)
     }
 }
 
 /// Files `kiri new.txt` created so they could open: deleted again when
 /// their tab closes without a save.
-@MainActor final class NewFiles {
+final class NewFiles {
     static let shared = NewFiles()
     private var created: [URL: Date] = [:]
 
@@ -384,9 +417,10 @@ import KiriKit
 }
 
 /// Apple events arrive on the main thread.
-@MainActor private final class URLEventHandler: NSObject {
+private final class URLEventHandler: NSObject {
     static let shared = URLEventHandler()
 
+    // periphery:ignore:parameters reply - the selector has them
     @objc func handle(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: string) else { return }

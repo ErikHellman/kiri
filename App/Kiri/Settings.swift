@@ -29,8 +29,8 @@ enum Prefs {
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
 
-    static func bigger(_ s: Double) -> Double { textScales.first { $0 > s + 0.001 } ?? textScales.last! }
-    static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
+    static func bigger(_ s: Double) -> Double { textScales.first { $0 > s + 0.001 } ?? textScales[textScales.count - 1] }
+    static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales[0] }
 }
 
 /// Kiri ▸ Settings…, in two panes. General has six groups: Appearance
@@ -474,7 +474,7 @@ struct ThemePicker: View {
 /// (held in memory: nothing is written); with neither, the chosen theme
 /// again. Choosing goes through `ThemePreview.keep`, as Return in the
 /// command palette does, so a test launch writes no saved preference.
-@MainActor enum SwatchPreview {
+enum SwatchPreview {
     private(set) static var pointer: Honey.Theme?
     private(set) static var keyboard: Honey.Theme?
     /// A preview of the swatches' is up: ending it must not end one that
@@ -623,7 +623,7 @@ struct ThemeSwatchArt: View {
 
 /// The half of a rectangle below the line from its bottom-left corner to
 /// its top-right one.
-private struct BelowDiagonal: Shape {
+nonisolated private struct BelowDiagonal: Shape {
     func path(in rect: CGRect) -> Path {
         Path { p in
             p.move(to: CGPoint(x: rect.minX, y: rect.maxY))

@@ -60,6 +60,7 @@ public enum MarkdownPage {
         var path = folder?.standardizedFileURL.path ?? "/"
         if !path.hasSuffix("/") { path += "/" }
         components.path = path
+        // swiftlint:disable:next force_unwrapping - the scheme and host make a URL
         return components.url ?? URL(string: "\(scheme)://file/")!
     }
 
@@ -75,6 +76,8 @@ public enum MarkdownPage {
     public static func shell(style: Style) -> String {
         let csp = "default-src 'none'; img-src \(scheme): https: http: data:; media-src \(scheme): https: http:; "
             + "style-src 'unsafe-inline'; font-src \(scheme):"
+            // Not covered by default-src: no form is sent, no <base> moves links.
+            + "; form-action 'none'; base-uri 'none'"
         return """
         <!doctype html>
         <html lang="en">

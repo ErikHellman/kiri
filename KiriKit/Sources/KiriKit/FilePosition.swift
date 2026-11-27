@@ -127,8 +127,6 @@ public struct FilePositionStore: Codable, Equatable, Sendable {
         return old != position
     }
 
-    public mutating func remove(_ key: String) { entries[key] = nil }
-
     /// As saved between launches.
     public func encoded() -> Data { (try? JSONEncoder().encode(self)) ?? Data() }
 

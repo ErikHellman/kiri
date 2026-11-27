@@ -14,7 +14,7 @@ import QuartzCore
 // moves (Reduce Motion); `.none` removes every layer and gives the system
 // caret and the drawn current line back.
 
-@MainActor final class EditorEffects {
+final class EditorEffects {
     private weak var textView: KiriTextView?
     let mode: EditorAnimation
     private let lineLayer = CALayer()

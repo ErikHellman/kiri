@@ -136,7 +136,7 @@ final class KiriTextView: NSTextView {
         (window?.isKeyWindow == true || Self.forceCaretActive) && window?.firstResponder === self
     }
     /// Self-test pictures are taken while the window may not be key.
-    nonisolated(unsafe) static var forceCaretActive = false
+    static var forceCaretActive = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -445,7 +445,7 @@ final class EditorContainerView: NSView {
         #endif
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     /// Called when the visible part of the text changes.
     var onScroll: (() -> Void)?

@@ -1,4 +1,5 @@
 #if DEBUG || KIRI_SELFTEST
+// swiftlint:disable force_unwrapping - in a self-test a nil is a failed test, and the crash says where
 import AppKit
 import KiriKit
 
@@ -331,7 +332,7 @@ extension SelfTest {
             rows = ["g.txt", "a.swift", "b.md"].map { "\($0): “\(row($0)?.value ?? "none")”" }.joined(separator: ", ")
                 + ", sub: “\(deep("sub, folder")?.value ?? "none")”, f.rs in it: “\(deep("f.rs")?.value ?? "none")”"
             heard = row("g.txt")?.value == "Open, edited" && row("g.txt")?.selected == true && row("a.swift")?.value == "Open"
-                && row("a.swift")?.selected == false && row("b.md")?.value == ""
+                && row("a.swift")?.selected == false && row("b.md")?.value.isEmpty == true
                 && all.first { $0.name == "sub, folder" }?.value == "collapsed" && deep("sub, folder")?.value == "expanded"
                 && deep("f.rs")?.value == "Open, level 2"
         }
@@ -829,7 +830,7 @@ extension SelfTest {
 }
 
 /// The folder `sidebarStage` works in, and what it asks of its windows.
-@MainActor private final class SidebarFixture {
+private final class SidebarFixture {
     let root: URL
     private let clock = ContinuousClock()
     /// The tab's title and the editor's text when the last `open` was answered.

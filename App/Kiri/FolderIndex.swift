@@ -10,7 +10,7 @@ import Observation
 /// in use until the new reading is in: typing never waits for the disk.
 /// It is read again when the palette or the sidebar's find opens and when the folder session
 /// refreshes (a file made or renamed in the sidebar, View ▸ Refresh Folder).
-@MainActor @Observable final class FolderIndex {
+@Observable final class FolderIndex {
     let root: URL
 
     /// The files, as paths from the folder ("Sources/Tidepool/Greeter.swift"),
@@ -42,7 +42,7 @@ import Observation
     @ObservationIgnored private(set) var hasRead = false
 
     /// Says whether a reading is still wanted.
-    private final class Reading: @unchecked Sendable {
+    nonisolated private final class Reading: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }

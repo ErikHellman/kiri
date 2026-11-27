@@ -27,7 +27,7 @@ extension SelfTest {
                "recovery copies are written \(controller.autosavingDelay) s after an edit")
     }
 
-    static func saveStages(_ first: NSDocument) async {
+    static func saveStages() async {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-save-test-\(getpid())")
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -93,6 +93,14 @@ extension SelfTest {
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { d, _, _ in c.resume(returning: d) }
         }
         return await tab(of: doc)
+    }
+
+    /// A folder of this run's in the `kiri` script's folder, where Kiri
+    /// takes `stdin` and `wait` files from.
+    private static func cliFolder() -> URL {
+        let folder = KiriCLI.requestDirectory.appendingPathComponent("selftest-\(getpid())")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
     }
 
     private static func file(_ name: String, _ text: String, in dir: URL) -> URL {
@@ -386,7 +394,18 @@ extension SelfTest {
     /// `git diff | kiri -`: the text in a new untitled tab, which is not an
     /// edit of anything, so closing it asks nothing.
     private static func standardInput(_ dir: URL) async {
-        let input = file("request.1.stdin", "piped in\n", in: dir)
+        // A `stdin` file anywhere but the script's folder is left alone:
+        // Kiri would delete it.
+        let elsewhere = file("request.0.stdin", "not the script's\n", in: dir)
+        let beforeElsewhere = NSDocumentController.shared.documents
+        KiriCLI.open(KiriCLI.Request(entries: [.stdin(elsewhere)]))
+        await settle(300)
+        let openedElsewhere = NSDocumentController.shared.documents.contains { d in !beforeElsewhere.contains { $0 === d } }
+        report(!openedElsewhere && exists(elsewhere), "kiri - takes its text only from the script's own folder, and deletes nothing else")
+
+        let cli = cliFolder()
+        defer { try? FileManager.default.removeItem(at: cli) }
+        let input = file("request.1.stdin", "piped in\n", in: cli)
         let before = NSDocumentController.shared.documents
         KiriCLI.open(KiriCLI.Request(entries: [.stdin(input)]))
         var doc: NSDocument?
@@ -598,8 +617,10 @@ extension SelfTest {
     /// before the file has what Save wrote.
     private static func waiting(_ dir: URL) async {
         let url = file("COMMIT_EDITMSG", "\n# Please enter the commit message\n", in: dir)
+        let cli = cliFolder()
+        defer { try? FileManager.default.removeItem(at: cli) }
         func request(_ n: Int) async -> (marker: URL, tab: Tab)? {
-            let marker = dir.appendingPathComponent("request.\(n).wait")
+            let marker = cli.appendingPathComponent("request.\(n).wait")
             FileManager.default.createFile(atPath: marker.path, contents: Data())
             KiriCLI.open(KiriCLI.Request(waitMarker: marker, entries: [.file(url, line: 0, column: 0)]))
             var doc: NSDocument?
@@ -725,7 +746,7 @@ extension SelfTest {
         relaunchStarted = true
         Task { @MainActor in
             switch phase {
-            case "crash": await crash(textView)
+            case "crash": await crash()
             case "recover": await recover()
             case "frame-set": frameSet(textView)
             case "frame-check": frameCheck(textView)
@@ -909,7 +930,7 @@ extension SelfTest {
 
     private static let typedInFile = "// recovered\n", typedInUntitled = "never saved\n"
 
-    private static func crash(_ textView: NSTextView) async {
+    private static func crash() async {
         guard let first = NSDocumentController.shared.documents.first(where: { $0.fileURL != nil }),
               let second = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true) else {
             report(false, "a document with a file and a new untitled one"); return
