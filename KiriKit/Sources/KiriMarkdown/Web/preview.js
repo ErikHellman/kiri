@@ -126,11 +126,16 @@
              fontFamily: v.fontFamily, sequence: { mirrorActors: false } };
   };
 
+  // What DOMPurify keeps of a drawing: what Mermaid itself keeps in strict
+  // mode (labels are HTML in a foreignObject), returned as a fragment.
+  const purifyConfig = { ADD_TAGS: ["foreignobject"], ADD_ATTR: ["dominant-baseline"],
+                         HTML_INTEGRATION_POINTS: { foreignobject: true }, RETURN_DOM_FRAGMENT: true };
+
   let drawn = 0;
   const drawMermaid = async () => {
     const figures = Array.from(document.querySelectorAll("figure.mermaid"));
     if (!figures.length) return true;
-    if (!window.mermaid) return false;
+    if (!window.mermaid || !window.DOMPurify) return false;
     try { await document.fonts.ready; } catch (e) { /* draw anyway */ }
     window.mermaid.initialize(mermaidConfig());
     for (const figure of figures) {
@@ -139,8 +144,12 @@
       const id = "kiri-mermaid-" + (++drawn);
       try {
         const { svg } = await window.mermaid.render(id, source.textContent);
+        // Mermaid's drawing is markup made from the file's text, so it goes
+        // through DOMPurify (with Mermaid's own settings) and comes back as
+        // nodes, never straight into the page as HTML.
+        const drawing = DOMPurify.sanitize(svg, purifyConfig);
         for (const old of figure.querySelectorAll("svg, .mermaid-error")) old.remove();
-        figure.insertAdjacentHTML("afterbegin", svg);
+        figure.prepend(drawing);
         figure.classList.add("drawn");
         figure.classList.remove("failed");
       } catch (e) {
@@ -158,7 +167,7 @@
     return true;
   };
 
-  const waiting = () => document.querySelector("figure.mermaid") !== null && !window.mermaid;
+  const waiting = () => document.querySelector("figure.mermaid") !== null && !(window.mermaid && window.DOMPurify);
 
   // MARK: Pictures and media from elsewhere
 

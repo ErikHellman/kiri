@@ -159,5 +159,6 @@ import Testing
         #expect(!MarkdownPage.stylesheet.isEmpty)
         #expect(!MarkdownPage.script.isEmpty)
         #expect(MarkdownPage.mermaidURL != nil)
+        #expect(MarkdownPage.purifyURL != nil)
     }
 }
