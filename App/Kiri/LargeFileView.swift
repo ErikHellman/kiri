@@ -59,7 +59,6 @@ final class LargeFileView: NSView, NSMenuItemValidation {
         var layout: CTLine?
     }
     private var cache: [Int: Line] = [:]
-    private var cacheAttributes: [NSAttributedString.Key: Any] = [:]
 
     private var scrollerShown: CGFloat = 0
     private var scrollerFade: Timer?
@@ -641,11 +640,6 @@ final class LargeFileView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
 
-    var scrollState: Double {
-        get { topLine }
-        set { setTop(newValue) }
-    }
-
     // MARK: Matches
 
     func show(matches: [Range<Int>], current: Range<Int>?) {
@@ -725,6 +719,7 @@ final class LargeFileView: NSView, NSMenuItemValidation {
                      caret: LargePosition(line: last, column: line(last)?.text.utf16.count ?? 0))
     }
 
+    // periphery:ignore:parameters sender - an action
     @objc func copy(_ sender: Any?) {
         guard let text = selectedText else { return }
         NSPasteboard.general.clearContents()

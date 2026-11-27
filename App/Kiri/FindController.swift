@@ -888,17 +888,6 @@ extension FindController {
 
     private var controller: EditorController? { model?.controller }
 
-    #if DEBUG || KIRI_SELFTEST
-    /// In a given state with no editor behind it, for pictures drawn offscreen.
-    static func sample(text: String, invalid: Bool = false) -> GoToLineController {
-        let goToLine = GoToLineController()
-        goToLine.text = text
-        goToLine.isInvalid = invalid
-        goToLine.isOpen = true
-        return goToLine
-    }
-    #endif
-
     /// ⌘L, Edit ▸ Go to Line…, the status bar's position: the palette,
     /// with the colon typed and the keyboard after it.
     func open() {

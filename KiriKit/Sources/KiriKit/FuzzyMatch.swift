@@ -13,6 +13,7 @@ import Foundation
 /// Something a query can be matched against, prepared once (a folder's
 /// files are prepared when the folder is read, not at every key).
 public struct FuzzyCandidate: Sendable {
+    // periphery:ignore - what the offsets are into
     public let text: String
     /// Where the file's name begins in a path (UTF-16 offset); 0 for
     /// anything that is not a path.

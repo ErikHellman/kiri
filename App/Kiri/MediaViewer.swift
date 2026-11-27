@@ -219,12 +219,7 @@ struct ViewerMessage: View {
     }
 }
 
-// MARK: The tab's side
-
-extension DocumentTab {
-    /// The tab shows a picture, a video or an archive (read-only), not text.
-    var showsMedia: Bool { mediaViewer != nil }
-}
+// MARK: Telemetry
 
 extension Telemetry {
     /// A picture, video or archive opened in a viewer: which kind, and its format.

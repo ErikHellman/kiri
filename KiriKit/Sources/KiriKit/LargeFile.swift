@@ -102,6 +102,7 @@ public final class LargeFile: @unchecked Sendable {
     public struct Progress: Sendable {
         public let indexedLength: Int
         public let size: Int
+        // periphery:ignore - part of what the count has reached
         public let lineCount: Int
     }
 
@@ -378,6 +379,7 @@ public final class LargeFile: @unchecked Sendable {
 
 /// A value handed to concurrent work that writes only its own part of it.
 struct UnsafeSendable<T>: @unchecked Sendable {
+    // periphery:ignore - written through: it is a buffer
     let value: T
     init(_ value: T) { self.value = value }
 }

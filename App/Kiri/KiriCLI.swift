@@ -387,6 +387,7 @@ final class NewFiles {
 private final class URLEventHandler: NSObject {
     static let shared = URLEventHandler()
 
+    // periphery:ignore:parameters reply - the selector has them
     @objc func handle(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: string) else { return }

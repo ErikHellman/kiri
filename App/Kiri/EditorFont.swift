@@ -1,5 +1,4 @@
 import AppKit
-import KiriKit
 import Observation
 
 /// The editor's typeface (Settings ▸ Font), and the one place the

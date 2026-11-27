@@ -26,9 +26,6 @@ enum Telemetry {
     static let privacyPage = URL(string: "https://kiri.hellsoft.se/privacy.html")!
 
     private(set) static var started = false
-    /// What the SDK was started with: what it does by itself this run
-    /// (crash and hang handlers, sessions).
-    private static var startedWith: (crashes: Bool, analytics: Bool) = (false, false)
 
     static var crashReportsOn: Bool { UserDefaults.standard.object(forKey: Prefs.crashReportsKey) as? Bool ?? true }
     static var analyticsOn: Bool { UserDefaults.standard.object(forKey: Prefs.analyticsKey) as? Bool ?? true }
@@ -63,7 +60,6 @@ enum Telemetry {
         guard !started, allowed else { return }
         let crashes = crashReportsOn, analytics = analyticsOn
         started = true
-        startedWith = (crashes, analytics)
         Vaka.start(Vaka.Options(
             key: ingestKey,
             endpoint: endpoint,

@@ -268,6 +268,7 @@ private final class CloseQuestion: NSObject {
         document.canClose(withDelegate: question, shouldClose: #selector(document(_:shouldClose:contextInfo:)), contextInfo: nil)
     }
 
+    // periphery:ignore:parameters document,contextInfo - the selector has them
     @objc func document(_ document: NSDocument, shouldClose: Bool, contextInfo: UnsafeMutableRawPointer?) {
         Self.asking.removeAll { $0 === self }
         answer(shouldClose)
@@ -364,11 +365,13 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         tabs.close(tab.id)
     }
 
+    // periphery:ignore:parameters sender - an action
     /// Window ▸ Move Tab to New Window.
     @objc func moveTabToNewKiriWindow(_ sender: Any?) {
         if let tab = tabs.selectedTab { DocumentWindow.moveToNewWindow(tab) }
     }
 
+    // periphery:ignore:parameters sender - an action
     /// Window ▸ Merge All Windows.
     @objc func mergeAllKiriWindows(_ sender: Any?) {
         DocumentWindow.mergeAll(into: self)

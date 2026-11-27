@@ -87,6 +87,7 @@ public extension Color {
     static var honeyAccentSoft: Color { honey(Honey.accentSoft) }
     static var honeyFocus: Color { honey(Honey.focus) }
     static var honeyDanger: Color { honey(Honey.danger) }
+    // periphery:ignore - one of the Honey colors, kept with the rest
     static var honeyDangerFill: Color { honey(Honey.dangerFill) }
     static var honeyOK: Color { honey(Honey.ok) }
     static var honeySelection: Color { honey(Honey.selection) }
@@ -215,9 +216,6 @@ public extension View {
             .transaction { if appearance.motion == .off { $0.animation = nil; $0.disablesAnimations = true } }
     }
 
-    /// Animates `value` changes with the Honey spring, respecting the motion setting.
-    func honeyAnimation<V: Equatable>(value: V) -> some View { modifier(HoneyAnimated(value: value)) }
-
     /// A solid floating panel: `surface` fill, rounded corners and the soft
     /// two-layer shadow; with increased contrast, an outline instead.
     /// Use it for content people read (the editor), and glass for chrome.
@@ -254,16 +252,6 @@ private struct HoneyPanel: ViewModifier {
                         .shadow(color: ink.opacity(0.6), radius: 3, y: 2)
                 }
         }
-    }
-}
-
-private struct HoneyAnimated<V: Equatable>: ViewModifier {
-    let value: V
-    @Environment(\.honeyAppearance) private var appearance
-    @Environment(\.accessibilityReduceMotion) private var reduce
-
-    func body(content: Content) -> some View {
-        content.animation(HoneyMotion(appearance, systemReduced: reduce).shape, value: value)
     }
 }
 #endif

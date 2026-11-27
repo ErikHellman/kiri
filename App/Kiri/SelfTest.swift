@@ -966,7 +966,7 @@ enum SelfTest {
                        && ((tv as? KiriTextView)?.delegate as? EditorController)?.document === doc,
                        "the revert read the file into the document that was open")
                 Task { @MainActor in
-                    await saveStages(doc)
+                    await saveStages()
                     quit()
                 }
             }

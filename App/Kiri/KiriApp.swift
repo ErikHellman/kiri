@@ -174,13 +174,6 @@ final class KiriDocumentController: NSDocumentController {
         noteNewRecentDocumentURL(url)
     }
 
-    /// The same, for the document `window` shows. (Asked at every edit:
-    /// nothing is looked up while no file is only being looked at.)
-    func kept(in window: NSWindow) {
-        guard !glanced.isEmpty else { return }
-        kept(document(for: window)?.fileURL)
-    }
-
     /// Large files open without asking whether to open them read-only:
     /// one that is only looked at, and one AppKit reopens (a window
     /// brought back at launch).

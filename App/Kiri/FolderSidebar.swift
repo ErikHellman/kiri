@@ -164,12 +164,6 @@ enum FolderSessions {
         NotificationCenter.default.post(name: didChange, object: nil)
     }
 
-    /// `window` is no longer one of a folder's (its tab was moved out to
-    /// a window of its own): its sidebar goes.
-    static func remove(for window: NSWindow) {
-        guard byWindow.removeValue(forKey: ObjectIdentifier(window)) != nil else { return }
-        NotificationCenter.default.post(name: didChange, object: nil)
-    }
 
     static func session(for window: NSWindow) -> FolderSession? {
         if let entry = byWindow[ObjectIdentifier(window)], entry.window.window === window { return entry.session }

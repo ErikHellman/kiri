@@ -1,5 +1,4 @@
 import AppKit
-import KiriKit
 import SwiftUI
 
 /// The front document window, for the menus: the editor of its selected

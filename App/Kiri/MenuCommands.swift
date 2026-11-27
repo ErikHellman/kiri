@@ -21,9 +21,6 @@ struct MenuCommand: Equatable, Identifiable {
     let isChoice: Bool
 
     var id: String { path.joined(separator: "\u{1F}") }
-
-    /// "Save, Command S": what VoiceOver hears.
-    var spoken: String { shortcut.map { "\(title), \($0.spoken)" } ?? title }
 }
 
 /// The menu bar as a list of commands, and running one of them.

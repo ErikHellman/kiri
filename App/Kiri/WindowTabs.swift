@@ -972,6 +972,7 @@ final class SaveObserver: NSObject {
         document.save(withDelegate: self, didSave: #selector(document(_:didSave:contextInfo:)), contextInfo: nil)
     }
 
+    // periphery:ignore:parameters document,contextInfo - the selector has them
     @objc func document(_ document: NSDocument, didSave: Bool, contextInfo: UnsafeMutableRawPointer?) {
         completion?(didSave)
         completion = nil
