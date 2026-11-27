@@ -92,11 +92,14 @@ public enum MarkdownPage {
     /// What the page may load: images through the app (`PreviewFiles`
     /// keeps those to the document's folder) and inline, the app's fonts,
     /// and with `allowsRemote` images and media from the web. Nothing
-    /// else, and never a script.
+    /// else, and never a script; no form is sent and no `<base>` moves
+    /// links.
     public static func contentSecurityPolicy(allowsRemote: Bool) -> String {
         let web = allowsRemote ? " https: http:" : ""
         return "default-src 'none'; img-src \(scheme):\(web) data:; media-src \(scheme):\(web); "
             + "style-src 'unsafe-inline'; font-src \(scheme):"
+            // Not covered by default-src: no form is sent, no <base> moves links.
+            + "; form-action 'none'; base-uri 'none'"
     }
 
     /// The page, without its content: `update` puts that in. The policy is

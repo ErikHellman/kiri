@@ -22,9 +22,9 @@ on:
   push:
     tags: ["v*"]
 
+# Read only; the publish job alone may write (the release).
 permissions:
-  # To publish the release.
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -38,12 +38,31 @@ env:
   # App/project.yml, checked against this SHA-256.
   SPARKLE_VERSION: 2.10.1
   SPARKLE_SHA256: 1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+  # Vaka, where crash reports go (App/Kiri/Telemetry.swift): the debug
+  # symbols are uploaded there.
+  VAKA_URL: https://vaka.fly.dev
 
+# Four jobs, so the signing secrets are never on a machine that compiles
+# third-party code or installs tools:
+#
+#   prepare  checks the tag, the release notes and the setup (ubuntu)
+#   build    builds Kiri.app, ad-hoc signed, with no secrets at all (macOS)
+#   sign     signs it with the Developer ID, notarizes and staples the app
+#            and its disk image, and signs both the image and the appcast
+#            for Sparkle; it compiles nothing (macOS)
+#   publish  checks the update's signature against the app's own key and
+#            publishes the release, the only job that may write (ubuntu)
+#
+# and `symbols` uploads the debug symbols to Vaka once it is out.
 jobs:
-  release:
-    name: release
-    runs-on: macos-26
-    timeout-minutes: 90
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,6 +70,7 @@ jobs:
           fetch-depth: 0
 
       - name: version
+        id: version
         run: |
           TAG="$GITHUB_REF_NAME"
           # Before anything is built or signed: the tag is a version
@@ -76,6 +96,11 @@ jobs:
           fi
           echo "Kiri $VERSION (build $BUILD), notes:"
           cat "$RUNNER_TEMP/notes.md"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "build=$BUILD"
+          } >> "$GITHUB_OUTPUT"
 
       - name: check the setup
         env:
@@ -117,11 +142,86 @@ jobs:
             exit 1
           fi
 
+  build:
+    name: build
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      KIRI_VERSION: ${{ needs.prepare.outputs.version }}
+      KIRI_BUILD: ${{ needs.prepare.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: select Xcode
         run: |
           xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
           sudo xcode-select -s "$xcode"
           xcodebuild -version
+
+      - name: build
+        env:
+          ARCH: arm64 x86_64
+        run: |
+          brew install xcodegen
+          scripts/build.sh
+
+          APP=build/Kiri.app
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
+          [ "$(plist CFBundleShortVersionString)" = "$KIRI_VERSION" ] || { echo "::error::The app's version is $(plist CFBundleShortVersionString), not $KIRI_VERSION"; exit 1; }
+          [ "$(plist CFBundleVersion)" = "$KIRI_BUILD" ] || { echo "::error::The app's build is $(plist CFBundleVersion), not $KIRI_BUILD"; exit 1; }
+          [ -n "$(plist SUPublicEDKey)" ] || { echo "::error::The app has no SUPublicEDKey"; exit 1; }
+          [ "$(plist SURequireSignedFeed)" = true ] || { echo "::error::The app doesn't require a signed appcast"; exit 1; }
+          lipo -archs "$APP/Contents/MacOS/Kiri"
+          # As a zip made by ditto: the frameworks' links and modes stay.
+          ditto -c -k --keepParent "$APP" build/Kiri.app.zip
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app
+          path: build/Kiri.app.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dsyms
+          path: build/DerivedData/Build/Products/Release/*.dSYM
+          if-no-files-found: warn
+          retention-days: 7
+
+  sign:
+    name: sign
+    needs: [prepare, build]
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      KIRI_VERSION: ${{ needs.prepare.outputs.version }}
+      KIRI_BUILD: ${{ needs.prepare.outputs.build }}
+    outputs:
+      public-key: ${{ steps.sparkle.outputs.public-key }}
+      signature: ${{ steps.sparkle.outputs.signature }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: select Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app
+          path: build
+
+      - name: unpack the app
+        run: |
+          ditto -x -k build/Kiri.app.zip build
+          rm build/Kiri.app.zip
+          test -x build/Kiri.app/Contents/MacOS/Kiri
 
       - name: import the Developer ID
         env:
@@ -154,54 +254,27 @@ jobs:
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
-      - name: build, sign and notarize
+      - name: sign and notarize
         env:
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
-          ARCH: arm64 x86_64
         run: |
-          brew install xcodegen
           export NOTARY_KEY="$RUNNER_TEMP/AuthKey.p8"
           printf '%s\n' "$NOTARY_KEY_P8" > "$NOTARY_KEY"
-          scripts/dmg.sh --build
+          # The app as built: signed with the Developer ID, notarized,
+          # stapled, packed. (dmgbuild comes pinned by hash.)
+          scripts/dmg.sh
           rm -f "$NOTARY_KEY"
-
-          APP=build/Kiri.app
-          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
-          [ "$(plist CFBundleShortVersionString)" = "$KIRI_VERSION" ] || { echo "::error::The app's version is $(plist CFBundleShortVersionString), not $KIRI_VERSION"; exit 1; }
-          [ "$(plist CFBundleVersion)" = "$KIRI_BUILD" ] || { echo "::error::The app's build is $(plist CFBundleVersion), not $KIRI_BUILD"; exit 1; }
-          [ -n "$(plist SUPublicEDKey)" ] || { echo "::error::The app has no SUPublicEDKey"; exit 1; }
-          lipo -archs "$APP/Contents/MacOS/Kiri"
-          echo "SU_PUBLIC_KEY=$(plist SUPublicEDKey)" >> "$GITHUB_ENV"
           echo "DMG=build/Kiri-$KIRI_VERSION.dmg" >> "$GITHUB_ENV"
 
-      - name: upload debug symbols to Vaka
-        # Crash reports (App/Kiri/Telemetry.swift) get function names,
-        # files and lines from these. Without the VAKA_TOKEN secret (a Vaka
-        # API token with write access to kiri-macos) this only warns.
-        env:
-          VAKA_TOKEN: ${{ secrets.VAKA_TOKEN }}
+      - name: delete the keychain
         run: |
-          if [ -z "$VAKA_TOKEN" ]; then
-            echo "::warning::No VAKA_TOKEN secret: crash reports from $KIRI_VERSION will have addresses only"
-            exit 0
-          fi
-          DSYMS=build/DerivedData/Build/Products/Release
-          found=0
-          for dwarf in "$DSYMS"/*.dSYM/Contents/Resources/DWARF/*; do
-            [ -f "$dwarf" ] || continue
-            found=1
-            echo "uploading $dwarf"
-            curl --fail-with-body -sS -H "Authorization: Bearer $VAKA_TOKEN" \
-              --form-string kind=native --form-string release="$KIRI_VERSION" \
-              -F "file=@$dwarf" \
-              https://vaka.fly.dev/api/v1/projects/kiri-macos/artifacts \
-              || echo "::warning::Uploading $dwarf to Vaka failed"
-          done
-          [ "$found" = 1 ] || echo "::warning::No dSYMs in $DSYMS"
+          security delete-keychain "$KEYCHAIN"
+          echo "KEYCHAIN=" >> "$GITHUB_ENV"
 
-      - name: sign the update and write the appcast
+      - name: sign the update and the appcast
+        id: sparkle
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -215,25 +288,84 @@ jobs:
           KEY_FILE="$RUNNER_TEMP/sparkle-private-key"
           printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
           OUT=$("$SPARKLE/bin/sign_update" --ed-key-file "$KEY_FILE" "$DMG")
-          rm -f "$KEY_FILE"
           SIGNATURE=$(printf '%s' "$OUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
-          [ -n "$SIGNATURE" ] || { echo "::error::sign_update gave no signature"; exit 1; }
+          [ -n "$SIGNATURE" ] || { echo "::error::sign_update gave no signature"; rm -f "$KEY_FILE"; exit 1; }
 
-          # The check against the app's own key needs `cryptography`.
-          python3 -m venv "$RUNNER_TEMP/appcast-venv"
-          "$RUNNER_TEMP/appcast-venv/bin/pip" install --quiet --disable-pip-version-check cryptography==48.0.1
-          "$RUNNER_TEMP/appcast-venv/bin/python" scripts/appcast.py \
+          scripts/release-notes.sh "$KIRI_VERSION" > "$RUNNER_TEMP/notes.md"
+          python3 scripts/appcast.py \
             --version "$KIRI_VERSION" --build "$KIRI_BUILD" \
             --url "https://github.com/$RELEASES_REPO/releases/download/$TAG/$(basename "$DMG")" \
-            --dmg "$DMG" --signature "$SIGNATURE" --public-key "$SU_PUBLIC_KEY" \
+            --dmg "$DMG" --signature "$SIGNATURE" \
             --minimum-system 26.0 --notes "$RUNNER_TEMP/notes.md" --output build/appcast.xml
+          # The feed itself, release notes and all, signed too: the app
+          # requires it (SURequireSignedFeed). sign_update writes the
+          # signature into the file; --verify checks it.
+          "$SPARKLE/bin/sign_update" --ed-key-file "$KEY_FILE" build/appcast.xml
+          "$SPARKLE/bin/sign_update" --verify --ed-key-file "$KEY_FILE" build/appcast.xml \
+            || { echo "::error::The appcast's signature doesn't verify"; rm -f "$KEY_FILE"; exit 1; }
+          rm -f "$KEY_FILE"
           cat build/appcast.xml
           (cd build && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+
+          PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" build/Kiri.app/Contents/Info.plist)
+          echo "public-key=$PUBLIC_KEY" >> "$GITHUB_OUTPUT"
+          echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            ${{ env.DMG }}
+            ${{ env.DMG }}.sha256
+            build/appcast.xml
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: clean up
+        if: always()
+        run: |
+          [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/sparkle-private-key"
+
+  publish:
+    name: publish
+    needs: [prepare, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # To publish the release.
+      contents: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      KIRI_VERSION: ${{ needs.prepare.outputs.version }}
+      KIRI_BUILD: ${{ needs.prepare.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: build
+
+      - name: check the update against the app's key
+        env:
+          PUBLIC_KEY: ${{ needs.sign.outputs.public-key }}
+          SIGNATURE: ${{ needs.sign.outputs.signature }}
+        run: |
+          # A release signed with the wrong private key fails here instead
+          # of on everyone's Mac. The check needs `cryptography`.
+          python3 -m venv "$RUNNER_TEMP/appcast-venv"
+          "$RUNNER_TEMP/appcast-venv/bin/pip" install --quiet --disable-pip-version-check cryptography==48.0.1
+          "$RUNNER_TEMP/appcast-venv/bin/python" -c 'import sys; sys.path.insert(0, "scripts"); import appcast; appcast.verify(*sys.argv[1:])' \
+            "build/Kiri-$KIRI_VERSION.dmg" "$SIGNATURE" "$PUBLIC_KEY"
+          grep -q "sparkle:edSignature=\"$SIGNATURE\"" build/appcast.xml || { echo "::error::The appcast doesn't carry the update's signature"; exit 1; }
 
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          DMG="build/Kiri-$KIRI_VERSION.dmg"
+          scripts/release-notes.sh "$KIRI_VERSION" > "$RUNNER_TEMP/notes.md"
           # As a draft until every file is up, so .../latest/download/appcast.xml
           # never points at a release without its disk image.
           gh release create "$TAG" "$DMG" "$DMG.sha256" build/appcast.xml --verify-tag \
@@ -241,8 +373,41 @@ jobs:
           gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest
           echo "Released https://github.com/$RELEASES_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: clean up
-        if: always()
+  symbols:
+    # Crash reports (App/Kiri/Telemetry.swift) get function names, files
+    # and lines from these. Without the VAKA_TOKEN secret (a Vaka API token
+    # with write access to kiri-macos) this only warns.
+    name: symbols
+    needs: [prepare, build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      KIRI_VERSION: ${{ needs.prepare.outputs.version }}
+      KIRI_BUILD: ${{ needs.prepare.outputs.build }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dsyms
+          path: dsyms
+
+      - name: upload debug symbols to Vaka
+        env:
+          VAKA_TOKEN: ${{ secrets.VAKA_TOKEN }}
         run: |
-          [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" || true
-          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/sparkle-private-key"
+          if [ -z "$VAKA_TOKEN" ]; then
+            echo "::warning::No VAKA_TOKEN secret: crash reports from $KIRI_VERSION will have addresses only"
+            exit 0
+          fi
+          found=0
+          for dwarf in dsyms/*.dSYM/Contents/Resources/DWARF/*; do
+            [ -f "$dwarf" ] || continue
+            found=1
+            echo "uploading $dwarf"
+            curl --fail-with-body -sS -H "Authorization: Bearer $VAKA_TOKEN" \
+              --form-string kind=native --form-string release="$KIRI_VERSION" \
+              -F "file=@$dwarf" \
+              "$VAKA_URL/api/v1/projects/kiri-macos/artifacts" \
+              || echo "::warning::Uploading $dwarf to Vaka failed"
+          done
+          [ "$found" = 1 ] || echo "::warning::No dSYMs in the build"

@@ -21,8 +21,9 @@ public typealias CodeHighlighter = @Sendable (_ code: String, _ language: Langua
 /// Markdown to HTML: CommonMark with GitHub's tables, task lists and
 /// strikethrough (cmark-gfm), GitHub's alerts (`> [!NOTE]`), and
 /// ```` ```mermaid ```` blocks left for the page's Mermaid to draw. Raw
-/// HTML in the file goes through as it is: the page runs none of the
-/// file's scripts (`MarkdownPage`).
+/// HTML in the file keeps its markup but not its styles, forms and other
+/// tags that could take over the page (`RawHTML`); the page runs none of
+/// the file's scripts (`MarkdownPage`).
 ///
 /// Every block says which line of the file it starts on (`data-line`), so
 /// switching between the text and the preview keeps the same place.
@@ -265,7 +266,7 @@ private struct HTMLWalker: MarkupWalker {
     }
 
     mutating func visitHTMLBlock(_ html: HTMLBlock) {
-        result += html.rawHTML
+        result += RawHTML.sanitize(html.rawHTML)
     }
 
     mutating func visitListItem(_ listItem: ListItem) {
@@ -388,7 +389,7 @@ private struct HTMLWalker: MarkupWalker {
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) {
-        result += inlineHTML.rawHTML
+        result += RawHTML.sanitize(inlineHTML.rawHTML)
     }
 
     mutating func visitLineBreak(_ lineBreak: LineBreak) {
