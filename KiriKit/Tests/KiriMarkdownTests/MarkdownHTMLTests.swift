@@ -91,6 +91,48 @@ import Testing
         #expect(html.contains("<img src=\"img.png\" alt=\"i\" title=\"T\">"))
     }
 
+    @Test func rawHTMLKeepsItsMarkup() {
+        let html = MarkdownHTML.render(
+            "<details><summary>More</summary>\n\nText <kbd>Ctrl</kbd>\n</details>\n\n<p align=\"center\"><img src=\"logo.png\" width=\"200\"></p>\n"
+        ).html
+        #expect(html.contains("<details><summary>More</summary>"))
+        #expect(html.contains("<kbd>Ctrl</kbd>"))
+        #expect(html.contains("</details>"))
+        #expect(html.contains("<p align=\"center\"><img src=\"logo.png\" width=\"200\"></p>"))
+    }
+
+    @Test func rawHTMLCantTakeOverThePage() {
+        // Styles that could lay a link over the whole page.
+        #expect(RawHTML.sanitize("<style>\na { position: fixed; inset: 0 }\n</style>\n<p>after</p>") == "\n<p>after</p>")
+        #expect(RawHTML.sanitize("<STYLE type=text/css>a{}</Style >tail") == "tail")
+        #expect(RawHTML.sanitize("<a href=\"#x\" STYLE='display:block' onclick=\"f()\">t</a>") == "<a href=\"#x\">t</a>")
+        #expect(RawHTML.sanitize("<svg viewBox=\"0 0 1 1\"><style>*{}</style><rect /></svg>") == "<svg viewBox=\"0 0 1 1\"><rect /></svg>")
+        // Forms, <base>, <meta refresh>, <link>, frames, popovers.
+        #expect(RawHTML.sanitize("<form action=\"https://x\"><input name=a><button formaction=https://y>Go</button></form>") == "Go")
+        #expect(RawHTML.sanitize("<base href=\"https://x/\"><meta http-equiv=\"refresh\" content=\"0\"><link rel=stylesheet href=x>") == "")
+        #expect(RawHTML.sanitize("<iframe src=\"https://x\"></iframe>") == "")
+        #expect(RawHTML.sanitize("<div popover id=p>x</div><a popovertarget=p>o</a>") == "<div id=p>x</div><a>o</a>")
+        // A script goes with its text, inline too.
+        #expect(!MarkdownHTML.render("Hi <script>alert(1)</script> there").html.contains("<script"))
+    }
+
+    @Test func rawHTMLIsReadAsTheBrowserReadsIt() {
+        // A quoted `>` doesn't end the tag.
+        #expect(RawHTML.sanitize("<div title=\"a>b\" style=\"z\">") == "<div title=\"a>b\">")
+        // A tag that never ends is text, so it can't swallow what follows.
+        #expect(RawHTML.sanitize("<div title=\"open\n\nnext") == "&lt;div title=\"open\n\nnext")
+        // Not tags: left as they are.
+        #expect(RawHTML.sanitize("a < b, <3, <!-- note --> <br/>") == "a < b, <3, <!-- note --> <br />")
+        // An unquoted value keeps its end.
+        #expect(RawHTML.sanitize("<img src=a.png />") == "<img src=a.png />")
+    }
+
+    @Test func pagePolicyBlocksFormsAndBase() {
+        let shell = MarkdownPage.shell(style: MarkdownPage.Style())
+        #expect(shell.contains("form-action 'none'"))
+        #expect(shell.contains("base-uri 'none'"))
+    }
+
     @Test func fenceLanguages() {
         #expect(MarkdownHTML.language(fence: "swift") == .swift)
         #expect(MarkdownHTML.language(fence: "sh") == .shell)
