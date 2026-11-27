@@ -1,5 +1,4 @@
 import AppKit
-import KiriKit
 import Observation
 
 /// The editor's typeface (Settings ▸ Font), and the one place the
@@ -11,7 +10,7 @@ import Observation
 /// its arguments instead, `-editorFont Menlo`). A family that is no longer
 /// installed shows as the system's monospace, SF Mono, and comes back if
 /// it is installed again.
-@MainActor @Observable final class EditorFont {
+@Observable final class EditorFont {
     static let shared = EditorFont()
 
     /// What the menu calls SF Mono, the system's monospace, which is not

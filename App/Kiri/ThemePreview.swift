@@ -17,7 +17,7 @@ import SwiftUI
 /// Changes are spaced out by the crossfade's length: someone holding an
 /// arrow key down over six themes sees the first and then the one they
 /// stopped on, not six fades begun on top of each other.
-@MainActor @Observable final class ThemePreview {
+@Observable final class ThemePreview {
     static let shared = ThemePreview()
 
     enum Look: Equatable {

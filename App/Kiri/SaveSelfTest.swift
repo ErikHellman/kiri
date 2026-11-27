@@ -27,7 +27,7 @@ extension SelfTest {
                "recovery copies are written \(controller.autosavingDelay) s after an edit")
     }
 
-    static func saveStages(_ first: NSDocument) async {
+    static func saveStages() async {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kiri-save-test-\(getpid())")
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -746,7 +746,7 @@ extension SelfTest {
         relaunchStarted = true
         Task { @MainActor in
             switch phase {
-            case "crash": await crash(textView)
+            case "crash": await crash()
             case "recover": await recover()
             case "frame-set": frameSet(textView)
             case "frame-check": frameCheck(textView)
@@ -930,7 +930,7 @@ extension SelfTest {
 
     private static let typedInFile = "// recovered\n", typedInUntitled = "never saved\n"
 
-    private static func crash(_ textView: NSTextView) async {
+    private static func crash() async {
         guard let first = NSDocumentController.shared.documents.first(where: { $0.fileURL != nil }),
               let second = try? NSDocumentController.shared.openUntitledDocumentAndDisplay(true) else {
             report(false, "a document with a file and a new untitled one"); return

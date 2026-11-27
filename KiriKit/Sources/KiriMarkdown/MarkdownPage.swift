@@ -60,6 +60,7 @@ public enum MarkdownPage {
         var path = folder?.standardizedFileURL.path ?? "/"
         if !path.hasSuffix("/") { path += "/" }
         components.path = path
+        // swiftlint:disable:next force_unwrapping - the scheme and host make a URL
         return components.url ?? URL(string: "\(scheme)://file/")!
     }
 

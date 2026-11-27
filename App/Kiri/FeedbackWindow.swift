@@ -13,7 +13,7 @@ import SwiftUI
 /// A window of its own rather than a sheet, so the document stays free to
 /// look at (or copy from) while writing, with the hidden title bar every
 /// Kiri window has.
-@MainActor enum FeedbackWindow {
+enum FeedbackWindow {
     enum Mode: Equatable {
         case general
         /// The last run crashed: the crash's report, to link the words to.
@@ -64,7 +64,7 @@ struct WindowShot {
     let attachment: Vaka.Attachment
     let preview: NSImage
 
-    @MainActor static func ofFrontDocumentWindow() -> WindowShot? {
+    static func ofFrontDocumentWindow() -> WindowShot? {
         let window: DocumentNSWindow? = (NSApp.keyWindow as? DocumentNSWindow)
             ?? FrontEditor.shared.tabs?.window
             ?? NSApp.orderedWindows.lazy.compactMap { $0 as? DocumentNSWindow }.first { $0.isVisible }
@@ -79,7 +79,7 @@ struct WindowShot {
     /// editor's text and line numbers, drawn by the app itself. (Drawing
     /// the whole window that way leaves it blank: SwiftUI and the glass
     /// aren't drawn through `cacheDisplay`.)
-    @MainActor static func of(_ window: NSWindow) -> WindowShot? {
+    static func of(_ window: NSWindow) -> WindowShot? {
         guard let png = windowServerPicture(of: window) ?? editorPicture(in: window),
               let attachment = Vaka.Attachment.image(png, maxPixels: 2400),
               let preview = NSImage(data: attachment.data) else { return nil }
@@ -92,7 +92,7 @@ struct WindowShot {
     /// obsolete (for ScreenCaptureKit, which asks for screen recording
     /// permission even for an app's own windows), so it is looked up when
     /// needed; nil if it is gone or gives nothing.
-    @MainActor private static func windowServerPicture(of window: NSWindow) -> Data? {
+    private static func windowServerPicture(of window: NSWindow) -> Data? {
         typealias Create = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
         guard window.windowNumber > 0, let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
         let create = unsafeBitCast(symbol, to: Create.self)
@@ -105,7 +105,7 @@ struct WindowShot {
 
     /// The editor (text and line numbers: AppKit views, which draw through
     /// `cacheDisplay`).
-    @MainActor private static func editorPicture(in window: NSWindow) -> Data? {
+    private static func editorPicture(in window: NSWindow) -> Data? {
         func editor(in view: NSView) -> NSView? {
             if view is EditorContainerView { return view }
             for child in view.subviews { if let found = editor(in: child) { return found } }
@@ -119,7 +119,7 @@ struct WindowShot {
     }
 }
 
-@MainActor @Observable final class FeedbackModel {
+@Observable final class FeedbackModel {
     enum State: Equatable {
         case writing
         case sending
@@ -317,7 +317,7 @@ struct FeedbackView: View {
 
 /// The screenshot at full size, in a window of its own, to look at before
 /// sending.
-@MainActor enum ScreenshotPreview {
+enum ScreenshotPreview {
     private static var window: NSWindow?
 
     static func show(_ image: NSImage) {

@@ -9,7 +9,7 @@ import KiriKit
 /// The player is AVKit's, and AVKit is never loaded at launch: it lives in
 /// `KiriVideo.framework` (App/KiriVideo), which the app embeds but doesn't
 /// link, and loads the first time a video opens (`VideoPlugin`).
-@MainActor final class VideoViewer: MediaContent {
+final class VideoViewer: MediaContent {
     private let root: ViewerContainer
     private let card: NSView
     private var player: NSView?
@@ -99,7 +99,7 @@ import KiriKit
 
 /// `KiriVideo.framework`: the video player, with AVKit. The app doesn't
 /// link it, so neither it nor AVKit loads at launch; the first video loads it.
-@MainActor enum VideoPlugin {
+enum VideoPlugin {
     /// What the player posts when it knows what the file is (its object
     /// the player view): "playable", "hasVideo", "width", "height", "duration".
     static let infoNotification = Notification.Name("KiriVideoInfo")
