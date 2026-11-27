@@ -16,6 +16,12 @@ import WebKit
 /// the place, and Mermaid, stay. Switching keeps the place: the preview
 /// opens at the block at the top of the text, and the text comes back at
 /// the block at the top of the preview if it was scrolled.
+///
+/// Pictures and media from the internet, and files outside the document's
+/// folder, load only once the person lets them (`PreviewExternalContent`,
+/// Settings ▸ Privacy): until then the page's policy and `PreviewFiles`
+/// hold them back, and the tab shows a notice with Accept and Deny
+/// (`DocumentTab.previewNotice`).
 @MainActor final class MarkdownPreview: NSObject {
     let webView: PreviewWebView
     private weak var tab: DocumentTab?
@@ -28,6 +34,18 @@ import WebKit
     private(set) var enteredLine = 1
 
     private var baseURL: URL?
+    /// The document's file (nil until it has one): its folder is what
+    /// pictures load from without a question.
+    private var file: URL?
+    private let files = PreviewFiles()
+    /// The page is loaded letting the web, and files outside the folder, in.
+    private var loadsExternal = false
+    /// What the page holds back: as its script counts it in the rendering,
+    /// and as the page's policy and `PreviewFiles` say they refused.
+    private var counted = PreviewHeldBack()
+    private var refused = PreviewHeldBack()
+    /// The answer for a document that has no file yet.
+    private var untitledAnswer: Bool?
     private var shellLoaded = false
     private var mermaidLoaded = false
     private var style: MarkdownPage.Style
@@ -46,7 +64,7 @@ import WebKit
         self.tab = tab
         style = MarkdownPage.Style()
         let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(PreviewFiles.shared, forURLScheme: MarkdownPage.scheme)
+        config.setURLSchemeHandler(files, forURLScheme: MarkdownPage.scheme)
         // Nothing of it is kept on disk.
         config.websiteDataStore = .nonPersistent()
         // The file's own scripts never run; Kiri's run in a world of their own.
@@ -58,6 +76,7 @@ import WebKit
         webView = PreviewWebView(frame: .zero, configuration: config)
         super.init()
         messages.owner = self
+        files.owner = self
         webView.navigationDelegate = self
         // The paper of the editor's panel shows through.
         webView.setValue(false, forKey: "drawsBackground")
@@ -67,25 +86,41 @@ import WebKit
         webView.setAccessibilityLabel("Markdown preview")
         webView.onAppearanceChange = { [weak self] in self?.restyle() }
         NotificationCenter.default.addObserver(self, selector: #selector(themeChanged), name: .honeyThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
+                                               name: UserDefaults.didChangeNotification, object: nil)
     }
 
     @objc private func themeChanged() { restyle() }
 
-    /// Renders `text` (a file in `folder`, which images resolve against)
-    /// and calls `ready` once the page shows it, scrolled to the block at
-    /// `line` (1-based) if given. `svg`: the text is an SVG file's, and
-    /// the page shows its picture (`MarkdownPage.svgHTML`).
-    func show(text: String, folder: URL?, line: Int?, svg: Bool = false, ready: (() -> Void)? = nil) {
+    /// Renders `text` (the text of `file`, whose folder images resolve
+    /// against and load from) and calls `ready` once the page shows it,
+    /// scrolled to the block at `line` (1-based) if given. `svg`: the text
+    /// is an SVG file's, and the page shows its picture
+    /// (`MarkdownPage.svgHTML`).
+    func show(text: String, file: URL?, line: Int?, svg: Bool = false, ready: (() -> Void)? = nil) {
         generation += 1
         let generation = generation
         if let ready { waiting.append(ready) }
         pendingLine = line
         style = currentStyle()
+        if file != self.file {
+            // Another document: its own answer, and nothing held back yet.
+            self.file = file
+            untitledAnswer = nil
+            counted = PreviewHeldBack()
+            refused = PreviewHeldBack()
+        }
+        let folder = file?.deletingLastPathComponent()
         let base = MarkdownPage.baseURL(folder: folder)
-        if base != baseURL {
+        let loads = Self.policy.loads(answer: answer)
+        if base != baseURL || loads != loadsExternal {
             baseURL = base
+            loadsExternal = loads
+            files.folder = folder
+            files.allowsOutside = loads
             loadShell()
         }
+        tellNotice()
         guard text != renderedText || svg != renderedSVG || html == nil else {
             fill()
             return
@@ -126,7 +161,8 @@ import WebKit
     private func loadShell() {
         shellLoaded = false
         mermaidLoaded = false
-        webView.loadHTMLString(MarkdownPage.shell(style: style), baseURL: baseURL)
+        refused = PreviewHeldBack()
+        webView.loadHTMLString(MarkdownPage.shell(style: style, allowsRemote: loadsExternal), baseURL: baseURL)
     }
 
     /// Puts the latest rendering in the page, once both are there.
@@ -134,12 +170,16 @@ import WebKit
         guard shellLoaded, let html else { return }
         let line = pendingLine
         pendingLine = nil
-        call("return await kiriPreview.show(html, style, line)",
-             ["html": html, "style": style.css, "line": line.map { $0 as Any } ?? NSNull()], scrolled: line != nil)
+        let inFolder = MarkdownPage.folderPrefix(file?.deletingLastPathComponent())
+        call("return await kiriPreview.show(html, style, line, inFolder)",
+             ["html": html, "style": style.css, "line": line.map { $0 as Any } ?? NSNull(),
+              "inFolder": inFolder.map { $0 as Any } ?? NSNull()], scrolled: line != nil)
     }
 
-    /// Runs `body` in Kiri's world of the page; a `{top, waiting}` result
-    /// says where the page is and whether its diagrams wait for Mermaid.
+    /// Runs `body` in Kiri's world of the page; a `{top, waiting, remote,
+    /// outside}` result says where the page is, whether its diagrams wait
+    /// for Mermaid, and how many pictures and media come from the web and
+    /// from outside the document's folder.
     private func call(_ body: String, _ arguments: [String: Any], scrolled: Bool = false) {
         let generation = generation
         webView.callAsyncJavaScript(body, arguments: arguments, in: nil, in: .defaultClient) { [weak self] result in
@@ -149,6 +189,10 @@ import WebKit
                 if let top = answer?["top"] as? Int {
                     self.topLine = top
                     if scrolled { self.enteredLine = top }
+                }
+                if let remote = answer?["remote"] as? Int, let outside = answer?["outside"] as? Int {
+                    self.counted = PreviewHeldBack(remote: remote > 0, outside: outside > 0)
+                    self.tellNotice()
                 }
                 guard generation == self.generation else { return }
                 if !self.isReady || !self.waiting.isEmpty {
@@ -203,11 +247,79 @@ import WebKit
         return FallbackHighlighter.spans(in: code, language: language)
     }
 
+    // MARK: Pictures and media from elsewhere
+
+    /// The setting (Settings ▸ Privacy).
+    static var policy: PreviewExternalContent {
+        #if DEBUG || KIRI_SELFTEST
+        if let policy = policyForTests { return policy }
+        #endif
+        return PreviewExternalContent(saved: UserDefaults.standard.string(forKey: Prefs.previewExternalKey))
+    }
+
+    /// What the person answered on the notice, by the document's path:
+    /// kept until Kiri quits, so the same file doesn't ask in every tab.
+    private static var answers: [String: Bool] = [:]
+
+    private var answer: Bool? {
+        get {
+            guard let file else { return untitledAnswer }
+            return Self.answers[file.standardizedFileURL.path]
+        }
+        set {
+            guard let file else { untitledAnswer = newValue; return }
+            Self.answers[file.standardizedFileURL.path] = newValue
+        }
+    }
+
+    /// The notice's Accept (the page loads again, with what it held back)
+    /// or Deny (the notice goes, and nothing loads), for this document.
+    func answerExternal(accept: Bool) {
+        answer = accept
+        externalChanged()
+    }
+
+    /// (Preferences can be written, and so this called, on any thread.)
+    @objc private nonisolated func settingsChanged() {
+        Task { @MainActor [weak self] in self?.externalChanged() }
+    }
+
+    /// The setting or the answer may have changed: the page is loaded
+    /// again if it now lets other things in, and the notice follows.
+    private func externalChanged() {
+        let loads = Self.policy.loads(answer: answer)
+        if loads != loadsExternal, baseURL != nil {
+            loadsExternal = loads
+            files.allowsOutside = loads
+            loadShell()
+        }
+        tellNotice()
+    }
+
+    /// The tab's notice: what the page holds back, while the person is
+    /// still to be asked about it.
+    private func tellNotice() {
+        let held = PreviewHeldBack(remote: counted.remote || refused.remote, outside: counted.outside || refused.outside)
+        let notice = !loadsExternal && !held.isEmpty && Self.policy.asks(answer: answer) ? held : nil
+        if tab?.previewNotice != notice { tab?.previewNotice = notice }
+    }
+
+    /// `PreviewFiles` refused a file outside the document's folder.
+    fileprivate func refusedOutside() {
+        guard !refused.outside else { return }
+        refused.outside = true
+        tellNotice()
+    }
+
     // MARK: Messages from the page
 
     fileprivate func received(_ body: Any) {
         guard let message = body as? [String: Any] else { return }
         if let top = message["top"] as? Int { topLine = top }
+        if message["blocked"] as? String == "remote", !refused.remote {
+            refused.remote = true
+            tellNotice()
+        }
         if let text = message["copy"] as? String {
             let board = Self.pasteboard
             board.clearContents()
@@ -225,9 +337,15 @@ import WebKit
 
     #if DEBUG || KIRI_SELFTEST
     /// A self-test's own pasteboard for Copy (the person's stays as it is),
-    /// and what it is told of links instead of opening them.
+    /// what it is told of links instead of opening them, its answer to
+    /// the question before a link opens an app, and its setting for
+    /// pictures from elsewhere (the saved one stays as it is).
     static var pasteboardForTests: NSPasteboard?
     static var openedForTests: ((URL) -> Void)?
+    static var askedForTests: ((LinkQuestion) -> Bool)?
+    static var policyForTests: PreviewExternalContent?
+    /// Forgets the answers, as after a new launch.
+    static func forgetAnswersForTests() { answers = [:] }
     #endif
 
     /// The page's script posts to `kiri`; the content controller keeps
@@ -269,27 +387,69 @@ extension MarkdownPreview: WKNavigationDelegate {
         loadShell()
     }
 
-    /// A link: a file next to the document opens in Kiri if it is text,
-    /// in its own app otherwise; anything else in the browser (or the app
-    /// for its scheme, such as Mail).
+    /// A link (`PreviewLink`): a web page goes to the browser and an
+    /// address to the mail app; a text file opens in Kiri. Anything else
+    /// would open another app, or run one, with something the document's
+    /// author chose, so the person is asked first (`LinkQuestion`).
     private func open(_ url: URL) {
+        switch PreviewLink(url) {
+        case .web:
+            launch(url)
+        case .file(let file):
+            var isFolder: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isFolder) else {
+                #if DEBUG || KIRI_SELFTEST
+                if let opened = Self.openedForTests { return opened(url) }
+                #endif
+                NSSound.beep()
+                return
+            }
+            let type = UTType(filenameExtension: file.pathExtension)
+            let isText = type.map { $0.conforms(to: .text) || $0.conforms(to: .kiriMarkdown) } ?? false
+            if isText, !isFolder.boolValue {
+                #if DEBUG || KIRI_SELFTEST
+                if let opened = Self.openedForTests { return opened(url) }
+                #endif
+                NSDocumentController.shared.openDocument(withContentsOf: file, display: true) { _, _, _ in }
+            } else {
+                ask(LinkQuestion(file: file), thenOpen: file)
+            }
+        case .app:
+            // (A kind of link no app on this Mac opens.)
+            guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return NSSound.beep() }
+            ask(LinkQuestion(link: url, app: app), thenOpen: url)
+        }
+    }
+
+    /// Hands `url` to the app for it.
+    private func launch(_ url: URL) {
         #if DEBUG || KIRI_SELFTEST
         if let opened = Self.openedForTests { return opened(url) }
         #endif
-        guard url.scheme == MarkdownPage.scheme else {
-            NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Asks, on the window, and opens `url` only on Open.
+    private func ask(_ question: LinkQuestion, thenOpen url: URL) {
+        #if DEBUG || KIRI_SELFTEST
+        if let asked = Self.askedForTests {
+            if asked(question) { launch(url) }
             return
         }
-        guard let file = MarkdownPage.fileURL(for: url), FileManager.default.fileExists(atPath: file.path) else {
-            NSSound.beep()
+        #endif
+        let alert = NSAlert()
+        alert.messageText = question.title
+        alert.informativeText = question.detail
+        let openButton = alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+        // Return doesn't run a program: that takes a click on Open.
+        if question.runs { openButton.keyEquivalent = "" }
+        guard let window = webView.window else {
+            if alert.runModal() == .alertFirstButtonReturn { launch(url) }
             return
         }
-        let type = UTType(filenameExtension: file.pathExtension)
-        let isText = type.map { $0.conforms(to: .text) || $0.conforms(to: .kiriMarkdown) } ?? false
-        if isText, !file.hasDirectoryPath {
-            NSDocumentController.shared.openDocument(withContentsOf: file, display: true) { _, _, _ in }
-        } else {
-            NSWorkspace.shared.open(file)
+        Task { @MainActor [weak self] in
+            if await alert.beginSheetModal(for: window) == .alertFirstButtonReturn { self?.launch(url) }
         }
     }
 
@@ -339,11 +499,68 @@ final class PreviewWebView: WKWebView {
     }
 }
 
-/// What the page loads from `kiri-preview:` URLs: the images next to the
-/// document (`kiri-preview://file/…`) and Nunito (`kiri-preview://app/fonts/…`).
-/// Nothing else: no other kind of file is read.
+/// What a link in the preview would open, put to the person before it
+/// does: a file that isn't text (in its app), an app or another program
+/// (which runs), or another app's own kind of link.
+struct LinkQuestion: Equatable {
+    var title: String
+    var detail: String
+    /// Opening it runs a program.
+    var runs: Bool
+
+    /// The apps that run what they are given.
+    private static let runners: Set<String> = ["com.apple.Terminal", "com.apple.JavaLauncher", "com.apple.installer"]
+
+    /// For a file or folder that is there.
+    @MainActor init(file: URL) {
+        let values = try? file.resourceValues(forKeys: [.isDirectoryKey, .isApplicationKey, .isExecutableKey, .contentTypeKey])
+        let app = NSWorkspace.shared.urlForApplication(toOpen: file)
+        let isApp = values?.isApplication == true
+        runs = isApp || values?.contentType?.conforms(to: .executable) == true
+            || (values?.isDirectory != true && values?.isExecutable == true)
+            || app.flatMap { Bundle(url: $0)?.bundleIdentifier }.map(Self.runners.contains) == true
+        let name = file.lastPathComponent
+        if isApp {
+            title = "Open the app “\(file.deletingPathExtension().lastPathComponent)”?"
+        } else if let app, !runs {
+            title = "Open “\(name)” in \(Self.name(of: app))?"
+        } else {
+            title = "Open “\(name)”?"
+        }
+        let path = TabNames.abbreviatingHome(file.path, home: NSHomeDirectory())
+        detail = Self.shortened(path) + "\n\n"
+            + (runs ? "A link in this document points to a program, and opening it runs it. "
+                    : "A link in this document opens it outside Kiri. ")
+            + "Open it only if you trust the document."
+    }
+
+    /// For a link that `app` opens.
+    @MainActor init(link: URL, app: URL) {
+        runs = false
+        title = "Open this link in \(Self.name(of: app))?"
+        detail = Self.shortened(link.absoluteString) + "\n\n"
+            + "A link in this document opens another app. Open it only if you trust the document."
+    }
+
+    private static func name(of app: URL) -> String { app.deletingPathExtension().lastPathComponent }
+
+    /// The start and the end of a long one.
+    private static func shortened(_ text: String) -> String {
+        guard text.count > 240 else { return text }
+        return String(text.prefix(160)) + "…" + String(text.suffix(60))
+    }
+}
+
+/// What the page loads from `kiri-preview:` URLs: the images in the
+/// document's folder (`kiri-preview://file/…`) and Nunito
+/// (`kiri-preview://app/fonts/…`). No other kind of file is read, and an
+/// image outside the folder (a document that has no file yet has none)
+/// only once the person has let it (`allowsOutside`).
 final class PreviewFiles: NSObject, WKURLSchemeHandler {
-    static let shared = PreviewFiles()
+    weak var owner: MarkdownPreview?
+    /// The document's folder.
+    var folder: URL?
+    var allowsOutside = false
 
     /// Bigger images aren't read.
     static let limit = 64 * 1024 * 1024
@@ -359,7 +576,7 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
             }
             file = font
             mime = "font/ttf"
-        } else if let local = MarkdownPage.fileURL(for: url),
+        } else if let local = MarkdownPage.fileURL(for: url), serves(local),
                   let type = UTType(filenameExtension: local.pathExtension), type.conforms(to: .image),
                   let size = (try? local.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= Self.limit {
             file = local
@@ -374,6 +591,15 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
     }
 
     func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {}
+
+    /// Whether `file` may be read: it is in the document's folder, or the
+    /// person has let files outside it. A refusal is told to the preview,
+    /// for its notice.
+    private func serves(_ file: URL) -> Bool {
+        if allowsOutside || MarkdownPage.isInside(file, folder: folder) { return true }
+        MainActor.assumeIsolated { owner?.refusedOutside() }
+        return false
+    }
 
     private func fail(_ task: any WKURLSchemeTask) {
         task.didFailWithError(URLError(.fileDoesNotExist))
@@ -407,7 +633,7 @@ extension DocumentTab {
             // at another width the same scroll offset is another part of it.
             if preview.webView.superview == nil, container.bounds.width > 0 { preview.webView.frame = container.frame }
             let line = (controller.currentPosition()?.topLine ?? 0) + 1
-            preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line,
+            preview.show(text: markdownText, file: document.location, line: line,
                          svg: isSVG) { [weak self] in
                 guard let self, self.showsMarkdownPreview else { return }
                 self.opensInPreview = false
@@ -436,7 +662,7 @@ extension DocumentTab {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.showsMarkdownPreview else { return }
             guard self.canPreviewMarkdown else { return self.setMarkdownPreview(false) }
-            self.markdownPreview?.show(text: self.markdownText, folder: self.document.location?.deletingLastPathComponent(),
+            self.markdownPreview?.show(text: self.markdownText, file: self.document.location,
                                        line: nil, svg: self.isSVG)
         }
     }
@@ -473,7 +699,7 @@ extension DocumentTab {
             preview.webView.frame = frame
         }
         let line = (controller.currentPosition()?.topLine ?? 0) + 1
-        preview.show(text: markdownText, folder: document.location?.deletingLastPathComponent(), line: line, svg: isSVG) { [weak self] in
+        preview.show(text: markdownText, file: document.location, line: line, svg: isSVG) { [weak self] in
             guard let self, self.previewsBeside else { return }
             self.window?.previewSlot(for: self)?.showPreviewBeside(self)
         }
@@ -489,7 +715,7 @@ extension DocumentTab {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.previewsBeside else { return }
             guard self.canPreviewMarkdown else { self.window?.tabs.endSplit(); return }
-            self.markdownPreview?.show(text: self.markdownText, folder: self.document.location?.deletingLastPathComponent(),
+            self.markdownPreview?.show(text: self.markdownText, file: self.document.location,
                                        line: nil, svg: self.isSVG)
         }
         besideRender = work
