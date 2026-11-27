@@ -16,7 +16,8 @@ name: release
 # (scripts/dmg.sh), signs the image for Sparkle, writes the appcast
 # (scripts/appcast.py), and publishes both as a release of this repo,
 # which is public and where Kiri looks for updates. The secrets it needs
-# and how to make them are in docs/RELEASING.md.
+# are in the `release` and `symbols` environments, which only v* tags may
+# use; how to make them is in docs/RELEASING.md.
 
 on:
   push:
@@ -49,11 +50,17 @@ env:
 #   build    builds Kiri.app, ad-hoc signed, with no secrets at all (macOS)
 #   sign     signs it with the Developer ID, notarizes and staples the app
 #            and its disk image, and signs both the image and the appcast
-#            for Sparkle; it compiles nothing (macOS)
+#            for Sparkle; it compiles nothing (macOS). It runs in the
+#            `release` environment, which has the signing secrets and
+#            waits for an approval (docs/RELEASING.md, Protection)
 #   publish  checks the update's signature against the app's own key and
 #            publishes the release, the only job that may write (ubuntu)
 #
-# and `symbols` uploads the debug symbols to Vaka once it is out.
+# and `symbols` uploads the debug symbols to Vaka once it is out, with the
+# token of its own environment, `symbols`.
+#
+# No checkout leaves the token in .git/config (persist-credentials): the
+# steps that need one are given it.
 jobs:
   prepare:
     name: prepare
@@ -68,6 +75,7 @@ jobs:
         with:
           # Every commit, for the build number.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: version
         id: version
@@ -103,24 +111,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: check the setup
+        # Without the secrets: those are the `release` environment's, and
+        # the sign job checks them.
         env:
-          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
-          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
-          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          missing=
-          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY; do
-            eval "value=\${$name:-}"
-            [ -n "$value" ] || missing="$missing $name"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing (docs/RELEASING.md says how to make them)"
-            exit 1
-          fi
           # Before the long build: a release without the update key could
           # never update again.
           if grep -Eq '^ *KIRI_SPARKLE_PUBLIC_KEY: *(""|)$' App/project.yml; then
@@ -153,6 +148,8 @@ jobs:
       KIRI_BUILD: ${{ needs.prepare.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: select Xcode
         run: |
@@ -196,6 +193,9 @@ jobs:
     needs: [prepare, build]
     runs-on: macos-26
     timeout-minutes: 60
+    # The signing secrets are this environment's: only v* tags may use it,
+    # and the job waits here for an approval (docs/RELEASING.md, Protection).
+    environment: release
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
       KIRI_VERSION: ${{ needs.prepare.outputs.version }}
@@ -204,7 +204,28 @@ jobs:
       public-key: ${{ steps.sparkle.outputs.public-key }}
       signature: ${{ steps.sparkle.outputs.signature }}
     steps:
+      - name: check the secrets
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          missing=
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY; do
+            eval "value=\${$name:-}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets in the release environment:$missing (docs/RELEASING.md says how to make them)"
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: select Xcode
         run: |
@@ -341,6 +362,8 @@ jobs:
       KIRI_BUILD: ${{ needs.prepare.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -381,6 +404,9 @@ jobs:
     needs: [prepare, build, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # VAKA_TOKEN is this environment's: only v* tags may use it, and it
+    # waits for nobody.
+    environment: symbols
     env:
       TAG: ${{ needs.prepare.outputs.tag }}
       KIRI_VERSION: ${{ needs.prepare.outputs.version }}

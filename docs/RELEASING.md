@@ -75,7 +75,9 @@ It then reads the notes from the tagged commit, with `scripts/release-notes.sh`,
 
 It runs in four jobs, so the signing secrets are never on a machine that compiles third-party code or installs tools. **prepare** checks the tag, the notes and the setup. **build**, with no secrets at all, builds a universal app on a macOS runner with the tag's version (`0.2.0`) and the number of commits as its build number. **sign** takes that app, signs it with your Developer ID from a keychain that exists only for that step, notarizes and staples the app and the disk image with an App Store Connect API key, deletes the keychain, then signs the image and the update feed for Sparkle. **publish**, the only job that may write to the repo, checks the update's signature against the key built into the app and publishes `Kiri-0.2.0.dmg`, its SHA-256 and `appcast.xml` as release `v0.2.0` of this repo, with the workflow's own `GITHUB_TOKEN`. Last, **symbols** uploads the debug symbols to Vaka. The repo must be **public**: Sparkle downloads updates without signing in, and a private repo's release files answer with a 404. No version needs changing in `App/project.yml` first: the tag decides.
 
-The job stops early, before the long build, if a secret is missing, the update key isn't in `App/project.yml`, the repo isn't public, or that release already exists. It also checks the update's signature against the key built into the app, so a mismatched key pair fails the release instead of every update.
+The job stops early, before the long build, if the update key isn't in `App/project.yml`, the repo isn't public, or that release already exists; a missing secret stops it when **sign** starts, the first job that may read them. It also checks the update's signature against the key built into the app, so a mismatched key pair fails the release instead of every update.
+
+**The release waits for your approval** once the app is built: **sign** runs in the `release` environment, which you review. When **build** is done, open the run under [Actions](https://github.com/ErikHellman/kiri/actions/workflows/release.yml) ▸ **Review deployments** ▸ `release` ▸ **Approve and deploy**, or approve it in GitHub Mobile. A run nobody approves signs and publishes nothing, and expires after 30 days. See [Protection](#protection).
 
 ### One-time setup
 
@@ -92,7 +94,7 @@ The job stops early, before the long build, if a secret is missing, the update k
 3. **The Developer ID as a .p12.** Keychain Access ▸ login ▸ My Certificates ▸ "Developer ID Application: Hellman Software AB (72AFW5CP97)" ▸ right-click ▸ Export… ▸ .p12, with a password.
 4. **An App Store Connect API key** for notarization: [App Store Connect ▸ Users and Access ▸ Integrations ▸ App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api) ▸ Team Keys ▸ +, access **Developer**. Download `AuthKey_XXXXXXXXXX.p8` (only possible once). Note the key ID and the issuer ID shown above the list.
 
-Then add these as [repository secrets of kiri](https://github.com/ErikHellman/kiri/settings/secrets/actions) (Settings ▸ Secrets and variables ▸ Actions):
+Then add these as secrets of the [`release` environment](https://github.com/ErikHellman/kiri/settings/environments) (Settings ▸ Environments ▸ release ▸ Environment secrets), and `VAKA_TOKEN` as a secret of the `symbols` environment, **not** as repository secrets: a workflow on any branch can read a repository secret, and only the sign job, on a `v*` tag and once approved, can read the `release` environment's. The script makes both environments when they aren't there (see [Protection](#protection)) and offers to delete repository-level copies left from before.
 
 | Secret | What | From |
 | --- | --- | --- |
@@ -102,11 +104,23 @@ Then add these as [repository secrets of kiri](https://github.com/ErikHellman/ki
 | `NOTARY_KEY_ID` | the API key's ID, like `XXXXXXXXXX` | step 4 |
 | `NOTARY_ISSUER_ID` | the issuer ID, a UUID | step 4 |
 | `SPARKLE_PRIVATE_KEY` | the exported EdDSA private key | `pbcopy < sparkle-private-key` |
-| `VAKA_TOKEN` (optional) | a Vaka API token with write access to the `kiri-macos` project, for the dSYM upload | the Vaka admin UI, https://vaka.fly.dev/ui |
+| `VAKA_TOKEN` (optional, in `symbols`) | a Vaka API token with write access to the `kiri-macos` project, for the dSYM upload | the Vaka admin UI, https://vaka.fly.dev/ui |
 
 `KIRI_FEED_URL` in `App/project.yml` must point at this repo's releases; the job refuses to run when it doesn't (a fork, say).
 
 When the Developer ID certificate is renewed, export and store the new .p12.
+
+### Protection
+
+A release installs itself on every Mac that runs Kiri, so these GitHub settings guard the way to one. They are settings of the repo, not files in it; `gh api repos/ErikHellman/kiri/rulesets`, `…/environments/release` and `…/immutable-releases` show them.
+
+- **Version tags** (`v*`) have a ruleset: only the repository's admin can create, move or delete one. Deleting the tag of a run that stopped early, as above, still works for you.
+- **The `release` environment** holds the signing secrets. Only `v*` tags may use it, so a workflow on a branch can't reach them, and it waits for your approval, so a tag alone doesn't release: you approve each one. "Allow administrators to bypass configured protection rules" is off.
+- **The `symbols` environment** holds the Vaka token, away from the machine that signs. Only `v*` tags may use it; nobody approves it, so the symbols go up by themselves once the release is out.
+- **Releases are immutable.** Once published, a release's files and its tag can't be changed or removed by anyone, so the disk image and the `appcast.xml` that Kiri downloads are the ones the job made. The job uploads everything to a draft and publishes last, which is what this needs. A release that turns out wrong can't be patched: release the next version.
+- **Actions** may only use actions made by GitHub, pinned to a commit, and a pull request from a fork runs nothing until you approve it.
+
+The checks of the tag itself (a version, on a commit of `main`) are the job's own, in `release.yml`.
 
 ## Release notes
 
