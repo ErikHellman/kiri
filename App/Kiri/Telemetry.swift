@@ -18,7 +18,7 @@ import KiriKit
 /// everything Kiri sends of that kind at once and drops what was waiting
 /// to go out; the SDK's own handlers (crash and hang reports, sessions)
 /// stay until Kiri quits, and the next launch drops what they wrote.
-@MainActor enum Telemetry {
+enum Telemetry {
     /// The Vaka project's ingest key: write-only, made to be shipped in an app.
     static let ingestKey = "vk_be95d83d8fd244a69f26743ff3882b06"
     static let endpoint = URL(string: "https://vaka.fly.dev")!

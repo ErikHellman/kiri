@@ -829,7 +829,7 @@ extension SelfTest {
 }
 
 /// The folder `sidebarStage` works in, and what it asks of its windows.
-@MainActor private final class SidebarFixture {
+private final class SidebarFixture {
     let root: URL
     private let clock = ContinuousClock()
     /// The tab's title and the editor's text when the last `open` was answered.

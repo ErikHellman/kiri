@@ -6,7 +6,7 @@ import KiriSyntax
 /// (incrementally, after each burst of edits); only the visible part of the
 /// text, plus a margin, is colored, so large files stay fast. Languages
 /// without a grammar use the fallback lexer on the visible range.
-@MainActor final class SyntaxHighlighter {
+final class SyntaxHighlighter {
     private weak var textView: NSTextView?
     private(set) var language = Language.plainText
     private var parser: SyntaxParser?

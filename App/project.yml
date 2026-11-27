@@ -113,6 +113,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri
+        # Everything in the app is on the main actor unless it says otherwise:
+        # work that must stay off the main thread (reading files, the
+        # large-file index, highlighting, find) is marked `nonisolated`.
+        # KiriKit isn't: it's plain logic that also builds on Linux.
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         # The appcast on this repo's newest release (docs/RELEASING.md).
         KIRI_FEED_URL: https://github.com/ErikHellman/kiri/releases/latest/download/appcast.xml
         # The public half of the update signing key, as Sparkle's
@@ -162,6 +167,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: se.hellsoft.kiri.video
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         PRODUCT_NAME: KiriVideo
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES

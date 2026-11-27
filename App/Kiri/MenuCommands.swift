@@ -27,7 +27,7 @@ struct MenuCommand: Equatable, Identifiable {
 }
 
 /// The menu bar as a list of commands, and running one of them.
-@MainActor enum MenuCommands {
+enum MenuCommands {
     /// What is left out because it is not a command to look for: the
     /// system's items for the app as a whole (Hide, Quit), what belongs to
     /// the pointer and the menu bar (the window list, and what macOS adds

@@ -64,7 +64,7 @@ extension SelfTest {
 
     // MARK: The fixture
 
-    @MainActor private final class SplitFixture {
+    private final class SplitFixture {
         let root: URL
         let window: DocumentNSWindow
         private let clock = ContinuousClock()

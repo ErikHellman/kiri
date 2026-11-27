@@ -44,7 +44,7 @@ enum MediaZoom { case bigger, smaller, actualSize }
 /// text file. Made when the tab shows such a file, never at launch: the
 /// video player and its frameworks load only when a video opens
 /// (`VideoPlugin`).
-@MainActor final class MediaViewer {
+final class MediaViewer {
     let view: ViewerContainer
     let kind: MediaKind
     private(set) weak var document: KiriDocument?

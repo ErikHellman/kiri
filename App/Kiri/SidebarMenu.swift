@@ -11,7 +11,7 @@ enum SidebarEdit: Equatable {
 }
 
 /// One item of a context menu in the folder sidebar.
-@MainActor struct SidebarMenuItem: Identifiable {
+struct SidebarMenuItem: Identifiable {
     let title: String
     var enabled = true
     let action: () -> Void
@@ -21,7 +21,7 @@ enum SidebarEdit: Equatable {
 
 /// The context menus of the folder sidebar, as values: the menu draws
 /// them (`SidebarMenuItems`) and the self-test reads them.
-@MainActor enum SidebarMenu {
+enum SidebarMenu {
     enum Target: Equatable {
         case file(URL)
         case folder(URL)
@@ -86,7 +86,7 @@ struct SidebarMenuItems: View {
 }
 
 /// What the sidebar's menus do to files.
-@MainActor enum SidebarFiles {
+enum SidebarFiles {
     /// Where Copy Path puts the path: the clipboard. A test launch has a
     /// pasteboard of its own instead, so no test can write over what the
     /// person has copied.

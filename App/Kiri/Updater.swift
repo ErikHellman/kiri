@@ -12,7 +12,7 @@ import Sparkle
 /// disk image and the feed. A build without a key or a feed, such as a
 /// fresh checkout's or a self-test's, leaves Sparkle off and the menu item
 /// disabled, instead of Sparkle's "the updater failed to start" alert.
-@MainActor @Observable final class Updater {
+@Observable final class Updater {
     static let shared = Updater()
 
     /// Whether this build can update itself at all.

@@ -21,7 +21,7 @@ struct LargePosition: Comparable, Hashable {
     static func < (a: Self, b: Self) -> Bool { a.line != b.line ? a.line < b.line : a.column < b.column }
 }
 
-@MainActor final class LargeFileView: NSView, NSMenuItemValidation {
+final class LargeFileView: NSView, NSMenuItemValidation {
     private(set) var file: LargeFile
     weak var model: EditorModel?
 

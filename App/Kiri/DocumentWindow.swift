@@ -15,7 +15,7 @@ import SwiftUI
 /// file adds a tab to the front window and never makes a window: only a
 /// window of its own does (the first, `kiri -n`, a folder, Move Tab to New
 /// Window, a tab dragged out of its strip).
-@MainActor enum DocumentWindow {
+enum DocumentWindow {
     static let defaultSize = NSSize(width: 900, height: 640)
     /// The name the last document window's frame is kept under.
     private static let frameName = "KiriDocumentWindow"
@@ -233,7 +233,7 @@ import SwiftUI
     /// Remembers where the document window is, for the next one and the
     /// next launch: saved when one has been moved or resized, and when one
     /// closes.
-    @MainActor private final class FrameKeeper {
+    private final class FrameKeeper {
         static let shared = FrameKeeper()
         private var started = false
 
@@ -256,7 +256,7 @@ import SwiftUI
 
 /// Asks a document whether it may close (Save, Don't Save, Cancel) and
 /// reports the answer.
-@MainActor private final class CloseQuestion: NSObject {
+private final class CloseQuestion: NSObject {
     private static var asking: [CloseQuestion] = []
     private let answer: (Bool) -> Void
 
@@ -340,7 +340,7 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         let before = firstResponder
         guard super.makeFirstResponder(responder) else { return false }
         if tabs.isSplit, firstResponder !== before {
-            MainActor.assumeIsolated { tabs.keyboardMoved(to: firstResponder, from: before) }
+            tabs.keyboardMoved(to: firstResponder, from: before)
         }
         return true
     }
@@ -417,23 +417,21 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
     }
 
     private func showDropZone(_ side: SplitLayout.Side?) {
-        MainActor.assumeIsolated { if tabs.dropZone != side { tabs.dropZone = side } }
+        if tabs.dropZone != side { tabs.dropZone = side }
     }
 
     /// The side a drag over the editors would go to: nil outside them, and
     /// in the middle third for files (they open as tabs there).
     func dropSide(_ sender: any NSDraggingInfo) -> SplitLayout.Side? {
-        MainActor.assumeIsolated {
-            let frames = tabs.panels.compactMap { panel in slot(identity: panel.slot).map { (panel, $0.convert($0.bounds, to: nil)) } }
-            guard let first = frames.first?.1 else { return nil }
-            let row = frames.dropFirst().reduce(first) { $0.union($1.1) }
-            let point = sender.draggingLocation
-            guard row.contains(point) else { return nil }
-            let divider = frames.count > 1 ? frames.map(\.1).min { $0.minX < $1.minX }.map { $0.maxX + Honey.gap / 2 - row.minX } : nil
-            guard case .side(let side)? = SplitLayout.drop(at: point.x - row.minX, width: row.width, divider: divider.map(Double.init),
-                                                           files: !TabDrag.isTabDrag(sender)) else { return nil }
-            return side
-        }
+        let frames = tabs.panels.compactMap { panel in slot(identity: panel.slot).map { (panel, $0.convert($0.bounds, to: nil)) } }
+        guard let first = frames.first?.1 else { return nil }
+        let row = frames.dropFirst().reduce(first) { $0.union($1.1) }
+        let point = sender.draggingLocation
+        guard row.contains(point) else { return nil }
+        let divider = frames.count > 1 ? frames.map(\.1).min { $0.minX < $1.minX }.map { $0.maxX + Honey.gap / 2 - row.minX } : nil
+        guard case .side(let side)? = SplitLayout.drop(at: point.x - row.minX, width: row.width, divider: divider.map(Double.init),
+                                                       files: !TabDrag.isTabDrag(sender)) else { return nil }
+        return side
     }
 
     // MARK: Restoring
@@ -443,11 +441,9 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
     /// this list (`restoreState`), with their unsaved changes.
     override func encodeRestorableState(with coder: NSCoder) {
         super.encodeRestorableState(with: coder)
-        MainActor.assumeIsolated {
-            coder.encode(TabRestoration.records(of: tabs) as NSArray, forKey: TabRestoration.key)
-            if let split = TabRestoration.split(of: tabs) { coder.encode(split as NSDictionary, forKey: TabRestoration.splitKey) }
-            if let root = FolderSessions.session(for: self)?.root.url { coder.encode(root as NSURL, forKey: TabRestoration.folderKey) }
-        }
+        coder.encode(TabRestoration.records(of: tabs) as NSArray, forKey: TabRestoration.key)
+        if let split = TabRestoration.split(of: tabs) { coder.encode(split as NSDictionary, forKey: TabRestoration.splitKey) }
+        if let root = FolderSessions.session(for: self)?.root.url { coder.encode(root as NSURL, forKey: TabRestoration.folderKey) }
     }
 
     override func restoreState(with coder: NSCoder) {
@@ -457,10 +453,8 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
         let folder = coder.decodeObject(of: NSURL.self, forKey: TabRestoration.folderKey) as URL?
         let split = coder.decodeObject(of: [NSDictionary.self, NSString.self, NSNumber.self], forKey: TabRestoration.splitKey)
             as? [String: Any]
-        MainActor.assumeIsolated {
-            if let folder, FolderSessions.session(for: self) == nil { FolderSessions.set(FolderSession(root: folder), for: self) }
-            if let records { TabRestoration.restore(records, in: self, split: split) }
-        }
+        if let folder, FolderSessions.session(for: self) == nil { FolderSessions.set(FolderSession(root: folder), for: self) }
+        if let records { TabRestoration.restore(records, in: self, split: split) }
     }
 }
 
@@ -468,7 +462,7 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 /// back. Each tab is its file (as a bookmark, which finds it after a move)
 /// and its recovery copy, if it has unsaved changes; an untitled document
 /// with nothing kept for it is not.
-@MainActor enum TabRestoration {
+enum TabRestoration {
     static let key = "KiriTabs"
     static let folderKey = "KiriFolder"
     /// A split window's edge and sides: `fraction`, `besideIsLeft`, and
@@ -557,7 +551,7 @@ final class DocumentNSWindow: NSWindow, NSDraggingDestination {
 /// folder opens as a folder window of its own, as Open Folder does. The
 /// window need not be in front, nor Kiri the active app, and a drop
 /// doesn't make it so.
-@MainActor enum FileDrop {
+enum FileDrop {
     static let types: [NSPasteboard.PasteboardType] = [.fileURL]
 
     /// The files and folders a drag carries.

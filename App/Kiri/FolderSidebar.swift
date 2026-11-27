@@ -5,7 +5,7 @@ import SwiftUI
 /// A folder opened with `kiri <folder>` (or File ▸ Open Folder…), shared by
 /// every tab of its window: the tree, which folders are expanded and
 /// whether the sidebar shows.
-@MainActor @Observable final class FolderSession {
+@Observable final class FolderSession {
     let root: FileNode
     var sidebarVisible = true
     var expanded: Set<URL> = []
@@ -149,7 +149,7 @@ import SwiftUI
 
 /// Which window shows which folder. The tabs of a folder window, opened
 /// in it, dragged into it or merged into it, share its sidebar.
-@MainActor enum FolderSessions {
+enum FolderSessions {
     private static var byWindow: [ObjectIdentifier: (window: WeakWindow, session: FolderSession)] = [:]
     private static var observing = false
 
@@ -203,7 +203,7 @@ import SwiftUI
 /// every tab (a window's tabs share its one sidebar), remembered
 /// from launch to launch (`Prefs.sidebarWidthKey`). The edge between the
 /// sidebar and the editor sets it (`SidebarEdge`).
-@MainActor @Observable final class SidebarWidth {
+@Observable final class SidebarWidth {
     static let shared = SidebarWidth()
 
     /// The width asked for, within `SidebarLayout.widths`. A window too
@@ -314,7 +314,7 @@ struct SidebarEdge: View {
 
 /// A file or folder in the sidebar. Folders read their contents when first
 /// expanded.
-@MainActor final class FileNode: Identifiable {
+final class FileNode: Identifiable {
     let url: URL
     let isDirectory: Bool
     private var loaded: [FileNode]?

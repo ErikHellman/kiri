@@ -4,7 +4,7 @@ import KiriSyntax
 import SwiftUI
 
 /// What the status bar shows and the menus act on, for one tab.
-@MainActor @Observable final class EditorModel {
+@Observable final class EditorModel {
     var line = 1
     var column = 1
     var selectedLength = 0
@@ -305,7 +305,7 @@ final class TabEditorSlot: NSView {
 
 /// Owns the text view's behaviour: loading text, tracking lines, the caret
 /// position and the font.
-@MainActor final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
+final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     let model: EditorModel
     /// The tab this is the editor of.
     weak var tab: DocumentTab?

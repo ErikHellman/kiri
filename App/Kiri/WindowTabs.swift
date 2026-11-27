@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// A tab moves between windows whole: dragged to another window's strip,
 /// Move Tab to New Window, Merge All Windows.
-@MainActor @Observable final class DocumentTab {
+@Observable final class DocumentTab {
     private static var lastID = 0
 
     /// Stable for the tab's life, also when it moves to another window or
@@ -186,7 +186,7 @@ import SwiftUI
 /// (`NSDocument.isDocumentEdited` tells nobody), but every edit, undo and
 /// redo closes an undo group, a save sets the document's
 /// `fileModificationDate`, and a rename moves its `location`.
-@MainActor @Observable final class WindowTabs {
+@Observable final class WindowTabs {
     struct Item: Equatable {
         let id: Int
         let title: String
@@ -688,7 +688,7 @@ enum SplitSource: String {
 
     /// A menu item's: the palette's when it runs the command, a key's when
     /// one was pressed for it, the menu's when it was chosen there.
-    @MainActor static var ofMenuItem: SplitSource {
+    static var ofMenuItem: SplitSource {
         if MenuCommands.performing { return .palette }
         return NSApp.currentEvent?.type == .keyDown ? .key : .menu
     }
@@ -931,7 +931,7 @@ extension WindowTabs {
 }
 
 /// Tells a `WindowTabs` that a key it watches changed.
-private final class TabObserver: NSObject {
+nonisolated private final class TabObserver: NSObject {
     private let changed: @Sendable () -> Void
 
     init(_ changed: @escaping @Sendable () -> Void) { self.changed = changed }
@@ -964,7 +964,7 @@ struct WindowReader: NSViewRepresentable {
 }
 
 /// Saves a document and reports back, for the Save button's busy → done.
-@MainActor final class SaveObserver: NSObject {
+final class SaveObserver: NSObject {
     private var completion: ((Bool) -> Void)?
 
     func save(_ document: NSDocument, completion: @escaping (Bool) -> Void) {
