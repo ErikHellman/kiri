@@ -22,6 +22,7 @@ public struct SearchOptions: Equatable, Sendable {
 public struct TextSearch: @unchecked Sendable {
     /// The query is not a regular expression that can be used.
     public struct InvalidPattern: Error, Equatable, Sendable {
+        // periphery:ignore - the error's own text, for whoever catches it
         public let message: String
     }
 

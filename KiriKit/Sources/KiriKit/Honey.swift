@@ -167,6 +167,7 @@ public enum Honey {
     public static let quick = 0.14
     /// Small movement: toolbars, tooltips, chips.
     public static let medium = 0.24
+    // periphery:ignore - a Honey token (docs/DESIGN.md)
     /// Shape changes, panels, dialogs.
     public static let shape = 0.38
     /// Spring response and damping that match cubic-bezier(.34, 1.56, .64, 1).
@@ -180,6 +181,7 @@ public enum Honey {
 
     // MARK: Type (§4)
 
+    // periphery:ignore - a Honey token (docs/DESIGN.md §4)
     /// Type scale in points: caption, meta, body, panel title, view title, heading.
     public static let typeScale: [Double] = [12, 13, 15, 17, 20, 26]
     /// The editor's default monospace size.

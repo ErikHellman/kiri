@@ -20,7 +20,7 @@ import SwiftUI
 /// A test launch (`-Kiri…` arguments) never reads or writes any of it:
 /// the Debug build shares the person's preferences. `-KiriShowWhatsNew
 /// <file or folder>` shows those notes instead, for pictures and tests.
-@MainActor @Observable final class WhatsNew {
+@Observable final class WhatsNew {
     static let shared = WhatsNew()
 
     /// The notes to show, newest first; empty when there are none.
@@ -222,7 +222,7 @@ import SwiftUI
         #endif
         let files = bundled
         let now = ReleaseVersion(current)
-        let versions = files.keys.compactMap(ReleaseVersion.init).filter { now == nil || $0 <= now! }
+        let versions = files.keys.compactMap(ReleaseVersion.init).filter { version in now.map { version <= $0 } ?? true }
         return versions.max().flatMap { files[$0.description] }
     }
 

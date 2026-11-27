@@ -6,7 +6,7 @@ import KiriSyntax
 /// (incrementally, after each burst of edits); only the visible part of the
 /// text, plus a margin, is colored, so large files stay fast. Languages
 /// without a grammar use the fallback lexer on the visible range.
-@MainActor final class SyntaxHighlighter {
+final class SyntaxHighlighter {
     private weak var textView: NSTextView?
     private(set) var language = Language.plainText
     private var parser: SyntaxParser?
@@ -105,6 +105,7 @@ import KiriSyntax
     private func startParseIfNeeded(force: Bool = false) {
         guard let parser, !parsing, force || !pendingEdits.isEmpty, let storage = textView?.textStorage else { return }
         // Parse an immutable copy; later edits queue up for the next round.
+        // swiftlint:disable:next force_cast - an NSString's copy is one
         let text = storage.string.copy() as! NSString
         let edits = pendingEdits
         pendingEdits = []

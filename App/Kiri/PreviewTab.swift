@@ -9,7 +9,7 @@ import KiriKit
 /// or its tab, or Return on its row.
 ///
 /// A preview never has unsaved changes: the first edit keeps it.
-@MainActor enum PreviewTabs {
+enum PreviewTabs {
     /// Posted when a tab becomes a preview or stops being one, so the tab
     /// strips show it in the same turn.
     static let didChange = Notification.Name("KiriPreviewTabsDidChange")
@@ -49,7 +49,7 @@ import KiriKit
 }
 
 /// Opening a file from the folder sidebar.
-@MainActor enum SidebarOpen {
+enum SidebarOpen {
     /// Where the keyboard is afterwards.
     enum Keyboard {
         /// Where it was (a click).

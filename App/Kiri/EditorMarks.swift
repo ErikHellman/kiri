@@ -11,7 +11,7 @@ import QuartzCore
 // Only the matches in the viewport get a layer, so a search with a hundred
 // thousand matches costs the same to show as one with ten.
 
-@MainActor final class EditorMarks {
+final class EditorMarks {
     private weak var textView: KiriTextView?
     private var matches: [Range<Int>] = []
     private var current: Range<Int>?

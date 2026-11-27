@@ -334,7 +334,7 @@ struct KiriCommands: Commands {
 }
 
 /// The View menu's side-by-side actions, on the front document window.
-@MainActor enum SplitAction {
+enum SplitAction {
     private static var tabs: WindowTabs? { FrontEditor.shared.tabs }
 
     /// ⌘\: the tab that showed before beside this one; with only one tab,
@@ -357,13 +357,13 @@ struct KiriCommands: Commands {
 }
 
 /// The Window menu's tab actions, on the front document window.
-@MainActor enum WindowAction {
+enum WindowAction {
     static func moveTabToNewWindow() { FileAction.documentWindow?.moveTabToNewKiriWindow(nil) }
     static func mergeAllWindows() { FileAction.documentWindow?.mergeAllKiriWindows(nil) }
 }
 
 /// The File menu's actions that take more than a line.
-@MainActor enum FileAction {
+enum FileAction {
     /// ⌘W: the tab that shows, in a document window; any other window
     /// (Settings, Keyboard Shortcuts) closes.
     static func close() {
@@ -401,7 +401,7 @@ struct KiriCommands: Commands {
 /// has keyboard focus, and the find commands, which go to the front
 /// document's find bar (`FrontEditor`), wherever in that window the
 /// keyboard is.
-@MainActor enum EditAction {
+enum EditAction {
     /// View ▸ Bigger Text, Smaller Text and Actual Size zoom the picture in
     /// the front tab; false when there isn't one.
     static func zoomMedia(_ step: MediaZoom) -> Bool {

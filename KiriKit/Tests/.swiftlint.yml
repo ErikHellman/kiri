@@ -1,0 +1,3 @@
+# The tests: a force unwrap that fails is a failed test, and says where.
+disabled_rules:
+  - force_unwrapping

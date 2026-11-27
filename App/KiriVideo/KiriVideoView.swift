@@ -23,7 +23,7 @@ import AVKit
         addSubview(playerView)
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     /// What takes the keyboard: Space plays and pauses, the arrows step.
     @objc public var keyView: NSView { playerView }

@@ -4,7 +4,7 @@ import KiriSyntax
 import SwiftUI
 
 /// What the status bar shows and the menus act on, for one tab.
-@MainActor @Observable final class EditorModel {
+@Observable final class EditorModel {
     var line = 1
     var column = 1
     var selectedLength = 0
@@ -134,7 +134,7 @@ final class TabEditorSlot: NSView {
     static var made = 0
     #endif
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     /// How a file that arrives comes in: its text fades in on the paper,
     /// 240 ms rising 4 pt; with reduced motion the 140 ms fade alone; with
@@ -305,7 +305,7 @@ final class TabEditorSlot: NSView {
 
 /// Owns the text view's behaviour: loading text, tracking lines, the caret
 /// position and the font.
-@MainActor final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
+final class EditorController: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     let model: EditorModel
     /// The tab this is the editor of.
     weak var tab: DocumentTab?

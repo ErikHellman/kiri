@@ -18,7 +18,7 @@ import KiriKit
 /// everything Kiri sends of that kind at once and drops what was waiting
 /// to go out; the SDK's own handlers (crash and hang reports, sessions)
 /// stay until Kiri quits, and the next launch drops what they wrote.
-@MainActor enum Telemetry {
+enum Telemetry {
     /// The Vaka project's ingest key: write-only, made to be shipped in an app.
     static let ingestKey = "vk_be95d83d8fd244a69f26743ff3882b06"
     static let endpoint = URL(string: "https://vaka.fly.dev")!
@@ -26,9 +26,6 @@ import KiriKit
     static let privacyPage = URL(string: "https://kiri.hellsoft.se/privacy.html")!
 
     private(set) static var started = false
-    /// What the SDK was started with: what it does by itself this run
-    /// (crash and hang handlers, sessions).
-    private static var startedWith: (crashes: Bool, analytics: Bool) = (false, false)
 
     static var crashReportsOn: Bool { UserDefaults.standard.object(forKey: Prefs.crashReportsKey) as? Bool ?? true }
     static var analyticsOn: Bool { UserDefaults.standard.object(forKey: Prefs.analyticsKey) as? Bool ?? true }
@@ -63,7 +60,6 @@ import KiriKit
         guard !started, allowed else { return }
         let crashes = crashReportsOn, analytics = analyticsOn
         started = true
-        startedWith = (crashes, analytics)
         Vaka.start(Vaka.Options(
             key: ingestKey,
             endpoint: endpoint,

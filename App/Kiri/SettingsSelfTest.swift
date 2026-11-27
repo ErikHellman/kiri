@@ -95,7 +95,7 @@ extension SelfTest {
         preview.end()
         ThemeController.apply()
 
-        await fontChecks(original, settings: settings)
+        await fontChecks(original)
 
         // Closing Settings with the pointer still on a swatch (it never
         // says it left) puts the chosen theme back.
@@ -113,7 +113,7 @@ extension SelfTest {
     /// Settings ▸ Font: what the menu lists, and every window's editor
     /// (its text, bold headings and line numbers) following a choice at
     /// once, at the size it had; a family that is gone gives SF Mono.
-    private static func fontChecks(_ original: NSWindow, settings: NSWindow) async {
+    private static func fontChecks(_ original: NSWindow) async {
         let store = EditorFont.shared
         let givenFamily = store.family
         let families = EditorFont.families

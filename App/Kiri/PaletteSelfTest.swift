@@ -757,7 +757,7 @@ enum PaletteSample {
         }
     }
 
-    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+    static func sheet(_ scheme: ColorScheme) -> some View {
         let commands = [
             command("Save", "File", Keys.save, marks: [0..<1]),
             command("Save As…", "File", Keys.saveAs, marks: [0..<1]),
@@ -819,7 +819,7 @@ enum PaletteSample {
         .honeyRoot(HoneyAppearance())
     }
 
-    @MainActor private static func strip(_ caption: String, width: CGFloat, @ViewBuilder bar: () -> some View) -> some View {
+    private static func strip(_ caption: String, width: CGFloat, @ViewBuilder bar: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
             bar()

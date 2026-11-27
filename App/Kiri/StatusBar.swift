@@ -186,7 +186,7 @@ struct EditorStatusBar: View {
 ///
 /// Driven from AppKit (the text view's edits, the scroll view, a tracking
 /// area), so it is right whether or not SwiftUI is drawing the window.
-@MainActor @Observable final class StatusBarRest {
+@Observable final class StatusBarRest {
     static let restingOpacity = Honey.restOpacity
     /// How long after the last key or scroll the bar comes back.
     static let pause = 1.0

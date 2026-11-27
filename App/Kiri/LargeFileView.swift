@@ -21,7 +21,7 @@ struct LargePosition: Comparable, Hashable {
     static func < (a: Self, b: Self) -> Bool { a.line != b.line ? a.line < b.line : a.column < b.column }
 }
 
-@MainActor final class LargeFileView: NSView, NSMenuItemValidation {
+final class LargeFileView: NSView, NSMenuItemValidation {
     private(set) var file: LargeFile
     weak var model: EditorModel?
 
@@ -59,7 +59,6 @@ struct LargePosition: Comparable, Hashable {
         var layout: CTLine?
     }
     private var cache: [Int: Line] = [:]
-    private var cacheAttributes: [NSAttributedString.Key: Any] = [:]
 
     private var scrollerShown: CGFloat = 0
     private var scrollerFade: Timer?
@@ -78,7 +77,7 @@ struct LargePosition: Comparable, Hashable {
         })
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
@@ -641,11 +640,6 @@ struct LargePosition: Comparable, Hashable {
         needsDisplay = true
     }
 
-    var scrollState: Double {
-        get { topLine }
-        set { setTop(newValue) }
-    }
-
     // MARK: Matches
 
     func show(matches: [Range<Int>], current: Range<Int>?) {
@@ -725,6 +719,7 @@ struct LargePosition: Comparable, Hashable {
                      caret: LargePosition(line: last, column: line(last)?.text.utf16.count ?? 0))
     }
 
+    // periphery:ignore:parameters sender - an action
     @objc func copy(_ sender: Any?) {
         guard let text = selectedText else { return }
         NSPasteboard.general.clearContents()
