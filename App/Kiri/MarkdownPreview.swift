@@ -16,7 +16,7 @@ import WebKit
 /// the place, and Mermaid, stay. Switching keeps the place: the preview
 /// opens at the block at the top of the text, and the text comes back at
 /// the block at the top of the preview if it was scrolled.
-@MainActor final class MarkdownPreview: NSObject {
+final class MarkdownPreview: NSObject {
     let webView: PreviewWebView
     private weak var tab: DocumentTab?
     /// It shows a rendering: the slot can put it in the editor's place.
@@ -236,7 +236,7 @@ import WebKit
         weak var owner: MarkdownPreview?
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            MainActor.assumeIsolated { owner?.received(message.body) }
+            owner?.received(message.body)
         }
     }
 }

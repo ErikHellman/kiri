@@ -9,6 +9,12 @@ import PackageDescription
 
 let macOS = TargetDependencyCondition.when(platforms: [Platform.macOS])
 
+/// CI sets KIRI_WARNINGS_AS_ERRORS=YES, so a warning in KiriKit fails the
+/// build there (only this package's targets: dependencies still just warn).
+/// Local builds only warn.
+let swiftSettings: [SwiftSetting] = Context.environment["KIRI_WARNINGS_AS_ERRORS"] == "YES"
+    ? [.treatAllWarnings(as: .error)] : []
+
 /// Tree-sitter grammars, pinned to exact releases. (Newer JavaScript, Python,
 /// CSS and YAML releases decide on `scanner.c` with a relative-path
 /// `fileExists` in their manifests, which drops the scanner under SwiftPM.)
@@ -57,7 +63,7 @@ let package = Package(
         .target(name: "KiriKit", resources: [
             // Nunito (SIL OFL 1.1), the Honey UI typeface (docs/DESIGN.md §4).
             .copy("Fonts"),
-        ]),
+        ], swiftSettings: swiftSettings),
         .target(
             name: "KiriSyntax",
             dependencies: ["KiriKit", .product(name: "SwiftTreeSitter", package: "swift-tree-sitter", condition: macOS)]
@@ -65,7 +71,8 @@ let package = Package(
             resources: [
                 // Highlight queries copied from the pinned grammars (LICENSES.txt).
                 .copy("Queries"),
-            ]
+            ],
+            swiftSettings: swiftSettings
         ),
         // The Markdown preview: Markdown and front matter to HTML, and the
         // page's stylesheet and scripts (Mermaid among them), which the app
@@ -73,10 +80,11 @@ let package = Package(
         .target(
             name: "KiriMarkdown",
             dependencies: ["KiriKit", .product(name: "Markdown", package: "swift-markdown")],
-            resources: [.copy("Web")]
+            resources: [.copy("Web")],
+            swiftSettings: swiftSettings
         ),
-        .testTarget(name: "KiriKitTests", dependencies: ["KiriKit"]),
-        .testTarget(name: "KiriMarkdownTests", dependencies: ["KiriMarkdown"]),
-        .testTarget(name: "KiriSyntaxTests", dependencies: ["KiriSyntax"]),
+        .testTarget(name: "KiriKitTests", dependencies: ["KiriKit"], swiftSettings: swiftSettings),
+        .testTarget(name: "KiriMarkdownTests", dependencies: ["KiriMarkdown"], swiftSettings: swiftSettings),
+        .testTarget(name: "KiriSyntaxTests", dependencies: ["KiriSyntax"], swiftSettings: swiftSettings),
     ]
 )

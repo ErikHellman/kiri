@@ -9,7 +9,23 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Warnings in Kiri's own code fail the build (App/project.yml,
+  # KiriKit/Package.swift). Dependencies' warnings don't.
+  KIRI_WARNINGS_AS_ERRORS: "YES"
+
 jobs:
+  # SwiftLint's rules (.swiftlint.yml), every one an error. Keep the
+  # version here and the one you lint with locally (brew) the same.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    container: ghcr.io/realm/swiftlint:0.65.1@sha256:f47e083201e47a136cda5ae847595bfe00226c444ca226fa74fa5dc648a9b057
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: swiftlint
+        run: swiftlint lint --strict --reporter github-actions-logging
+
   # The token layer is plain Foundation, so its tests also run on Linux.
   linux:
     name: linux
@@ -41,7 +57,7 @@ jobs:
           xcodegen
           xcodebuild build -project Kiri.xcodeproj -scheme Kiri \
             -destination 'generic/platform=macOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO -quiet
+            CODE_SIGNING_ALLOWED=NO KIRI_WARNINGS_AS_ERRORS=YES -quiet
           # Fail if nothing was built (an empty scheme also "succeeds").
           test -x build/Build/Products/Debug/Kiri.app/Contents/MacOS/Kiri
           # Sparkle is embedded, for updates.

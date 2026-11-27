@@ -7,7 +7,7 @@ import KiriKit
 /// top left where it was let go. A window's last tab doesn't come out of
 /// it (it would only move the window), and a drop on its own window
 /// changes nothing.
-@MainActor enum TabDrag {
+enum TabDrag {
     static let type = NSPasteboard.PasteboardType("se.hellsoft.kiri.tab")
 
     /// The tab being dragged, while a drag is under way.
@@ -93,7 +93,7 @@ import KiriKit
     }
 
     private final class Source: NSObject, NSDraggingSource {
-        nonisolated(unsafe) static let shared = Source()
+        static let shared = Source()
         /// A window took the tab.
         var dropped = false
 
@@ -106,13 +106,11 @@ import KiriKit
         }
 
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-            MainActor.assumeIsolated {
-                defer { TabDrag.dragged = nil }
-                guard !dropped, operation.isEmpty, let tab = TabDrag.dragged, let window = tab.window else { return }
-                // Let go over its own window: it stays.
-                if window.frame.contains(screenPoint) { return }
-                DocumentWindow.moveToNewWindow(tab, topLeft: NSPoint(x: screenPoint.x - 60, y: screenPoint.y + 20))
-            }
+            defer { TabDrag.dragged = nil }
+            guard !dropped, operation.isEmpty, let tab = TabDrag.dragged, let window = tab.window else { return }
+            // Let go over its own window: it stays.
+            if window.frame.contains(screenPoint) { return }
+            DocumentWindow.moveToNewWindow(tab, topLeft: NSPoint(x: screenPoint.x - 60, y: screenPoint.y + 20))
         }
     }
 }

@@ -1,5 +1,4 @@
 import AppKit
-import KiriKit
 import SwiftUI
 
 /// The front document window, for the menus: the editor of its selected
@@ -12,7 +11,7 @@ import SwiftUI
 /// document's (Settings, Keyboard Shortcuts) leaves all of it nil: the
 /// document items are disabled there, and Find goes down the responder
 /// chain to whatever text has the keyboard.
-@MainActor @Observable final class FrontEditor {
+@Observable final class FrontEditor {
     static let shared = FrontEditor()
 
     private(set) var editor: EditorModel?
@@ -71,7 +70,7 @@ import SwiftUI
                 }
                 return nil
             }
-            if !modifiers.intersection([.command, .control]).isEmpty { MainActor.assumeIsolated { MainMenu.refresh() } }
+            if !modifiers.isDisjoint(with: [.command, .control]) { MainActor.assumeIsolated { MainMenu.refresh() } }
             return event
         }
     }
@@ -104,7 +103,7 @@ import SwiftUI
 }
 
 /// The menu bar's menus.
-@MainActor enum MainMenu {
+enum MainMenu {
     /// Brings every menu's items up to date, as opening it would.
     static func refresh() {
         if let menu = NSApp.mainMenu { refresh(menu) }

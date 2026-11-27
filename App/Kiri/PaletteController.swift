@@ -93,7 +93,7 @@ struct PaletteRow: Equatable, Identifiable {
 /// The view is only a view of this, as the find bar is of
 /// `FindController`: everything works (and is tested) whether or not
 /// SwiftUI is drawing the window.
-@MainActor @Observable final class PaletteController {
+@Observable final class PaletteController {
     @ObservationIgnored weak var model: EditorModel?
 
     private(set) var isOpen = false

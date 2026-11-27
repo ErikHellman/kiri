@@ -14,6 +14,7 @@ public struct StyleGallery: View {
     ]
     @State private var selectedTab = 1
     @State private var save = HoneyTaskState.idle
+    // periphery:ignore - used as $query
     @State private var query = ""
     @State private var toast = false
 

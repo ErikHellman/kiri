@@ -490,6 +490,7 @@ public final class GzipDecoder {
                     guard stream.pointee.avail_in > 0 else { return }
                     // Another member starts with gzip's magic number (a
                     // single byte left of it is taken to be one).
+                    // swiftlint:disable:next force_unwrapping - zlib has input left (guarded above)
                     let next = stream.pointee.next_in!
                     guard next[0] == 0x1F, stream.pointee.avail_in < 2 || next[1] == 0x8B else {
                         state = .finished

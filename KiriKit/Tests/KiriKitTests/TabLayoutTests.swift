@@ -46,7 +46,7 @@ import Testing
         #expect(TabText.middleTruncated("README.md", maxCharacters: 1) == "…")
         #expect(TabText.middleTruncated("README.md", maxCharacters: 0) == "…")
         #expect(TabText.middleTruncated("x", maxCharacters: 0) == "…")
-        #expect(TabText.middleTruncated("", maxCharacters: 0) == "")
+        #expect(TabText.middleTruncated("", maxCharacters: 0).isEmpty)
     }
 
     @Test func countsWholeCharacters() {

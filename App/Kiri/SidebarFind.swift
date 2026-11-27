@@ -12,7 +12,7 @@ import SwiftUI
 /// ⌘G after the field has closed): the editor's find bar and the find
 /// pasteboard have theirs. One per folder session, shown in one window's
 /// sidebar at a time, as a name typed in place is.
-@MainActor @Observable final class SidebarFind {
+@Observable final class SidebarFind {
     @ObservationIgnored private unowned let session: FolderSession
 
     /// What is looked for. Typing it goes to the first match from the row

@@ -91,7 +91,7 @@ import Testing
         #expect(MediaText.duration(7.2) == "0:07")
         #expect(MediaText.duration(151) == "2:31")
         #expect(MediaText.duration(3723) == "1:02:03")
-        #expect(MediaText.duration(.nan) == "")
+        #expect(MediaText.duration(.nan).isEmpty)
         #expect(MediaText.dimensions(1920, 1080) == "1920 × 1080")
         #expect(MediaText.files(1) == "1 file" && MediaText.files(3) == "3 files")
     }

@@ -1,4 +1,5 @@
 #if DEBUG || KIRI_SELFTEST
+// swiftlint:disable force_unwrapping - in a self-test a nil is a failed test, and the crash says where
 import AppKit
 import ImageIO
 import KiriKit

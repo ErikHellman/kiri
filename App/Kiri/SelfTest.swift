@@ -1,4 +1,5 @@
 #if DEBUG || KIRI_SELFTEST
+// swiftlint:disable force_unwrapping - in a self-test a nil is a failed test, and the crash says where
 import AppKit
 import KiriKit
 import SwiftUI
@@ -8,7 +9,7 @@ import os
 /// `Kiri.app/Contents/MacOS/Kiri <file> -KiriSelfTest YES`: types into the
 /// editor, checks the window turns dirty, saves, checks the bytes on disk,
 /// undoes, reverts and quits. Results go to stdout as `SELFTEST …` lines.
-@MainActor enum SelfTest {
+enum SelfTest {
     private static var started = false
     private static var typedOnLaunch = false
     private static var openedFolder = false
@@ -23,6 +24,7 @@ import os
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length - a branch for each launch flag
     static func run(textView: NSTextView) {
         if isTestLaunch { closeDocumentsWhenStopped() }
         if UserDefaults.standard.bool(forKey: "KiriBehaviorTest"), !started {
@@ -689,7 +691,7 @@ import os
                     w.tabs.select(t)
                     try? await Task.sleep(for: .milliseconds(300))
                     let tv = t.container.textView
-                    w.makeFirstResponder(tv)
+                    _ = w.makeFirstResponder(tv)
                     tv.insertText(" ", replacementRange: NSRange(location: 0, length: 0))
                     // The edit counts once its undo group closes, which
                     // AppKit does after an event; nothing else sends one
@@ -809,7 +811,7 @@ import os
 
     /// How often this launch was asked to come forward (and didn't), and
     /// how often it became the front app all the same.
-    nonisolated(unsafe) private static var activationRequests = 0
+    private static var activationRequests = 0
     private static var activations = 0
 
     /// The last check of a run: it stayed behind the app the person is in.
@@ -964,7 +966,7 @@ import os
                        && ((tv as? KiriTextView)?.delegate as? EditorController)?.document === doc,
                        "the revert read the file into the document that was open")
                 Task { @MainActor in
-                    await saveStages(doc)
+                    await saveStages()
                     quit()
                 }
             }
@@ -1132,7 +1134,6 @@ import os
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         let failed: Error? = await withCheckedContinuation { done in
             doc.autosave(withImplicitCancellability: false) { error in
-                nonisolated(unsafe) let error = error
                 done.resume(returning: error)
             }
         }
@@ -1336,6 +1337,7 @@ import os
     /// Find keys pressed through the menu bar, the count, next and previous
     /// around the ends, the highlights, replace and Replace All with undo,
     /// and what the bar's own field does with Return, Tab and Escape.
+    // swiftlint:disable:next function_body_length - the find bar, step by step
     private static func findStage(_ ktv: KiriTextView, _ controller: EditorController) async {
         guard let window = ktv.window, let scroll = ktv.enclosingScrollView, let storage = ktv.textStorage,
               let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu,
@@ -2924,17 +2926,17 @@ import os
         let object: AnyObject
 
         /// Presses it, as VoiceOver would.
-        @MainActor func press() {
+        func press() {
             _ = object.perform(NSSelectorFromString("accessibilityPerformPress"))
         }
 
         /// What VoiceOver's "increment" does to an adjustable element.
-        @MainActor func increment() {
+        func increment() {
             _ = object.perform(NSSelectorFromString("accessibilityPerformIncrement"))
         }
 
         /// The names of its custom actions (VoiceOver's Actions menu).
-        @MainActor var actions: [String] {
+        var actions: [String] {
             let selector = NSSelectorFromString("accessibilityCustomActions")
             guard object.responds(to: selector) else { return [] }
             return (object.perform(selector)?.takeUnretainedValue() as? [NSAccessibilityCustomAction] ?? []).map(\.name)
@@ -3092,7 +3094,7 @@ struct TabStripSample: View {
         titles.enumerated().map { HoneyTab(id: $0.offset, title: $0.element, dirty: dirty.contains($0.offset)) }
     }
 
-    @MainActor static func sheet(width: CGFloat) -> some View {
+    static func sheet(width: CGFloat) -> some View {
         let long = ["AppDelegate+NotificationHandling.swift", "a-very-long-configuration-file-name.production.yaml", "x"]
         var rows: [TabStripSample] = [
             TabStripSample(caption: "1 tab", tabs: tabs(["sample.swift"], dirty: []), selected: 0, width: width),
@@ -3141,7 +3143,7 @@ struct TabStripSample: View {
 /// The Save button's states in the top bar's row, for `-KiriRenderSave`.
 enum SaveButtonSample {
     /// One theme's rows. `Honey.theme` is that theme while it is drawn.
-    @MainActor static func block(_ theme: Honey.Theme, _ scheme: ColorScheme) -> some View {
+    static func block(_ theme: Honey.Theme, _ scheme: ColorScheme) -> some View {
         let one = TabStripSample.tabs(["sample.swift"], dirty: []), edited = TabStripSample.tabs(["sample.swift"], dirty: [0])
         let many = Array(TabStripSample.names.prefix(12))
         let rows: [TabStripSample] = [
@@ -3166,13 +3168,13 @@ enum SaveButtonSample {
     }
 
     /// The button's width as SwiftUI lays it out.
-    @MainActor static func width(_ state: HoneyTaskState, pending: Bool) -> CGFloat {
+    static func width(_ state: HoneyTaskState, pending: Bool) -> CGFloat {
         ImageRenderer(content: HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: state, pending: pending) {}
             .honeyRoot(HoneyAppearance())).nsImage?.size.width ?? 0
     }
 
     /// The pill as it was before it had a resting look: a plain `Label`.
-    @MainActor static var plainPillWidth: CGFloat {
+    static var plainPillWidth: CGFloat {
         ImageRenderer(content: Label("Save", systemImage: "square.and.arrow.down").font(.honey(.subheadline, weight: .bold))
             .padding(.horizontal, 14).frame(height: 30).honeyRoot(HoneyAppearance())).nsImage?.size.width ?? 0
     }
@@ -3183,7 +3185,7 @@ enum SaveButtonSample {
 /// over a strip of the editor's paper, as wide as a default window's editor
 /// and as narrow as the narrowest.
 private enum FindBarSample {
-    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+    static func sheet(_ scheme: ColorScheme) -> some View {
         let regex = SearchOptions(matchCase: true, regularExpression: true)
         let bars: [(String, FindController, FindBar.Field?)] = [
             ("no query", .sample(query: "", status: .idle), .query),
@@ -3211,7 +3213,7 @@ private enum FindBarSample {
         .honeyRoot(HoneyAppearance())
     }
 
-    @MainActor private static func strip(_ caption: String, width: CGFloat, @ViewBuilder bar: () -> some View) -> some View {
+    private static func strip(_ caption: String, width: CGFloat, @ViewBuilder bar: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
             bar()
@@ -3225,7 +3227,7 @@ private enum FindBarSample {
 /// The status bar in given states with no editor behind it, for
 /// `-KiriRenderStatus` and for measuring that its width holds.
 enum StatusBarSample {
-    @MainActor static func model(line: Int = 12, column: Int = 5, selected: Int = 0, lineCount: Int = 40, longestLine: Int = 62,
+    static func model(line: Int = 12, column: Int = 5, selected: Int = 0, lineCount: Int = 40, longestLine: Int = 62,
                                  length: Int = 1200, language: Language = .swift, indent: IndentStyle = .spaces(4)) -> EditorModel {
         let model = EditorModel()
         model.line = line
@@ -3238,7 +3240,7 @@ enum StatusBarSample {
         return model
     }
 
-    @MainActor static func bar(_ model: EditorModel, document: KiriDocument = KiriDocument(),
+    static func bar(_ model: EditorModel, document: KiriDocument = KiriDocument(),
                                showing: (item: EditorStatusBar.Item, as: HoneyStatusHighlight)? = nil) -> some View {
         EditorStatusBar(model: model, document: document, encoding: .constant(document.encoding),
                         lineEnding: .constant(document.lineEnding), byteOrderMark: .constant(document.hasBOM), showing: showing)
@@ -3247,11 +3249,11 @@ enum StatusBarSample {
     }
 
     /// The bar's width (with its side margins) as SwiftUI lays it out.
-    @MainActor static func width(_ model: EditorModel) -> CGFloat {
+    static func width(_ model: EditorModel) -> CGFloat {
         ImageRenderer(content: bar(model)).nsImage?.size.width ?? 0
     }
 
-    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+    static func sheet(_ scheme: ColorScheme) -> some View {
         let windows = KiriDocument()
         windows.setEncoding(.utf16LE)
         windows.setByteOrderMark(true)
@@ -3288,7 +3290,7 @@ enum StatusBarSample {
     }
 
     /// A bar over the last lines of a panel of text, as in a window.
-    @MainActor private static func strip(_ caption: String, width: CGFloat = 460, @ViewBuilder bar: () -> some View) -> some View {
+    private static func strip(_ caption: String, width: CGFloat = 460, @ViewBuilder bar: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
             VStack(alignment: .leading, spacing: 3) {
@@ -3311,7 +3313,7 @@ enum StatusBarSample {
 /// The first-run hint on panels of the sizes a window can give it, with the
 /// status bar below it, for `-KiriRenderHint`.
 private enum StartHintSample {
-    @MainActor static func sheet(_ scheme: ColorScheme) -> some View {
+    static func sheet(_ scheme: ColorScheme) -> some View {
         let empty = StatusBarSample.model(line: 1, column: 1, lineCount: 1, longestLine: 0, length: 0, language: .plainText,
                                           indent: .tabs)
         func panel(_ caption: String, width: CGFloat, height: CGFloat, _ tool: CLIInstaller.Status, hovered: Int? = nil) -> some View {

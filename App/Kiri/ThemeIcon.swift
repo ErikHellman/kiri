@@ -5,7 +5,7 @@ import KiriKit
 /// change of the theme, or of light and dark, crossfades (`ThemeFade`).
 /// Finder and the app switcher keep the bundle's Honey icon; macOS has no
 /// alternate icons for Mac apps, so the running app's Dock tile changes only.
-@MainActor enum ThemeController {
+enum ThemeController {
     private static var observers: [NSObjectProtocol] = []
     private static var iconTheme: String?
     /// The app has finished launching, so the Dock tile can be drawn.
@@ -92,7 +92,7 @@ import KiriKit
 }
 
 /// Tells `ThemeController` that the theme or the appearance was set.
-private final class ThemeWatcher: NSObject {
+nonisolated private final class ThemeWatcher: NSObject {
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
                                context: UnsafeMutableRawPointer?) {
         // Settings and the View menu set them on the main thread; a

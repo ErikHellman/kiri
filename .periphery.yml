@@ -1,0 +1,16 @@
+# Periphery (https://github.com/peripheryapp/periphery), the dead-code
+# finder: scripts/periphery.sh generates the project (App/periphery.yml)
+# and runs `periphery scan` with this. Not a CI gate: see CLAUDE.md.
+project: App/KiriPeriphery.xcodeproj
+schemes:
+  - Periphery
+# KiriKit's public API is its interface to the app, not an accident.
+disable_redundant_public_analysis: true
+# Reached by name or selector: @objc(KiriDocument) (Info.plist's
+# NSDocumentClass), @objc(KiriVideoView) (found with NSClassFromString),
+# menu and sheet selectors. Code reached some other way at run time gets
+# a `// periphery:ignore - <why>` where it is declared.
+retain_objc_annotated: true
+# A Hashable key's fields are read by hashing it.
+retain_hashable_properties: true
+relative_results: true

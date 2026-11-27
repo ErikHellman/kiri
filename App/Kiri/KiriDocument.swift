@@ -37,12 +37,12 @@ extension UTType {
     @ObservationIgnored weak var editor: EditorController?
 
     /// The file changes when the person saves, never by itself.
-    override class var autosavesInPlace: Bool { false }
+    override nonisolated class var autosavesInPlace: Bool { false }
     /// No Versions browser: Revert goes back to the file.
-    override class var preservesVersions: Bool { false }
+    override nonisolated class var preservesVersions: Bool { false }
 
     // Reading and writing stay on the main thread, where the text is.
-    override class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool { false }
+    override nonisolated class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool { false }
     override func canAsynchronouslyWrite(to url: URL, ofType typeName: String,
                                          for saveOperation: NSDocument.SaveOperationType) -> Bool { false }
 
@@ -50,7 +50,7 @@ extension UTType {
     // calls its type: a `.toml`, a `Makefile` or a dotfile saves in place
     // like a `.txt` does, instead of being sent to Save As as a type the
     // app "can't write".
-    override class func isNativeType(_ type: String) -> Bool { true }
+    override nonisolated class func isNativeType(_ type: String) -> Bool { true }
     override nonisolated func writableTypes(for saveOperation: NSDocument.SaveOperationType) -> [String] {
         [fileType ?? UTType.plainText.identifier]
     }
@@ -100,7 +100,7 @@ extension UTType {
     }
     #if DEBUG || KIRI_SELFTEST
     /// A smaller limit for a self-test.
-    nonisolated(unsafe) static var largeFileThresholdForTests: Int?
+    static var largeFileThresholdForTests: Int?
     #endif
 
     /// The file, when it opened read-only for being too large for the
