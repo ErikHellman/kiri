@@ -98,6 +98,11 @@ targets:
         SUEnableAutomaticChecks: true
         SUScheduledCheckInterval: 86400
         SUAutomaticallyUpdate: true
+        # The stricter checks (Sparkle 2.9+): the disk image's signature is
+        # checked before it is opened, and the appcast, release notes
+        # included, must be signed too (sign_update in release.yml).
+        SUVerifyUpdateBeforeExtraction: true
+        SURequireSignedFeed: true
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: net.daringfireball.markdown
             UTTypeDescription: Markdown Document
