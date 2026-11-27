@@ -302,8 +302,14 @@ extension SelfTest {
             const tasks = [...document.querySelectorAll('#kiri-page li.task')];
             return { done: tasks.filter(t => t.classList.contains('done')).length,
                      aria: tasks.filter(t => t.querySelector(':scope > .check')?.getAttribute('aria-checked') === 'true').length,
-                     focusable: tasks.filter(t => t.querySelector(':scope > .check')?.tabIndex === 0).length };
+                     focusable: tasks.filter(t => t.querySelector(':scope > .check')?.tabIndex === 0).length,
+                     boxes: tasks.map(t => {
+                       const done = t.classList.contains('done');
+                       const aria = t.querySelector(':scope > .check')?.getAttribute('aria-checked') === 'true';
+                       return done !== aria ? '?' : done ? 'x' : '-';
+                     }).join('') };
             """
+        let before = await pageJSON(web, tasksScript) ?? [:]
         let clicked = await pageJSON(web, """
             const tasks = [...document.querySelectorAll('#kiri-page li.task')];
             const i = tasks.findIndex(t => !t.classList.contains('done'));
@@ -323,8 +329,11 @@ extension SelfTest {
         await settle(600)
         let rerendered = await pageJSON(web, "return { more: document.body.textContent.includes('One more line.') };")
         let kept = await pageJSON(web, tasksScript) ?? [:]
-        report(rerendered?["more"] as? Bool == true && kept["done"] as? Int == 2,
-               "a new rendering keeps what was ticked and unticked in the page (\(kept))")
+        // Which boxes, not how many: the file's own may count the same.
+        let boxes = keyed["boxes"] as? String
+        report(rerendered?["more"] as? Bool == true && boxes != nil && kept["boxes"] as? String == boxes
+                   && boxes != before["boxes"] as? String,
+               "a new rendering keeps what was ticked and unticked in the page (file \(before["boxes"] ?? "?"), page \(boxes ?? "?"), new rendering \(kept["boxes"] ?? "?"))")
         report((tab.controller.textView?.string ?? tab.document.text) == fileText && !tab.document.isDocumentEdited,
                "ticking a box leaves the file as it was")
         // Back as the file has them, for the checks after these.
