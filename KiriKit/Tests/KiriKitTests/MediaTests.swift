@@ -153,12 +153,14 @@ import Testing
     // MARK: Tar, made here
 
     /// A tar header block for `name`.
-    static func header(_ name: String, size: Int, type: Character = "0", ustar: Bool = true) -> [UInt8] {
+    /// `sizeField` replaces the octal size with those 12 bytes.
+    static func header(_ name: String, size: Int, type: Character = "0", ustar: Bool = true,
+                       sizeField: [UInt8]? = nil) -> [UInt8] {
         var h = [UInt8](repeating: 0, count: 512)
         func put(_ s: String, _ at: Int) { h.replaceSubrange(at..<at + s.utf8.count, with: Array(s.utf8)) }
         put(name, 0)
         put("0000644", 100)
-        put(String(format: "%011o", size), 124)
+        if let sizeField { h.replaceSubrange(124..<136, with: sizeField) } else { put(String(format: "%011o", size), 124) }
         put("00000000000", 136)
         h[156] = type.asciiValue!
         if ustar { put("ustar", 257); put("00", 263) }
@@ -228,6 +230,112 @@ import Testing
         #expect(throws: ArchiveError.notAnArchive) { try ArchiveReader.listing(of: url, format: .tar) }
         #expect(!TarHeader.checksumIsValid([UInt8](repeating: 0x41, count: 512)))
         #expect(TarHeader.checksumIsValid(Self.header("x", size: 1)))
+    }
+
+    // MARK: Crafted numbers: damage, not a crash
+
+    /// `value` as `count` little-endian bytes.
+    static func le(_ value: UInt64, _ count: Int) -> [UInt8] {
+        (0..<count).map { UInt8(truncatingIfNeeded: value >> (8 * UInt64($0))) }
+    }
+
+    /// A zip's end record: `count` files, a list of `size` bytes at `offset`.
+    static func endRecord(count: UInt64, size: UInt64, offset: UInt64) -> [UInt8] {
+        [0x50, 0x4B, 0x05, 0x06] + le(0, 4) + le(count, 2) + le(count, 2) + le(size, 4) + le(offset, 4) + le(0, 2)
+    }
+
+    /// The ZIP64 locator: where the ZIP64 end record is.
+    static func locator(_ recordOffset: UInt64) -> [UInt8] {
+        [0x50, 0x4B, 0x06, 0x07] + le(0, 4) + le(recordOffset, 8) + le(1, 4)
+    }
+
+    static func zip64Record(count: UInt64, size: UInt64, offset: UInt64) -> [UInt8] {
+        [0x50, 0x4B, 0x06, 0x06] + le(44, 8) + le(0x2D, 2) + le(0x2D, 2) + le(0, 8)
+            + le(count, 8) + le(count, 8) + le(size, 8) + le(offset, 8)
+    }
+
+    /// A central directory entry whose size is in a ZIP64 extra field.
+    static func centralEntry(_ name: String, zip64Size: UInt64) -> [UInt8] {
+        let extra = le(1, 2) + le(16, 2) + le(zip64Size, 8) + le(0, 8)
+        return [0x50, 0x4B, 0x01, 0x02] + le(0x31E, 2) + le(0x2D, 2) + le(0, 2) + le(0, 2) + le(0, 4) + le(0, 4)
+            + le(0xFFFF_FFFF, 4) + le(0xFFFF_FFFF, 4) + le(UInt64(name.utf8.count), 2) + le(UInt64(extra.count), 2)
+            + le(0, 2) + le(0, 2) + le(0, 2) + le(0, 4) + le(0, 4) + Array(name.utf8) + extra
+    }
+
+    func zipListing(_ zip: [UInt8]) throws -> ArchiveListing {
+        try ArchiveReader.listing(of: try write(Data(zip), "crafted.zip"), format: .zip)
+    }
+
+    @Test func zip64EndRecordBelowZero() throws {
+        let zip = Self.locator(0x8000_0000_0000_0000) + Self.endRecord(count: 0xFFFF, size: 0xFFFF_FFFF, offset: 0xFFFF_FFFF)
+        #expect(throws: ArchiveError.damaged("its ZIP64 end record is missing")) { try self.zipListing(zip) }
+    }
+
+    @Test func zip64ListNearTheLimit() throws {
+        let zip = Self.zip64Record(count: 1, size: 46, offset: UInt64(Int64.max - 10)) + Self.locator(0)
+            + Self.endRecord(count: 0xFFFF, size: 0xFFFF_FFFF, offset: 0xFFFF_FFFF)
+        #expect(throws: ArchiveError.damaged("its list of files is out of place")) { try self.zipListing(zip) }
+        let negative = Self.zip64Record(count: UInt64.max, size: 46, offset: 0) + Self.locator(0)
+            + Self.endRecord(count: 0xFFFF, size: 0xFFFF_FFFF, offset: 0xFFFF_FFFF)
+        #expect(throws: ArchiveError.damaged("its list of files is out of place")) { try self.zipListing(negative) }
+    }
+
+    @Test func zip64FileSizes() throws {
+        let large = Self.centralEntry("large", zip64Size: 5_000_000_000)
+        #expect(try self.zipListing(large + Self.endRecord(count: 1, size: UInt64(large.count), offset: 0)).entries
+            == [ArchiveEntry(path: "large", size: 5_000_000_000)])
+        let negative = Self.centralEntry("negative", zip64Size: UInt64.max)
+        #expect(throws: ArchiveError.damaged("a file’s size in it is out of range")) {
+            try self.zipListing(negative + Self.endRecord(count: 1, size: UInt64(negative.count), offset: 0))
+        }
+    }
+
+    @Test func zipWithTooManyFiles() throws {
+        let entries = Self.centralEntry("a", zip64Size: 1) + Self.centralEntry("b", zip64Size: 1)
+        let zip = entries + Self.endRecord(count: 2, size: UInt64(entries.count), offset: 0)
+        let read: (Int64, Int) throws -> Data = { offset, count in Data(zip[Int(offset)..<min(zip.count, Int(offset) + count)]) }
+        #expect(try ZipDirectory.entries(size: Int64(zip.count), entryLimit: 2, read: read).count == 2)
+        #expect(throws: ArchiveError.unsupported("a list of files this long")) {
+            try ZipDirectory.entries(size: Int64(zip.count), entryLimit: 1, read: read)
+        }
+    }
+
+    /// A pax record, "<length> <key>=<value>\n", for a record of 10 to 99 bytes.
+    static func paxRecord(_ keyValue: String) -> [UInt8] {
+        let rest = " \(keyValue)\n"
+        return Array((String(rest.utf8.count + 2) + rest).utf8)
+    }
+
+    @Test(arguments: ["size=9223372036854775807", "size=-1", "GNU.sparse.realsize=-5"])
+    func tarSizesOutOfRange(_ record: String) throws {
+        let tar = Self.file("PaxHeader", Self.paxRecord(record), type: "x") + Self.file("big", []) + Self.end
+        let url = try write(Data(tar), "crafted.tar")
+        #expect(throws: ArchiveError.damaged("a file’s size in it is out of range")) {
+            try ArchiveReader.listing(of: url, format: .tar)
+        }
+    }
+
+    @Test func tarBinarySizeNearTheLimit() throws {
+        let field: [UInt8] = [0x80, 0, 0, 0, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF]
+        #expect(TarHeader.number(field[...]) == 0x7FFF_FFFF_FFFF_FEFF)
+        var parser = TarParser()
+        #expect(throws: ArchiveError.damaged("a file’s size in it is out of range")) {
+            try parser.consume(Data(Self.header("big", size: 0, sizeField: field) + Self.end))
+        }
+    }
+
+    @Test func numbersTooLongToRead() {
+        #expect(TarParser.paxRecords(Array("99999999999999999999999 size=1\n".utf8)).isEmpty)
+        #expect(TarHeader.number(Array(String(repeating: "7", count: 30).utf8)[...]) == nil)
+    }
+
+    @Test func tarWithTooManyFiles() throws {
+        let tar = Self.file("a", [1]) + Self.file("b", [2]) + Self.file("c", [3]) + Self.end
+        var three = TarParser(entryLimit: 3)
+        try three.consume(Data(tar))
+        #expect(three.entries.count == 3)
+        var parser = TarParser(entryLimit: 2)
+        #expect(throws: ArchiveError.unsupported("a list of files this long")) { try parser.consume(Data(tar)) }
     }
 
     // MARK: Gzip
@@ -314,6 +422,12 @@ import Testing
         #expect(open.map(\.depth) == [0, 0, 1, 2, 2, 1, 0, 0])
         // Several things at the top: nothing opens by itself.
         #expect(tree.initiallyExpanded.isEmpty)
+    }
+
+    @Test func folderSizesStopAtTheLargestNumber() {
+        let tree = ArchiveTree(entries: [ArchiveEntry(path: "a/x", size: .max), ArchiveEntry(path: "a/y", size: .max)])
+        #expect(tree.totalSize == .max)
+        #expect(tree.root.children[0].size == .max)
     }
 
     @Test func oneFolderAtTheTopOpens() {
