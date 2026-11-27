@@ -126,8 +126,8 @@ import Testing
         print("SIDEBAR SEARCH 20 000 files: ordered once in \(sorting); one letter \(one) (\(many) found), a word \(word) (\(some)), nothing \(none)")
         #expect(many > 10_000 && some > 0 && nothing == 0)
         // A debug build, as `swift test` makes, with the other suites running.
-        #expect(one < .milliseconds(66), "one letter \(one)")
-        #expect(sorting < .seconds(1), "ordering \(sorting)")
+        #expect(one < timeLimit(.milliseconds(66)), "one letter \(one)")
+        #expect(sorting < timeLimit(.seconds(1)), "ordering \(sorting)")
     }
 
     @Test func theFoldersAboveFilesAreThereEachOnce() {
