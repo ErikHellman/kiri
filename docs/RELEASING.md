@@ -58,12 +58,20 @@ Other ways to pass the notary credentials, for CI where there is no keychain pro
 2. **Merge them to `main`** through a pull request. That merge is also the commit of its own that a release needs (see Updates).
 3. **Tag the merged commit on `origin/main`**, not your branch's commit, and push the tag:
    ```sh
-   git fetch origin main
+   git fetch origin main --tags
+   scripts/check-release-tag.sh v0.3.2 origin/main   # what the job checks first
    git tag -a v0.3.2 -m "Kiri 0.3.2" origin/main
    git push origin v0.3.2
    ```
 
-The job reads the notes from the tagged commit, with `scripts/release-notes.sh`, and stops before the build when the file is missing or empty. If that happens, delete the tag (`git push origin :refs/tags/v0.3.2 && git tag -d v0.3.2`), merge the notes and tag again. The tag's own message isn't used.
+The job first checks the tag, with `scripts/check-release-tag.sh`, and stops before anything is built or signed unless all of this holds:
+
+- the tag is `vMAJOR.MINOR.PATCH`, three plain numbers (`v0.3.2`, never `v0.3`, `v0.03.2` or `v0.3.2-beta`);
+- its commit is on `main`: a tag on a branch's commit is never released;
+- its version is higher than every other version tag's, and the last version's commit is behind it on `main` with at least one commit in between, so the build number (the number of commits, which Sparkle compares) only grows;
+- its commit has the release notes, `docs/release-notes/<version>.md`.
+
+It then reads the notes from the tagged commit, with `scripts/release-notes.sh`, and stops when the file is empty. If the job stops for any of these, delete the tag (`git push origin :refs/tags/v0.3.2 && git tag -d v0.3.2`), put right what it named and tag again. A higher version tag that was never released stands in the way of lower ones until it is deleted. The tag's own message isn't used.
 
 On a macOS runner it builds a universal app with the tag's version (`0.2.0`) and the number of commits as its build number, signs it with your Developer ID from a keychain that exists only for that job, notarizes and staples the app and the disk image with an App Store Connect API key, signs the image for Sparkle, writes the update feed, and publishes `Kiri-0.2.0.dmg`, its SHA-256 and `appcast.xml` as release `v0.2.0` of this repo, with the workflow's own `GITHUB_TOKEN`. The repo must be **public**: Sparkle downloads updates without signing in, and a private repo's release files answer with a 404. No version needs changing in `App/project.yml` first: the tag decides.
 

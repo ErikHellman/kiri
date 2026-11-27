@@ -20,6 +20,9 @@ jobs:
       - name: test KiriKit
         working-directory: KiriKit
         run: swift test
+      # What a release's tag must be (.github/workflows/release.yml).
+      - name: test the release tag check
+        run: scripts/tests/check-release-tag-test.sh
 
   macos:
     name: macos
