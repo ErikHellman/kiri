@@ -4,7 +4,7 @@ import KiriKit
 #if DEBUG || KIRI_SELFTEST
 /// The answer the self-tests give to "Open it read-only?", instead of
 /// the alert. Nil asks.
-@MainActor enum LargeFileAnswer {
+enum LargeFileAnswer {
     /// `-KiriLargeFileAnswer YES` (or NO) sets it for a test launch.
     static var forTests: Bool? = UserDefaults.standard.object(forKey: "KiriLargeFileAnswer") == nil ? nil
         : UserDefaults.standard.bool(forKey: "KiriLargeFileAnswer")
@@ -27,7 +27,7 @@ struct LargeFileStatus: Equatable {
 /// was at the end stays there. A file that gets shorter (truncated, or
 /// rotated by copying and truncating) is opened again. A log rotated by
 /// renaming it is followed as any document is, to its new name.
-@MainActor final class LargeFileViewer {
+final class LargeFileViewer {
     let view: LargeFileView
     private(set) weak var document: KiriDocument?
     private weak var model: EditorModel?
@@ -39,7 +39,7 @@ struct LargeFileStatus: Equatable {
     private let queue = DispatchQueue(label: "se.hellsoft.kiri.large-file", qos: .userInitiated)
 
     /// Says whether work off the main thread is still wanted.
-    final class Token: @unchecked Sendable {
+    nonisolated final class Token: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }

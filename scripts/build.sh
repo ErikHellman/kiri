@@ -9,7 +9,8 @@
 # Mac's architecture; ARCH="arm64 x86_64" builds a universal app.
 # KIRI_VERSION and KIRI_BUILD, if set, replace App/project.yml's version
 # (CFBundleShortVersionString) and build number (CFBundleVersion), as the
-# release workflow does.
+# release workflow does. KIRI_WARNINGS_AS_ERRORS=YES fails the build on a
+# warning in Kiri's own code, as CI does.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -114,7 +115,8 @@ echo "==> Building Kiri (Release, $ARCH)"
 run_xcodebuild build -project "$PROJECT" -scheme Kiri -configuration Release \
     -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath "$DERIVED" \
     -skipPackageUpdates -disableAutomaticPackageResolution \
-    ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO $VERSION_SETTINGS -quiet
+    ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO $VERSION_SETTINGS \
+    ${KIRI_WARNINGS_AS_ERRORS:+KIRI_WARNINGS_AS_ERRORS=$KIRI_WARNINGS_AS_ERRORS} -quiet
 
 rm -rf "$APP"
 cp -R "$DERIVED/Build/Products/Release/Kiri.app" "$APP"

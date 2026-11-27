@@ -9,7 +9,7 @@ import KiriKit
 ///
 /// A tab notes its position a moment after the selection or the scroll
 /// changes, when it closes or takes another file, and when Kiri quits.
-@MainActor enum FilePositions {
+enum FilePositions {
     static let key = "KiriFilePositions"
 
     private static var store: FilePositionStore = {

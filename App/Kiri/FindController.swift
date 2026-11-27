@@ -8,7 +8,7 @@ import Observation
 ///
 /// The bar is only a view of this, so everything works (and is tested)
 /// whether or not SwiftUI is drawing the window.
-@MainActor @Observable final class FindController {
+@Observable final class FindController {
     enum Action {
         case show, showReplace, next, previous, useSelection, replace, replaceAll, hideReplace, close
     }
@@ -78,7 +78,7 @@ import Observation
     static let debounce = 0.04
 
     /// Says whether a search off the main thread is still wanted.
-    private final class Token: @unchecked Sendable {
+    nonisolated private final class Token: @unchecked Sendable {
         private let lock = NSLock()
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }
@@ -488,6 +488,7 @@ import Observation
                 guard let self, !token.isCancelled, let storage = self.textView?.textStorage else { return }
                 self.work = nil
                 // An unchanging copy: the document goes on being edited.
+                // swiftlint:disable:next force_cast - an NSString's copy is one
                 let snapshot = (storage.string as NSString).copy() as! NSString as String
                 self.queue.async {
                     let found = search.matches(in: snapshot, isCancelled: { token.isCancelled })
@@ -862,7 +863,7 @@ extension FindController {
 /// line number after a colon (`PaletteController`, its `:` mode), and ⌘L
 /// opens the palette with the colon typed. This is the engine of that
 /// mode: where the editor was, the preview and going back.
-@MainActor @Observable final class GoToLineController {
+@Observable final class GoToLineController {
     @ObservationIgnored weak var model: EditorModel?
 
     /// A line is being typed: the palette is in its `:` mode.
@@ -886,17 +887,6 @@ extension FindController {
     @ObservationIgnored private var previewing = false
 
     private var controller: EditorController? { model?.controller }
-
-    #if DEBUG || KIRI_SELFTEST
-    /// In a given state with no editor behind it, for pictures drawn offscreen.
-    static func sample(text: String, invalid: Bool = false) -> GoToLineController {
-        let goToLine = GoToLineController()
-        goToLine.text = text
-        goToLine.isInvalid = invalid
-        goToLine.isOpen = true
-        return goToLine
-    }
-    #endif
 
     /// ⌘L, Edit ▸ Go to Line…, the status bar's position: the palette,
     /// with the colon typed and the keyboard after it.

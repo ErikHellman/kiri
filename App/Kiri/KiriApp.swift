@@ -70,23 +70,21 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
         super.init()
         // Before anything asks for the shared document controller: the
         // first one made is it.
-        MainActor.assumeIsolated { _ = KiriDocumentController() }
+        _ = KiriDocumentController()
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            #if DEBUG || KIRI_SELFTEST
-            SelfTest.guardLaunch()
-            #endif
-            KiriCLI.install()
-            FrontEditor.shared.start()
-            // Unsaved text is kept for a crash: a recovery copy this long
-            // after an edit (AppKit's default is never).
-            NSDocumentController.shared.autosavingDelay = KiriDocumentController.recoveryDelay
-            LaunchDocument.watchRestoration()
-            // Before Sparkle starts (it leaves keys of its own behind).
-            WhatsNew.launch()
-        }
+        #if DEBUG || KIRI_SELFTEST
+        SelfTest.guardLaunch()
+        #endif
+        KiriCLI.install()
+        FrontEditor.shared.start()
+        // Unsaved text is kept for a crash: a recovery copy this long
+        // after an edit (AppKit's default is never).
+        NSDocumentController.shared.autosavingDelay = KiriDocumentController.recoveryDelay
+        LaunchDocument.watchRestoration()
+        // Before Sparkle starts (it leaves keys of its own behind).
+        WhatsNew.launch()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -96,23 +94,19 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
         // (no event is current here in that case).
         let event = NSAppleEventManager.shared().currentAppleEvent
         let simplyOpened = event.map { $0.eventClass == kCoreEventClass && $0.eventID == kAEOpenApplication } ?? false
-        MainActor.assumeIsolated {
-            // Again, in case SwiftUI set up its own URL handler in between.
-            KiriCLI.install()
-            LaunchDocument.finishedLaunching(simplyOpened: simplyOpened)
-            // Sparkle: a check once a day, the first a moment after launch.
-            Updater.start()
-        }
+        // Again, in case SwiftUI set up its own URL handler in between.
+        KiriCLI.install()
+        LaunchDocument.finishedLaunching(simplyOpened: simplyOpened)
+        // Sparkle: a check once a day, the first a moment after launch.
+        Updater.start()
     }
 
     /// A click on the Dock icon with no window open: a new document.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        MainActor.assumeIsolated {
-            // With documents open but out of sight, AppKit brings one back.
-            guard !flag, NSDocumentController.shared.documents.isEmpty else { return true }
-            NSDocumentController.shared.newDocument(nil)
-            return false
-        }
+        // With documents open but out of sight, AppKit brings one back.
+        guard !flag, NSDocumentController.shared.documents.isEmpty else { return true }
+        NSDocumentController.shared.newDocument(nil)
+        return false
     }
 }
 
@@ -124,7 +118,7 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
 /// crash are all there by then. (AppKit's "default launch" flag is no
 /// guide: it is off after a crash or a forced quit even when there is
 /// nothing to restore, which would leave Kiri without a window.)
-@MainActor enum LaunchDocument {
+enum LaunchDocument {
     private static var launched = false
     private static var restored = false
     private static var wanted = false
@@ -178,13 +172,6 @@ final class KiriDocumentController: NSDocumentController {
     func kept(_ url: URL?) {
         guard !glanced.isEmpty, let url, glanced.remove(url.standardizedFileURL) != nil else { return }
         noteNewRecentDocumentURL(url)
-    }
-
-    /// The same, for the document `window` shows. (Asked at every edit:
-    /// nothing is looked up while no file is only being looked at.)
-    func kept(in window: NSWindow) {
-        guard !glanced.isEmpty else { return }
-        kept(document(for: window)?.fileURL)
     }
 
     /// Large files open without asking whether to open them read-only:
@@ -277,7 +264,7 @@ final class KiriDocumentController: NSDocumentController {
 }
 
 /// File ▸ Open Recent's list.
-@MainActor @Observable final class RecentDocuments {
+@Observable final class RecentDocuments {
     static let shared = RecentDocuments()
     private(set) var urls: [URL] = NSDocumentController.shared.recentDocumentURLs
 

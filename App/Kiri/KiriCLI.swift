@@ -18,7 +18,7 @@ import KiriKit
 ///                                  script copies it into, followed read-only as it grows;
 ///                                  deleted, with its folder, when the tab closes)
 ///     untitled                    (a new untitled tab)
-@MainActor enum KiriCLI {
+enum KiriCLI {
     static let scheme = "kiri"
 
     static var requestDirectory: URL {
@@ -119,7 +119,7 @@ import KiriKit
 
     /// Opens a request's entries one after another, each tab after the one
     /// before.
-    @MainActor private final class Opener {
+    private final class Opener {
         let request: Request
         var queue: [Request.Entry]
         var opened: [NSDocument] = []
@@ -271,7 +271,7 @@ import KiriKit
 /// window's tabs: a window of its own (with a folder sidebar or not), or
 /// among the tabs of `host` (a window files were dropped on), after the
 /// tab of `after`. `DocumentWindow.place` takes it.
-@MainActor enum WindowPlacement {
+enum WindowPlacement {
     struct Placement {
         var folder: FolderSession?
         weak var host: DocumentNSWindow?
@@ -290,7 +290,7 @@ import KiriKit
 }
 
 /// Finds a document's tab and editor.
-@MainActor enum Editors {
+enum Editors {
     /// The window `doc` is a tab of.
     static func window(for doc: NSDocument) -> NSWindow? { DocumentWindow.window(of: doc) }
 
@@ -312,7 +312,7 @@ import KiriKit
 
 /// `kiri -w`: deletes each request's marker once all its documents are
 /// closed (or Kiri quits), which ends the waiting script.
-@MainActor final class Waits {
+final class Waits {
     static let shared = Waits()
     private struct Wait {
         let marker: URL
@@ -357,7 +357,7 @@ import KiriKit
 
 /// Files `kiri new.txt` created so they could open: deleted again when
 /// their tab closes without a save.
-@MainActor final class NewFiles {
+final class NewFiles {
     static let shared = NewFiles()
     private var created: [URL: Date] = [:]
 
@@ -384,9 +384,10 @@ import KiriKit
 }
 
 /// Apple events arrive on the main thread.
-@MainActor private final class URLEventHandler: NSObject {
+private final class URLEventHandler: NSObject {
     static let shared = URLEventHandler()
 
+    // periphery:ignore:parameters reply - the selector has them
     @objc func handle(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: string) else { return }

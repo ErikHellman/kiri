@@ -112,6 +112,7 @@ public struct LargeFileSearch: @unchecked Sendable {
                 }
             }
             b += these.count
+            // swiftlint:disable:next force_unwrapping - a batch has blocks
             progress(result, these.last!.upperBound)
         }
         return result
@@ -153,6 +154,7 @@ public struct LargeFileSearch: @unchecked Sendable {
         let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: span.count, alignment: 64)
         defer { buffer.deallocate() }
         let got = file.read(into: buffer, at: span.lowerBound)
+        // swiftlint:disable:next force_unwrapping - a buffer that was allocated has an address
         let bytes = UnsafeMutableBufferPointer(start: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), count: got)
         let (ranges, count): ([Range<Int>], Int)
         if let regex {
@@ -184,6 +186,7 @@ public struct LargeFileSearch: @unchecked Sendable {
                 // The line began before these bytes.
                 start = base == 0 ? 0 : file.lineStart(before: base)
             }
+            // swiftlint:disable:next force_unwrapping - set just above
             out.append(start!)
             previousStart = start
             previous = r.lowerBound - base
@@ -201,6 +204,7 @@ public struct LargeFileSearch: @unchecked Sendable {
         guard n > 0, bytes.count >= n, let start = bytes.baseAddress else { return (out, 0) }
         let a = anchor, key = needle[a]
         needle.withUnsafeBufferPointer { needle in
+            // swiftlint:disable:next force_unwrapping - the needle is not empty (guarded above)
             let np = needle.baseAddress!
             // A match at i has `key` at i + a; i runs 0 ... last.
             let last = min(limit - 1, bytes.count - n)

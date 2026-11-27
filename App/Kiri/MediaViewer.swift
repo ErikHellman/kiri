@@ -44,7 +44,7 @@ enum MediaZoom { case bigger, smaller, actualSize }
 /// text file. Made when the tab shows such a file, never at launch: the
 /// video player and its frameworks load only when a video opens
 /// (`VideoPlugin`).
-@MainActor final class MediaViewer {
+final class MediaViewer {
     let view: ViewerContainer
     let kind: MediaKind
     private(set) weak var document: KiriDocument?
@@ -140,7 +140,7 @@ final class ViewerContainer: NSView {
         registerForDraggedTypes(FileDrop.types)
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     override var isFlipped: Bool { true }
 
@@ -219,12 +219,7 @@ struct ViewerMessage: View {
     }
 }
 
-// MARK: The tab's side
-
-extension DocumentTab {
-    /// The tab shows a picture, a video or an archive (read-only), not text.
-    var showsMedia: Bool { mediaViewer != nil }
-}
+// MARK: Telemetry
 
 extension Telemetry {
     /// A picture, video or archive opened in a viewer: which kind, and its format.

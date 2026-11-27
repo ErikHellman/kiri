@@ -22,7 +22,7 @@ import WebKit
 /// Settings ▸ Privacy): until then the page's policy and `PreviewFiles`
 /// hold them back, and the tab shows a notice with Accept and Deny
 /// (`DocumentTab.previewNotice`).
-@MainActor final class MarkdownPreview: NSObject {
+final class MarkdownPreview: NSObject {
     let webView: PreviewWebView
     private weak var tab: DocumentTab?
     /// It shows a rendering: the slot can put it in the editor's place.
@@ -354,7 +354,7 @@ import WebKit
         weak var owner: MarkdownPreview?
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            MainActor.assumeIsolated { owner?.received(message.body) }
+            owner?.received(message.body)
         }
     }
 }
@@ -502,7 +502,7 @@ final class PreviewWebView: WKWebView {
 /// What a link in the preview would open, put to the person before it
 /// does: a file that isn't text (in its app), an app or another program
 /// (which runs), or another app's own kind of link.
-struct LinkQuestion: Equatable {
+struct LinkQuestion {
     var title: String
     var detail: String
     /// Opening it runs a program.
@@ -512,7 +512,7 @@ struct LinkQuestion: Equatable {
     private static let runners: Set<String> = ["com.apple.Terminal", "com.apple.JavaLauncher", "com.apple.installer"]
 
     /// For a file or folder that is there.
-    @MainActor init(file: URL) {
+    init(file: URL) {
         let values = try? file.resourceValues(forKeys: [.isDirectoryKey, .isApplicationKey, .isExecutableKey, .contentTypeKey])
         let app = NSWorkspace.shared.urlForApplication(toOpen: file)
         let isApp = values?.isApplication == true
@@ -535,7 +535,7 @@ struct LinkQuestion: Equatable {
     }
 
     /// For a link that `app` opens.
-    @MainActor init(link: URL, app: URL) {
+    init(link: URL, app: URL) {
         runs = false
         title = "Open this link in \(Self.name(of: app))?"
         detail = Self.shortened(link.absoluteString) + "\n\n"
@@ -597,7 +597,7 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
     /// for its notice.
     private func serves(_ file: URL) -> Bool {
         if allowsOutside || MarkdownPage.isInside(file, folder: folder) { return true }
-        MainActor.assumeIsolated { owner?.refusedOutside() }
+        owner?.refusedOutside()
         return false
     }
 

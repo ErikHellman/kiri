@@ -5,7 +5,7 @@ import SwiftUI
 /// A folder opened with `kiri <folder>` (or File ▸ Open Folder…), shared by
 /// every tab of its window: the tree, which folders are expanded and
 /// whether the sidebar shows.
-@MainActor @Observable final class FolderSession {
+@Observable final class FolderSession {
     let root: FileNode
     var sidebarVisible = true
     var expanded: Set<URL> = []
@@ -149,7 +149,7 @@ import SwiftUI
 
 /// Which window shows which folder. The tabs of a folder window, opened
 /// in it, dragged into it or merged into it, share its sidebar.
-@MainActor enum FolderSessions {
+enum FolderSessions {
     private static var byWindow: [ObjectIdentifier: (window: WeakWindow, session: FolderSession)] = [:]
     private static var observing = false
 
@@ -164,12 +164,6 @@ import SwiftUI
         NotificationCenter.default.post(name: didChange, object: nil)
     }
 
-    /// `window` is no longer one of a folder's (its tab was moved out to
-    /// a window of its own): its sidebar goes.
-    static func remove(for window: NSWindow) {
-        guard byWindow.removeValue(forKey: ObjectIdentifier(window)) != nil else { return }
-        NotificationCenter.default.post(name: didChange, object: nil)
-    }
 
     static func session(for window: NSWindow) -> FolderSession? {
         if let entry = byWindow[ObjectIdentifier(window)], entry.window.window === window { return entry.session }
@@ -203,7 +197,7 @@ import SwiftUI
 /// every tab (a window's tabs share its one sidebar), remembered
 /// from launch to launch (`Prefs.sidebarWidthKey`). The edge between the
 /// sidebar and the editor sets it (`SidebarEdge`).
-@MainActor @Observable final class SidebarWidth {
+@Observable final class SidebarWidth {
     static let shared = SidebarWidth()
 
     /// The width asked for, within `SidebarLayout.widths`. A window too
@@ -314,7 +308,7 @@ struct SidebarEdge: View {
 
 /// A file or folder in the sidebar. Folders read their contents when first
 /// expanded.
-@MainActor final class FileNode: Identifiable {
+final class FileNode: Identifiable {
     let url: URL
     let isDirectory: Bool
     private var loaded: [FileNode]?
@@ -428,6 +422,7 @@ struct FolderSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
+                        // swiftlint:disable:next redundant_discardable_let - a view builder takes no `_ =`
                         let _ = session.generation
                         let marks = tabs.openFiles
                         ForEach(session.root.children) { node in
@@ -796,6 +791,7 @@ private struct FileRow: View {
             }
 
             if node.isDirectory, expanded {
+                // swiftlint:disable:next redundant_discardable_let - a view builder takes no `_ =`
                 let _ = session.generation
                 if session.editing(in: tabs.window) == .newFile(in: node.url) {
                     NameRow(session: session, depth: depth + 1).id(NameRow.newFileID)

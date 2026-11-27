@@ -17,7 +17,7 @@ import QuartzCore
 ///
 /// With reduced motion (the system's, or Motion: Reduced) and with Motion:
 /// Off there is no fade: the colors change at once.
-@MainActor enum ThemeFade {
+enum ThemeFade {
     /// The transition's key on a window's content layer. (A layer has one
     /// transition at a time, under this key whatever key it is added with.)
     static let key = kCATransition

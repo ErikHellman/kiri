@@ -1,0 +1,80 @@
+name: nightly
+
+# A Release build of the app every night, with warnings as errors, so what
+# only a Release build warns about (whole-module optimization) turns up the
+# next morning instead of when a version is tagged. Skipped when main hasn't
+# changed since the last nightly. A PR that changes this file runs it too.
+on:
+  schedule:
+    # 03:17 in Stockholm in winter (04:17 in summer).
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/nightly.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # App/project.yml, KiriKit/Package.swift.
+  KIRI_WARNINGS_AS_ERRORS: "YES"
+
+jobs:
+  changes:
+    name: changes since the last nightly
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Only scheduled runs skip: a manual or PR run always builds.
+          if [ "$GITHUB_EVENT_NAME" != schedule ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The commit the last finished nightly saw (a cancelled one doesn't count).
+          last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/nightly.yml/runs?event=schedule&status=completed&per_page=20" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].head_sha // ""')
+          if [ "$last" = "$GITHUB_SHA" ]; then
+            echo "main is still at ${GITHUB_SHA:0:7}, as at the last nightly: nothing to build." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release-build:
+    name: Release build
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: select Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: build app (Release, arm64 and x86_64)
+        working-directory: App
+        run: |
+          brew install xcodegen
+          xcodegen
+          # The packages at the commits the lockfile names (scripts/packages.sh).
+          ../scripts/packages.sh lock
+          xcodebuild build -project Kiri.xcodeproj -scheme Kiri -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build \
+            -disableAutomaticPackageResolution \
+            ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO KIRI_WARNINGS_AS_ERRORS=YES -quiet
+          ../scripts/packages.sh check
+          # Fail if nothing was built (an empty scheme also "succeeds").
+          test -x build/Build/Products/Release/Kiri.app/Contents/MacOS/Kiri
+          lipo -archs build/Build/Products/Release/Kiri.app/Contents/MacOS/Kiri

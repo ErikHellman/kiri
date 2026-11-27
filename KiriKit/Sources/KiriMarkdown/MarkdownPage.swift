@@ -59,6 +59,7 @@ public enum MarkdownPage {
         components.scheme = scheme
         components.host = "file"
         components.path = folderPrefix(folder) ?? "/"
+        // swiftlint:disable:next force_unwrapping - the scheme and host make a URL
         return components.url ?? URL(string: "\(scheme)://file/")!
     }
 

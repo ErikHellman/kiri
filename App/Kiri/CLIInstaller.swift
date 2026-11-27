@@ -4,7 +4,7 @@ import Observation
 /// Install Command Line Tool… (the app menu, Settings and the first-run
 /// hint): links /usr/local/bin/kiri to the script inside the app bundle,
 /// asking for an administrator password when /usr/local/bin isn't writable.
-@MainActor enum CLIInstaller {
+enum CLIInstaller {
     static let linkPath = "/usr/local/bin/kiri"
 
     /// Whether a terminal has the `kiri` command.
@@ -92,7 +92,7 @@ import Observation
 /// Whether the `kiri` command is installed, for Settings and the first-run
 /// hint. Looked up when Kiri starts, when it comes to the front (the link
 /// may have been made or removed in a terminal) and after an install.
-@MainActor @Observable final class CommandLineTool {
+@Observable final class CommandLineTool {
     static let shared = CommandLineTool()
 
     private(set) var status: CLIInstaller.Status

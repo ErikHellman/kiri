@@ -21,13 +21,10 @@ struct MenuCommand: Equatable, Identifiable {
     let isChoice: Bool
 
     var id: String { path.joined(separator: "\u{1F}") }
-
-    /// "Save, Command S": what VoiceOver hears.
-    var spoken: String { shortcut.map { "\(title), \($0.spoken)" } ?? title }
 }
 
 /// The menu bar as a list of commands, and running one of them.
-@MainActor enum MenuCommands {
+enum MenuCommands {
     /// What is left out because it is not a command to look for: the
     /// system's items for the app as a whole (Hide, Quit), what belongs to
     /// the pointer and the menu bar (the window list, and what macOS adds
@@ -129,8 +126,10 @@ struct MenuCommand: Equatable, Identifiable {
         }
         let special: [Character: KeyEquivalent] = [
             "\r": .return, "\t": .tab, "\u{1B}": .escape, " ": .space, "\u{8}": .delete, "\u{7F}": .delete,
+            // swiftlint:disable force_unwrapping - AppKit's function keys are characters
             Character(UnicodeScalar(NSUpArrowFunctionKey)!): .upArrow, Character(UnicodeScalar(NSDownArrowFunctionKey)!): .downArrow,
             Character(UnicodeScalar(NSLeftArrowFunctionKey)!): .leftArrow, Character(UnicodeScalar(NSRightArrowFunctionKey)!): .rightArrow,
+            // swiftlint:enable force_unwrapping
         ]
         return KeyboardShortcut(special[key] ?? KeyEquivalent(key), modifiers: modifiers)
     }
