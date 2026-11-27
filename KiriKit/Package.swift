@@ -55,7 +55,7 @@ let package = Package(
         .library(name: "KiriMarkdown", targets: ["KiriMarkdown"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/tree-sitter/swift-tree-sitter", exact: "0.10.0"),
+        .package(url: "https://github.com/tree-sitter/swift-tree-sitter", exact: "0.25.0"),
         // CommonMark + GitHub tables, task lists and strikethrough (cmark-gfm), for the Markdown preview.
         .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
     ] + grammars.map { .package(url: $0.url, exact: $0.version) },
