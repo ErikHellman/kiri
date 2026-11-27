@@ -127,8 +127,10 @@ The first build downloads the Tree-sitter grammars, about 1.4 GB of git history,
 For development, generate the project and open it in Xcode:
 
 ```sh
-cd App && xcodegen && open Kiri.xcodeproj
+cd App && xcodegen && ../scripts/packages.sh lock && open Kiri.xcodeproj
 ```
+
+Kiri's Swift packages are locked to exact commits in `App/Package.resolved` (and `KiriKit/Package.resolved` for `swift test`), so a build never takes code that wasn't reviewed here, even if a package's version tag is moved. `scripts/build.sh`, CI and releases build only from those commits and fail otherwise. Xcode keeps the lockfile inside the generated project, which is why `scripts/packages.sh lock` puts it there after `xcodegen`. After changing a version in `App/project.yml` or `KiriKit/Package.swift`, run `scripts/packages.sh update`, look at what changed and commit both files.
 
 `Kiri.xcodeproj` and `Info.plist` are generated from `App/project.yml` and not checked in. To sign with your own identity, set `DEVELOPMENT_TEAM` in `App/project.yml` (Xcode) or `SIGN_IDENTITY` for `scripts/build.sh`.
 
