@@ -50,7 +50,8 @@ extension SelfTest {
     /// The Markdown preview (`MarkdownPreview`): ⌃⌘P shows it in the
     /// editor's place, at the part of the file at the top of the editor;
     /// the page has the front matter as a table first, Nunito, colored
-    /// code with a Copy button, GitHub's tables, tasks and alerts, the
+    /// code with a Copy button, GitHub's tables, tasks (their boxes
+    /// ticking in the page, `tasksStage`) and alerts, the
     /// file's image, and its Mermaid diagrams drawn (a broken one says
     /// so); links go to the app (recorded here, not opened), and one that
     /// would open another app or run one asks first; pictures from the
@@ -210,6 +211,9 @@ extension SelfTest {
         report(copied.hasPrefix("struct Greeter") && copied.contains("func greet()"),
                "Copy puts the block's code on the pasteboard (“\(copied.prefix(30))”)")
 
+        // Task boxes tick and untick in the page only.
+        await tasksStage(tab, preview)
+
         // Links go to the app, and the page stays.
         _ = await pageJSON(web, "document.querySelector('a[href=\"https://example.com/kiri\"]').click(); return {};")
         for _ in 0..<20 where opened.urls.isEmpty { await settle(50) }
@@ -286,6 +290,63 @@ extension SelfTest {
         }
         tab.model.language = .markdown
         await settle(200)
+    }
+
+    /// Task lists in the preview: a click or Space ticks and unticks a
+    /// task's box in the page, never the file, and a new rendering of the
+    /// text keeps what was ticked. The file is shown as it was afterwards.
+    private static func tasksStage(_ tab: DocumentTab, _ preview: MarkdownPreview) async {
+        let web = preview.webView
+        let fileText = tab.controller.textView?.string ?? tab.document.text
+        let tasksScript = """
+            const tasks = [...document.querySelectorAll('#kiri-page li.task')];
+            return { done: tasks.filter(t => t.classList.contains('done')).length,
+                     aria: tasks.filter(t => t.querySelector(':scope > .check')?.getAttribute('aria-checked') === 'true').length,
+                     focusable: tasks.filter(t => t.querySelector(':scope > .check')?.tabIndex === 0).length,
+                     boxes: tasks.map(t => {
+                       const done = t.classList.contains('done');
+                       const aria = t.querySelector(':scope > .check')?.getAttribute('aria-checked') === 'true';
+                       return done !== aria ? '?' : done ? 'x' : '-';
+                     }).join('') };
+            """
+        let before = await pageJSON(web, tasksScript) ?? [:]
+        let clicked = await pageJSON(web, """
+            const tasks = [...document.querySelectorAll('#kiri-page li.task')];
+            const i = tasks.findIndex(t => !t.classList.contains('done'));
+            tasks[i].querySelector(':scope > .check').click();
+            return Object.assign({ index: i }, (() => { \(tasksScript) })());
+            """) ?? [:]
+        report(clicked["done"] as? Int == 3 && clicked["aria"] as? Int == 3 && clicked["focusable"] as? Int == 3,
+               "a click ticks a task's box, and each box takes the keyboard (\(clicked))")
+        let keyed = await pageJSON(web, """
+            const check = document.querySelector('#kiri-page li.task > .check');
+            check.focus();
+            check.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+            \(tasksScript)
+            """) ?? [:]
+        report(keyed["done"] as? Int == 2 && keyed["aria"] as? Int == 2, "Space unticks a ticked box (\(keyed))")
+        preview.show(text: fileText + "\n\nOne more line.\n", file: tab.document.location, line: nil)
+        await settle(600)
+        let rerendered = await pageJSON(web, "return { more: document.body.textContent.includes('One more line.') };")
+        let kept = await pageJSON(web, tasksScript) ?? [:]
+        // Which boxes, not how many: the file's own may count the same.
+        let boxes = keyed["boxes"] as? String
+        report(rerendered?["more"] as? Bool == true && boxes != nil && kept["boxes"] as? String == boxes
+                   && boxes != before["boxes"] as? String,
+               "a new rendering keeps what was ticked and unticked in the page (file \(before["boxes"] ?? "?"), page \(boxes ?? "?"), new rendering \(kept["boxes"] ?? "?"))")
+        report((tab.controller.textView?.string ?? tab.document.text) == fileText && !tab.document.isDocumentEdited,
+               "ticking a box leaves the file as it was")
+        // Back as the file has them, for the checks after these.
+        // (The click and Space undo each other when they were on the first.)
+        if let ticked = clicked["index"] as? Int, ticked > 0 {
+            _ = await pageJSON(web, """
+                const checks = document.querySelectorAll('#kiri-page li.task > .check');
+                checks[0].click(); checks[\(ticked)].click();
+                return {};
+                """)
+        }
+        preview.show(text: fileText, file: tab.document.location, line: nil)
+        await settle(600)
     }
 
     /// What leaves Kiri from a preview. Links: one to an app, to a folder

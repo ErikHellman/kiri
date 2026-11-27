@@ -190,7 +190,12 @@ li.task .check {
   height: 1.05em;
   border-radius: 5px;
   border: 1.5px solid var(--fg-muted);
+  cursor: default;
+  transition: background-color 140ms ease, border-color 140ms ease;
 }
+li.task .check:hover { border-color: var(--accent); }
+li.task .check:focus { outline: none; }
+li.task .check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 li.task.done .check { background: var(--accent); border-color: var(--accent); }
 li.task.done .check::after {
   content: "";
@@ -202,6 +207,12 @@ li.task.done .check::after {
   border: solid var(--accent-fg);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+li.task.done.ticked .check::after { animation: kiri-tick 160ms ease-out; }
+@keyframes kiri-tick { from { opacity: 0; transform: rotate(45deg) scale(0.4); } }
+@media (prefers-reduced-motion: reduce) {
+  li.task .check { transition: none; }
+  li.task.done.ticked .check::after { animation: none; }
 }
 
 dt { font-weight: 800; }
