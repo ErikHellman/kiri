@@ -58,6 +58,11 @@ public struct ArchiveListing: Sendable {
 }
 
 public enum ArchiveReader {
+    /// An archive of more files than this isn't read: listing it would
+    /// take memory without end (a small tar.gz can hold millions of
+    /// headers).
+    public static let entryLimit = 1_000_000
+
     /// Reads the list of what the archive at `url` holds. `progress` is
     /// told how much of the file has been read, 0 ... 1 (a tar's list
     /// takes reading all of it); `isCancelled` stops the reading.
@@ -70,7 +75,8 @@ public enum ArchiveReader {
         switch format {
         case .zip:
             let entries = try ZipDirectory.entries(size: size) { offset, count in
-                try handle.seek(toOffset: UInt64(offset))
+                guard let offset = UInt64(exactly: offset) else { throw ArchiveError.damaged("its list of files is out of place") }
+                try handle.seek(toOffset: offset)
                 return try handle.read(upToCount: count) ?? Data()
             }
             return ArchiveListing(entries: entries)
@@ -131,7 +137,11 @@ public enum ZipDirectory {
     static let directoryLimit: Int64 = 512 << 20
 
     /// The entries of a zip of `size` bytes, read with `read(offset, count)`.
-    public static func entries(size: Int64, read: (Int64, Int) throws -> Data) throws -> [ArchiveEntry] {
+    /// Every number in it is checked before it is used: a zip can say
+    /// anything (ZIP64 fields are 64 bits, so they can be below zero or
+    /// near the limit), and what it says mustn't crash Kiri.
+    public static func entries(size: Int64, entryLimit: Int = ArchiveReader.entryLimit,
+                               read: (Int64, Int) throws -> Data) throws -> [ArchiveEntry] {
         // The end record is the last thing in the file, followed by a
         // comment of up to 64 KB.
         let tailLength = Int(min(size, 22 + 65_535))
@@ -148,6 +158,7 @@ public enum ZipDirectory {
         if count == 0xFFFF || directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF,
            tail.matches(locator64Signature, at: end - 20) {
             let recordOffset = tail.u64(end - 20 + 8)
+            guard recordOffset >= 0, recordOffset <= size - 56 else { throw ArchiveError.damaged("its ZIP64 end record is missing") }
             let record = [UInt8](try read(recordOffset, 56))
             guard record.count == 56, record.matches(end64Signature, at: 0) else { throw ArchiveError.damaged("its ZIP64 end record is missing") }
             count = record.u64(32)
@@ -155,7 +166,9 @@ public enum ZipDirectory {
             directoryOffset = record.u64(48)
             zip64 = true
         }
+        guard count >= 0, directoryOffset >= 0 else { throw ArchiveError.damaged("its list of files is out of place") }
         guard count > 0 else { return [] }
+        guard count <= entryLimit else { throw ArchiveError.unsupported("a list of files this long") }
         guard directorySize > 0, directorySize <= directoryLimit else {
             throw directorySize > directoryLimit ? ArchiveError.unsupported("a list of files this long")
                 : ArchiveError.damaged("its list of files is empty")
@@ -164,7 +177,7 @@ public enum ZipDirectory {
         // its offsets counted from where the zip starts.
         var start = directoryOffset
         if !zip64, start + directorySize != endOffset, endOffset - directorySize >= 0 { start = endOffset - directorySize }
-        guard start >= 0, start + directorySize <= size else { throw ArchiveError.damaged("its list of files is out of place") }
+        guard start >= 0, start <= size - directorySize else { throw ArchiveError.damaged("its list of files is out of place") }
         let directory = [UInt8](try read(start, Int(directorySize)))
         guard directory.matches(entrySignature, at: 0) else { throw ArchiveError.damaged("its list of files is out of place") }
 
@@ -198,6 +211,8 @@ public enum ZipDirectory {
                 }
                 e += 4 + length
             }
+            guard size >= 0 else { throw ArchiveError.damaged("a file’s size in it is out of range") }
+            guard entries.count < entryLimit else { throw ArchiveError.unsupported("a list of files this long") }
             let mode = (attributes >> 16) & 0o170000
             let isUnix = madeBy == 3 || madeBy == 19
             let isDirectory = name.hasSuffix("/") || (isUnix && mode == 0o040000) || (madeBy == 0 && attributes & 0x10 != 0)
@@ -246,6 +261,7 @@ public enum TarHeader {
         for byte in field {
             if byte == 0x20 || byte == 0, digits == 0 { continue }
             guard (0x30...0x37).contains(byte) else { break }
+            guard value <= Int64.max >> 3 else { return nil }
             value = value * 8 + Int64(byte - 0x30)
             digits += 1
         }
@@ -255,7 +271,8 @@ public enum TarHeader {
 
 /// Reads a tar as it comes, a chunk at a time: the headers, with the
 /// contents between them skipped. Knows ustar, GNU (long names, sizes in
-/// binary) and POSIX pax (long paths, sizes over 8 GB).
+/// binary) and POSIX pax (long paths, sizes over 8 GB). A size below zero
+/// or too large to skip is taken to be damage, not a crash.
 public struct TarParser: Sendable {
     public private(set) var entries: [ArchiveEntry] = []
     /// The end-of-archive mark (two empty blocks) has been read.
@@ -272,8 +289,10 @@ public struct TarParser: Sendable {
     private var longName: String?
     private var pax: [String: String] = [:]
     private var zeroBlocks = 0
+    private let entryLimit: Int
 
-    public init() {
+    public init(entryLimit: Int = ArchiveReader.entryLimit) {
+        self.entryLimit = entryLimit
         block.reserveCapacity(512)
     }
 
@@ -332,6 +351,8 @@ public struct TarParser: Sendable {
         let headerSize = TarHeader.number(h[124..<136]) ?? 0
         // pax gives the size when it is too large for the header.
         let size = pax["size"].flatMap { Int64($0) } ?? headerSize
+        // What is skipped after the header (the size and its padding) has to be a number.
+        guard size >= 0, size <= Int64.max - 511 else { throw ArchiveError.damaged("a file’s size in it is out of range") }
         let padding = Int((512 - size % 512) % 512)
         switch type {
         case UInt8(ascii: "L"), UInt8(ascii: "K"), UInt8(ascii: "x"), UInt8(ascii: "g"):
@@ -345,6 +366,7 @@ public struct TarParser: Sendable {
         default:
             break
         }
+        guard entries.count < entryLimit else { throw ArchiveError.unsupported("a list of files this long") }
         let isUstar = h[257..<263].elementsEqual(Array("ustar\0".utf8))
         let name = Self.string(h[0..<100])
         let prefix = isUstar ? Self.string(h[345..<500]) : ""
@@ -359,6 +381,7 @@ public struct TarParser: Sendable {
         } else if type == UInt8(ascii: "S"), let real = TarHeader.number(h[483..<495]) {
             shown = real
         }
+        guard shown >= 0 else { throw ArchiveError.damaged("a file’s size in it is out of range") }
         entries.append(ArchiveEntry(path: path, size: isDirectory || isLink ? 0 : shown, isDirectory: isDirectory, isLink: isLink))
         longName = nil
         pax = [:]
@@ -387,7 +410,8 @@ public struct TarParser: Sendable {
         while i < data.count {
             var j = i
             var length = 0
-            while j < data.count, (0x30...0x39).contains(data[j]) {
+            // A length longer than what is left ends the records (and keeps the number from overflowing).
+            while j < data.count, (0x30...0x39).contains(data[j]), length <= data.count {
                 length = length * 10 + Int(data[j] - 0x30)
                 j += 1
             }
@@ -616,7 +640,11 @@ public struct ArchiveTree: Sendable {
                 return a.name.compare(b.name, options: [.caseInsensitive, .numeric]) == .orderedAscending
             }
             let frozen = sorted.map { $0.freeze(next: &next, folders: &folders) }
-            let total = isDirectory ? frozen.reduce(0) { $0 + $1.size } : size
+            // Sizes are what the archive says, so their sum stops at the largest number rather than overflow.
+            let total = isDirectory ? frozen.reduce(Int64(0)) { sum, node in
+                let (added, overflow) = sum.addingReportingOverflow(node.size)
+                return overflow ? .max : added
+            } : size
             let files = isDirectory ? frozen.reduce(0) { $0 + $1.fileCount } : 1
             return Node(id: id, name: name, path: path, size: total, isDirectory: isDirectory, isLink: isLink,
                         fileCount: files, children: frozen)
