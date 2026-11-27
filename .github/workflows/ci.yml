@@ -38,9 +38,13 @@ jobs:
     container: swift:6.2@sha256:576698469fd3cf95b2abdeb91a7571d3afcd91806c87283dd01d564803554c0f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The packages at the commits KiriKit/Package.resolved names, and no others.
       - name: test KiriKit
         working-directory: KiriKit
-        run: swift test
+        run: swift test --only-use-versions-from-resolved-file
+      # What a release's tag must be (.github/workflows/release.yml).
+      - name: test the release tag check
+        run: scripts/tests/check-release-tag-test.sh
 
   macos:
     name: macos
@@ -54,15 +58,20 @@ jobs:
           xcodebuild -version
       - name: test KiriKit
         working-directory: KiriKit
-        run: swift test
+        run: swift test --only-use-versions-from-resolved-file
       - name: build app
         working-directory: App
         run: |
           brew install xcodegen
           xcodegen
+          # The packages at the commits the lockfile names, App/Package.resolved,
+          # and a failed build if it would need any other (scripts/packages.sh).
+          ../scripts/packages.sh lock
           xcodebuild build -project Kiri.xcodeproj -scheme Kiri \
             -destination 'generic/platform=macOS' -derivedDataPath build \
+            -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO KIRI_WARNINGS_AS_ERRORS=YES -quiet
+          ../scripts/packages.sh check
           # Fail if nothing was built (an empty scheme also "succeeds").
           test -x build/Build/Products/Debug/Kiri.app/Contents/MacOS/Kiri
           # Sparkle is embedded, for updates.

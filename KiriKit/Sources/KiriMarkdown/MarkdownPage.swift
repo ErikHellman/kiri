@@ -7,8 +7,9 @@ import KiriKit
 ///
 /// The page runs none of the file's scripts: the web view has page
 /// JavaScript off, and the Content Security Policy below lets nothing load
-/// but images and media (from the file's folder, through the app, and the
-/// web) and the app's own fonts. Kiri's scripts run in a world of their own.
+/// but images (from the file's folder, through the app) and the app's own
+/// fonts; images and media from the web only once the person has let them
+/// (`PreviewExternalContent`). Kiri's scripts run in a world of their own.
 public enum MarkdownPage {
     /// The URL scheme the app serves the page's files under:
     /// `kiri-preview://file/<path>` for files next to the document,
@@ -57,11 +58,27 @@ public enum MarkdownPage {
         var components = URLComponents()
         components.scheme = scheme
         components.host = "file"
-        var path = folder?.standardizedFileURL.path ?? "/"
-        if !path.hasSuffix("/") { path += "/" }
-        components.path = path
+        components.path = folderPrefix(folder) ?? "/"
         // swiftlint:disable:next force_unwrapping - the scheme and host make a URL
         return components.url ?? URL(string: "\(scheme)://file/")!
+    }
+
+    /// What the path of every file in `folder` starts with (nil without a
+    /// folder): the page script tells files outside it by this.
+    public static func folderPrefix(_ folder: URL?) -> String? {
+        guard var path = folder?.standardizedFileURL.path else { return nil }
+        if !path.hasSuffix("/") { path += "/" }
+        return path
+    }
+
+    /// Whether `file` is in `folder` or a folder under it, where both
+    /// really are (a link in the folder to a file elsewhere is outside).
+    /// Nothing is inside a document that has no folder yet.
+    public static func isInside(_ file: URL, folder: URL?) -> Bool {
+        guard let folder else { return false }
+        let parts = { (url: URL) in url.resolvingSymlinksInPath().standardizedFileURL.path.split(separator: "/") }
+        let inner = parts(file), outer = parts(folder)
+        return inner.count > outer.count && inner.prefix(outer.count).elementsEqual(outer)
     }
 
     /// The file a `kiri-preview://file/…` URL stands for.
@@ -72,12 +89,24 @@ public enum MarkdownPage {
         return URL(fileURLWithPath: path).standardizedFileURL
     }
 
-    /// The page, without its content: `update` puts that in.
-    public static func shell(style: Style) -> String {
-        let csp = "default-src 'none'; img-src \(scheme): https: http: data:; media-src \(scheme): https: http:; "
+    /// What the page may load: images through the app (`PreviewFiles`
+    /// keeps those to the document's folder) and inline, the app's fonts,
+    /// and with `allowsRemote` images and media from the web. Nothing
+    /// else, and never a script; no form is sent and no `<base>` moves
+    /// links.
+    public static func contentSecurityPolicy(allowsRemote: Bool) -> String {
+        let web = allowsRemote ? " https: http:" : ""
+        return "default-src 'none'; img-src \(scheme):\(web) data:; media-src \(scheme):\(web); "
             + "style-src 'unsafe-inline'; font-src \(scheme):"
             // Not covered by default-src: no form is sent, no <base> moves links.
             + "; form-action 'none'; base-uri 'none'"
+    }
+
+    /// The page, without its content: `update` puts that in. The policy is
+    /// the page's for as long as it is loaded, so letting the web in (or
+    /// out again) means loading the page again.
+    public static func shell(style: Style, allowsRemote: Bool = false) -> String {
+        let csp = contentSecurityPolicy(allowsRemote: allowsRemote)
         return """
         <!doctype html>
         <html lang="en">

@@ -1,4 +1,5 @@
 import KiriKit
+import KiriMarkdown
 import SwiftUI
 
 /// The editors of a window: the selected tab's on its panel, or two tabs
@@ -55,7 +56,9 @@ struct EditorPanels: View {
 
 /// One editor panel: a tab's editor (or the preview beside its text) on
 /// the solid Honey panel, with the glass status bar floating over its
-/// bottom edge and the find bar or the palette over its top.
+/// bottom edge and the find bar or the palette over its top. A preview
+/// that holds pictures back has its notice along the panel's top
+/// (`PreviewExternalNotice`).
 private struct TabPanel: View {
     let tabs: WindowTabs
     let panel: WindowTabs.Panel
@@ -103,11 +106,31 @@ private struct TabPanel: View {
         }
     }
 
+    /// What this panel's preview holds back, while the person is to be
+    /// asked about it (the text beside a preview has no notice).
+    private var notice: PreviewHeldBack? {
+        panel.preview || tab.showsMarkdownPreview ? tab.previewNotice : nil
+    }
+
+    /// `content` under the notice, when there is one: the preview starts
+    /// below it, nothing of the page is covered.
+    private func underNotice(_ content: some View) -> some View {
+        let motion = HoneyMotion(appearance, systemReduced: reduceMotion)
+        return VStack(spacing: 0) {
+            if let notice {
+                PreviewExternalNotice(held: notice) { tab.markdownPreview?.answerExternal(accept: $0) }
+                    .transition(.opacity)
+            }
+            content
+        }
+        .animation(motion.quick, value: notice)
+    }
+
     /// The tab's Markdown rendered, or its SVG drawn, beside its text.
     private var previewBeside: some View {
-        EditorView(tab: tab, slot: panel.slot, previewBeside: true, fontScale: textScale, fontFamily: editorFont.shown,
-                   language: model.language, isUntitled: document.location == nil, wrapLines: wrapLines,
-                   animation: .none, arrival: .none)
+        underNotice(EditorView(tab: tab, slot: panel.slot, previewBeside: true, fontScale: textScale,
+                               fontFamily: editorFont.shown, language: model.language, isUntitled: document.location == nil,
+                               wrapLines: wrapLines, animation: .none, arrival: .none))
             .honeyPanel()
             .accessibilityElement(children: .contain)
             .accessibilityLabel(tab.isSVG ? "Picture beside the text" : "Preview beside the text")
@@ -120,11 +143,12 @@ private struct TabPanel: View {
         // A file that arrives (a new tab, or the preview tab taking another
         // file) fades in on the paper, which stays put: the file arriving
         // is told in the content, never by the window.
-        return EditorView(tab: tab, slot: panel.slot, fontScale: textScale, fontFamily: editorFont.shown,
-                          language: model.language, isUntitled: document.location == nil, wrapLines: wrapLines,
-                          animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
-                                                             typingAnimations: typingAnimations),
-                          arrival: motion.off ? .none : motion.reduced ? .fade : .rise)
+        let text = EditorView(tab: tab, slot: panel.slot, fontScale: textScale, fontFamily: editorFont.shown,
+                              language: model.language, isUntitled: document.location == nil, wrapLines: wrapLines,
+                              animation: EditorAnimation.resolve(motion: appearance.motion, systemReduceMotion: reduceMotion,
+                                                                 typingAnimations: typingAnimations),
+                              arrival: motion.off ? .none : motion.reduced ? .fade : .rise)
+        return underNotice(text
             // Under the bars: the first-run hint, on the paper of an empty
             // untitled document until something is typed into it. (Not
             // while the palette is open: its list would lie over the
@@ -141,7 +165,7 @@ private struct TabPanel: View {
                         .padding(.bottom, StartHint.bottomClearance)
                         .transition(.opacity)
                 }
-            }
+            })
             .honeyPanel()
             .onGeometryChange(for: CGSize.self) { $0.size } action: { panelSize = $0 }
             .overlay(alignment: .bottom) {
@@ -177,6 +201,46 @@ private struct TabPanel: View {
 
     private var bomBinding: Binding<Bool> {
         Binding(get: { document.hasBOM }, set: { document.setByteOrderMark($0) })
+    }
+}
+
+/// A preview's notice, along the top of its panel: the file's pictures or
+/// media from the internet, or from outside its folder, are held back
+/// (`PreviewExternalContent`). Accept loads them for this document, Deny
+/// leaves them out; either way the notice goes. Settings ▸ Privacy
+/// answers for every document.
+private struct PreviewExternalNotice: View {
+    let held: PreviewHeldBack
+    let answer: (Bool) -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "hand.raised.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.honeyAccentInk)
+                .accessibilityHidden(true)
+            Text(held.notice)
+                .font(.honey(.subheadline, weight: .semibold))
+                .foregroundStyle(Color.honeyFg)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Deny") { answer(false) }
+                .buttonStyle(.honeyGlass)
+                .help("Leave them out of this document's preview")
+            Button("Accept") { answer(true) }
+                .buttonStyle(.honeyProminent)
+                .help("Load them in this document's preview")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.vertical, 8)
+        .background(Color.honeyAccentSoft)
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.honeyLine).frame(height: 1) }
+        // The panel's own top corners.
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Honey.Radius.panel.value,
+                                          topTrailingRadius: Honey.Radius.panel.value, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pictures from elsewhere")
     }
 }
 

@@ -1,4 +1,5 @@
 import KiriKit
+import KiriMarkdown
 import SwiftUI
 
 /// Persisted preferences (UserDefaults keys and helpers).
@@ -20,6 +21,10 @@ enum Prefs {
     static let crashReportsKey = "crashReports"
     /// Anonymous usage analytics (`Telemetry`); absent means on.
     static let analyticsKey = "usageAnalytics"
+    /// What a preview does with pictures and media from the internet or
+    /// from outside the document's folder (`PreviewExternalContent`);
+    /// absent means ask.
+    static let previewExternalKey = "previewExternalContent"
     /// What's new after an update (`WhatsNew`); absent means on.
     static let whatsNewKey = "whatsNewAfterUpdates"
     /// The version whose notes What's new last showed, or that last
@@ -35,8 +40,9 @@ enum Prefs {
 
 /// Kiri ▸ Settings…, in two panes. General has six groups: Appearance
 /// (the color theme, light or dark), Editor (font, text size, wrapping),
-/// Motion, Updates, Privacy (crash reports, analytics, feedback) and the
-/// command line tool. Shortcuts has every command's key (`ShortcutsPane`).
+/// Motion, Updates, Privacy (crash reports, analytics, what previews load
+/// from elsewhere, feedback) and the command line tool. Shortcuts has
+/// every command's key (`ShortcutsPane`).
 struct SettingsView: View {
     static let windowID = "settings"
 
@@ -48,6 +54,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.typingAnimationsKey) private var typingAnimations = true
     @AppStorage(Prefs.crashReportsKey) private var crashReports = true
     @AppStorage(Prefs.analyticsKey) private var analytics = true
+    @AppStorage(Prefs.previewExternalKey) private var previewExternal = PreviewExternalContent.ask
     @AppStorage(Prefs.whatsNewKey) private var whatsNew = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
@@ -287,8 +294,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Vaka's two switches (`Telemetry`), where to read what they send,
-    /// and the feedback window.
+    /// Vaka's two switches (`Telemetry`), what a preview loads from
+    /// elsewhere, where to read what Kiri sends, and the feedback window.
     private var privacyGroup: some View {
         VStack(alignment: .leading, spacing: 14) {
             row("Crash reports", detail: "When Kiri crashes or stops responding, send an anonymous report so it can be fixed.") {
@@ -296,6 +303,13 @@ struct SettingsView: View {
             }
             row("Usage analytics", detail: "Anonymous counts of which features, settings and languages are used. Never file names or text.") {
                 Toggle("Send usage analytics", isOn: $analytics).toggleStyle(.switch).labelsHidden()
+            }
+            row("Pictures from elsewhere in previews",
+                detail: "Pictures and media a Markdown file loads from the internet or from outside its folder. Loading them can tell a server that you opened the file.") {
+                HoneySegmentedPicker([(value: PreviewExternalContent.ask, label: "Ask"),
+                                      (value: .deny, label: "Always Deny"), (value: .allow, label: "Always Allow")],
+                                     selection: $previewExternal)
+                    .accessibilityLabel("Pictures from elsewhere in previews")
             }
             HStack(spacing: 12) {
                 // In the accent's ink with an arrow, so it reads as a link
