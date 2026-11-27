@@ -95,6 +95,14 @@ extension SelfTest {
         return await tab(of: doc)
     }
 
+    /// A folder of this run's in the `kiri` script's folder, where Kiri
+    /// takes `stdin` and `wait` files from.
+    private static func cliFolder() -> URL {
+        let folder = KiriCLI.requestDirectory.appendingPathComponent("selftest-\(getpid())")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
     private static func file(_ name: String, _ text: String, in dir: URL) -> URL {
         let url = dir.appendingPathComponent(name)
         try? Data(text.utf8).write(to: url)
@@ -386,7 +394,18 @@ extension SelfTest {
     /// `git diff | kiri -`: the text in a new untitled tab, which is not an
     /// edit of anything, so closing it asks nothing.
     private static func standardInput(_ dir: URL) async {
-        let input = file("request.1.stdin", "piped in\n", in: dir)
+        // A `stdin` file anywhere but the script's folder is left alone:
+        // Kiri would delete it.
+        let elsewhere = file("request.0.stdin", "not the script's\n", in: dir)
+        let beforeElsewhere = NSDocumentController.shared.documents
+        KiriCLI.open(KiriCLI.Request(entries: [.stdin(elsewhere)]))
+        await settle(300)
+        let openedElsewhere = NSDocumentController.shared.documents.contains { d in !beforeElsewhere.contains { $0 === d } }
+        report(!openedElsewhere && exists(elsewhere), "kiri - takes its text only from the script's own folder, and deletes nothing else")
+
+        let cli = cliFolder()
+        defer { try? FileManager.default.removeItem(at: cli) }
+        let input = file("request.1.stdin", "piped in\n", in: cli)
         let before = NSDocumentController.shared.documents
         KiriCLI.open(KiriCLI.Request(entries: [.stdin(input)]))
         var doc: NSDocument?
@@ -598,8 +617,10 @@ extension SelfTest {
     /// before the file has what Save wrote.
     private static func waiting(_ dir: URL) async {
         let url = file("COMMIT_EDITMSG", "\n# Please enter the commit message\n", in: dir)
+        let cli = cliFolder()
+        defer { try? FileManager.default.removeItem(at: cli) }
         func request(_ n: Int) async -> (marker: URL, tab: Tab)? {
-            let marker = dir.appendingPathComponent("request.\(n).wait")
+            let marker = cli.appendingPathComponent("request.\(n).wait")
             FileManager.default.createFile(atPath: marker.path, contents: Data())
             KiriCLI.open(KiriCLI.Request(waitMarker: marker, entries: [.file(url, line: 0, column: 0)]))
             var doc: NSDocument?
