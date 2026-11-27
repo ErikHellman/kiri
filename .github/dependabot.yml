@@ -1,0 +1,30 @@
+# Dependabot's version updates: one pull request a week for each kind,
+# with everything it found. A new version waits a week before it is
+# offered, so one that is pulled back soon after it came out never gets
+# here. (Updates that fix a known vulnerability don't wait: those are the
+# security updates, a setting of the repo.)
+version: 2
+updates:
+  # The actions the workflows use, pinned to commits.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # KiriKit's packages (KiriKit/Package.swift, Package.resolved). The
+  # app's own, Sparkle and Vaka, are in App/project.yml, which Dependabot
+  # doesn't read: update those by hand.
+  - package-ecosystem: swift
+    directory: /KiriKit
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      packages:
+        patterns: ["*"]

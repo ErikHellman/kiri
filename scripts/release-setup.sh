@@ -7,11 +7,17 @@
 # It, in turn:
 #   1. makes the kiri repo public, if it isn't yet: Sparkle downloads the
 #      updates from its releases without signing in;
-#   2. makes Sparkle's update signing key (kept in your login keychain),
+#   2. makes the `release` environment, if it isn't there yet: the secrets
+#      are its own, only v* tags may use it, and each release waits there
+#      for your approval;
+#   3. makes Sparkle's update signing key (kept in your login keychain),
 #      writes its public half into App/project.yml, and stores the private
 #      half as the SPARKLE_PRIVATE_KEY secret;
-#   3. stores your Developer ID (.p12) and its password;
-#   4. stores the App Store Connect API key (.p8), its key ID and issuer ID.
+#   4. stores your Developer ID (.p12) and its password;
+#   5. stores the App Store Connect API key (.p8), its key ID and issuer ID;
+#   6. stores the Vaka token, for the debug symbols (optional);
+#   7. deletes repository-level copies of these secrets, from before they
+#      were the environment's: a workflow on any branch could read those.
 # Each step asks first, so it can be run again for one of them. Nothing
 # secret is written into the repo or left on disk: secrets go straight to
 # `gh secret set`. Needs the GitHub CLI (brew install gh, gh auth login).
@@ -20,6 +26,8 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 REPO=${REPO:-ErikHellman/kiri}
+# The environment of the release job (.github/workflows/release.yml).
+ENVIRONMENT=${ENVIRONMENT:-release}
 # As in .github/workflows/release.yml.
 SPARKLE_VERSION=2.10.1
 SPARKLE_SHA256=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
@@ -45,8 +53,8 @@ secret_prompt() { # like prompt, without echoing what is typed
     echo >&2
     printf '%s' "$value"
 }
-set_secret() { # set_secret NAME < value
-    gh secret set "$1" --repo "$REPO"
+set_secret() { # set_secret NAME < value, as a secret of the environment
+    gh secret set "$1" --repo "$REPO" --env "$ENVIRONMENT"
 }
 
 WORK=$(mktemp -d)
@@ -62,10 +70,36 @@ elif ask "   Make $REPO public now? Its code and history become visible to every
     gh repo edit "$REPO" --visibility public --accept-visibility-change-consequences
 fi
 
-# --- 2. Sparkle's EdDSA key.
+# --- 2. The release environment.
 
 echo
-echo "2. The update signing key (Sparkle EdDSA)"
+echo "2. The $ENVIRONMENT environment holds the secrets: only v* tags may use it,"
+echo "   and each release waits there for your approval"
+if gh api "repos/$REPO/environments/$ENVIRONMENT" >/dev/null 2>&1; then
+    echo "   It is there: https://github.com/$REPO/settings/environments"
+elif ask "   Make it, with you as its reviewer?"; then
+    REVIEWER=$(gh api user --jq .id)
+    gh api -X PUT "repos/$REPO/environments/$ENVIRONMENT" --input - >/dev/null <<EOF
+{
+  "wait_timer": 0,
+  "prevent_self_review": false,
+  "reviewers": [{ "type": "User", "id": $REVIEWER }],
+  "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }
+}
+EOF
+    gh api -X POST "repos/$REPO/environments/$ENVIRONMENT/deployment-branch-policies" \
+        -f name='v*' -f type=tag >/dev/null
+    echo "   Made. Untick \"Allow administrators to bypass configured protection rules\" there:"
+    echo "   https://github.com/$REPO/settings/environments"
+else
+    echo "   Without it there is nowhere to store the secrets." >&2
+    exit 1
+fi
+
+# --- 3. Sparkle's EdDSA key.
+
+echo
+echo "3. The update signing key (Sparkle EdDSA)"
 if ask "   Make it (or reuse the one in your keychain), put the public key in App/project.yml and store the private key as SPARKLE_PRIVATE_KEY?"; then
     SPARKLE="$ROOT/build/sparkle-$SPARKLE_VERSION"
     if [ ! -x "$SPARKLE/bin/generate_keys" ]; then
@@ -94,10 +128,10 @@ if ask "   Make it (or reuse the one in your keychain), put the public key in Ap
     echo "   Lose it and the copies already out there can't update any more."
 fi
 
-# --- 3. The Developer ID.
+# --- 4. The Developer ID.
 
 echo
-echo "3. The Developer ID Application certificate"
+echo "4. The Developer ID Application certificate"
 echo "   Export it first: Keychain Access > login > My Certificates >"
 echo "   \"Developer ID Application: ...\" > right-click > Export... > .p12, with a password."
 if ask "   Store a .p12 as DEVELOPER_ID_P12 (and its password)?"; then
@@ -125,10 +159,10 @@ if ask "   Store a .p12 as DEVELOPER_ID_P12 (and its password)?"; then
     echo "   Stored. You can delete the .p12 file now."
 fi
 
-# --- 4. The App Store Connect API key.
+# --- 5. The App Store Connect API key.
 
 echo
-echo "4. The App Store Connect API key, for notarization"
+echo "5. The App Store Connect API key, for notarization"
 echo "   Make one: https://appstoreconnect.apple.com/access/integrations/api > Team Keys > +,"
 echo "   access Developer. Download the .p8 (it can only be downloaded once)."
 if ask "   Store a .p8 as NOTARY_KEY_P8 (and its key ID and issuer ID)?"; then
@@ -147,6 +181,48 @@ if ask "   Store a .p8 as NOTARY_KEY_P8 (and its key ID and issuer ID)?"; then
     echo "   Stored. Keep the .p8 somewhere safe or delete it; a new key can be made any time."
 fi
 
+# --- 6. The Vaka token.
+
 echo
-echo "The secrets $REPO has now:"
-gh secret list --repo "$REPO"
+echo "6. The Vaka API token, for the debug symbols of crash reports (optional)"
+echo "   Make one in the Vaka admin UI, https://vaka.fly.dev/ui, with write access to kiri-macos."
+if ask "   Store a token as VAKA_TOKEN?"; then
+    TOKEN=$(secret_prompt "   The token")
+    [ -n "$TOKEN" ] || { echo "   No token given" >&2; exit 1; }
+    printf '%s' "$TOKEN" | set_secret VAKA_TOKEN
+    echo "   Stored."
+fi
+
+# --- 7. Repository-level copies, from before the environment.
+
+echo
+echo "7. Repository-level copies of the secrets"
+NAMES="DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8 NOTARY_KEY_ID NOTARY_ISSUER_ID SPARKLE_PRIVATE_KEY VAKA_TOKEN"
+AT_REPO=$(gh secret list --repo "$REPO" --json name --jq '.[].name')
+IN_ENVIRONMENT=$(gh secret list --repo "$REPO" --env "$ENVIRONMENT" --json name --jq '.[].name')
+has() { # has "$LIST" NAME
+    printf '%s\n' "$1" | grep -qx "$2"
+}
+OLD=
+for name in $NAMES; do
+    has "$AT_REPO" "$name" && OLD="$OLD $name"
+done
+if [ -z "$OLD" ]; then
+    echo "   None."
+else
+    echo "   A workflow on any branch can read these:$OLD"
+    echo "   Delete them once a release has gone through with the environment's."
+    if ask "   Delete now the ones the environment has too?"; then
+        for name in $OLD; do
+            if has "$IN_ENVIRONMENT" "$name"; then
+                gh secret delete "$name" --repo "$REPO"
+            else
+                echo "   Kept $name: the $ENVIRONMENT environment doesn't have it yet."
+            fi
+        done
+    fi
+fi
+
+echo
+echo "The secrets the $ENVIRONMENT environment of $REPO has now:"
+gh secret list --repo "$REPO" --env "$ENVIRONMENT"

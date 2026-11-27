@@ -69,6 +69,8 @@ On a macOS runner it builds a universal app with the tag's version (`0.2.0`) and
 
 The job stops early, before the long build, if a secret is missing, the update key isn't in `App/project.yml`, the repo isn't public, or that release already exists. It also checks the update's signature against the key built into the app, so a mismatched key pair fails the release instead of every update.
 
+**The job waits for your approval** before it starts: it runs in the `release` environment, which you review. After pushing the tag, open the run under [Actions](https://github.com/ErikHellman/kiri/actions/workflows/release.yml) ▸ **Review deployments** ▸ `release` ▸ **Approve and deploy**, or approve it in GitHub Mobile. A run nobody approves does nothing and expires after 30 days. See [Protection](#protection).
+
 ### One-time setup
 
 `scripts/release-setup.sh`, run on your Mac in the repo, does all of it and asks before each step (it needs the GitHub CLI: `brew install gh && gh auth login`). By hand, these are the parts:
@@ -84,7 +86,7 @@ The job stops early, before the long build, if a secret is missing, the update k
 3. **The Developer ID as a .p12.** Keychain Access ▸ login ▸ My Certificates ▸ "Developer ID Application: Hellman Software AB (72AFW5CP97)" ▸ right-click ▸ Export… ▸ .p12, with a password.
 4. **An App Store Connect API key** for notarization: [App Store Connect ▸ Users and Access ▸ Integrations ▸ App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api) ▸ Team Keys ▸ +, access **Developer**. Download `AuthKey_XXXXXXXXXX.p8` (only possible once). Note the key ID and the issuer ID shown above the list.
 
-Then add these as [repository secrets of kiri](https://github.com/ErikHellman/kiri/settings/secrets/actions) (Settings ▸ Secrets and variables ▸ Actions):
+Then add these as secrets of the [`release` environment](https://github.com/ErikHellman/kiri/settings/environments) (Settings ▸ Environments ▸ release ▸ Environment secrets), **not** as repository secrets: a workflow on any branch can read a repository secret, and only the release job, on a `v*` tag and once approved, can read the environment's. The script makes the environment when it isn't there (see [Protection](#protection)) and offers to delete repository-level copies left from before.
 
 | Secret | What | From |
 | --- | --- | --- |
@@ -99,6 +101,17 @@ Then add these as [repository secrets of kiri](https://github.com/ErikHellman/ki
 `KIRI_FEED_URL` in `App/project.yml` must point at this repo's releases; the job refuses to run when it doesn't (a fork, say).
 
 When the Developer ID certificate is renewed, export and store the new .p12.
+
+### Protection
+
+A release installs itself on every Mac that runs Kiri, so these GitHub settings guard the way to one. They are settings of the repo, not files in it; `gh api repos/ErikHellman/kiri/rulesets`, `…/environments/release` and `…/immutable-releases` show them.
+
+- **Version tags** (`v*`) have a ruleset: only the repository's admin can create, move or delete one. Deleting the tag of a run that stopped early, as above, still works for you.
+- **The `release` environment** holds the secrets. Only `v*` tags may use it, so a workflow on a branch can't reach them, and it waits for your approval, so a tag alone doesn't release: you approve each one. "Allow administrators to bypass configured protection rules" is off.
+- **Releases are immutable.** Once published, a release's files and its tag can't be changed or removed by anyone, so the disk image and the `appcast.xml` that Kiri downloads are the ones the job made. The job uploads everything to a draft and publishes last, which is what this needs. A release that turns out wrong can't be patched: release the next version.
+- **Actions** may only use actions made by GitHub, pinned to a commit, and a pull request from a fork runs nothing until you approve it.
+
+The checks of the tag itself (a version, on a commit of `main`) are the job's own, in `release.yml`.
 
 ## Release notes
 

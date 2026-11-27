@@ -13,7 +13,7 @@ name: release
 # (scripts/dmg.sh), signs the image for Sparkle, writes the appcast
 # (scripts/appcast.py), and publishes both as a release of this repo,
 # which is public and where Kiri looks for updates. The secrets it needs
-# and how to make them are in docs/RELEASING.md.
+# are in the `release` environment; how to make them is in docs/RELEASING.md.
 
 on:
   push:
@@ -41,11 +41,17 @@ jobs:
     name: release
     runs-on: macos-26
     timeout-minutes: 90
+    # The signing secrets are this environment's: only v* tags may use it,
+    # and the job waits here for an approval (docs/RELEASING.md, Protection).
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Every commit, for the build number.
           fetch-depth: 0
+          # The token isn't left in .git/config for the build's steps; the
+          # publish step passes its own.
+          persist-credentials: false
 
       - name: version
         run: |
@@ -86,7 +92,7 @@ jobs:
             [ -n "$value" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing (docs/RELEASING.md says how to make them)"
+            echo "::error::Missing secrets in the release environment:$missing (docs/RELEASING.md says how to make them)"
             exit 1
           fi
           # Before the long build: a release without the update key could
