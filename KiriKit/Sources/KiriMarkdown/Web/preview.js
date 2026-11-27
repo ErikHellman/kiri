@@ -67,6 +67,63 @@
     }
   };
 
+  // MARK: Task lists
+
+  // A task's box ticks and unticks on a click, Space or Return. Only the
+  // page changes, never the file. A new rendering of the same document
+  // (typing beside the preview) keeps what was ticked here: each task is
+  // known by how the file had it, its own text (not its subtasks') and
+  // which of the tasks with that text it is.
+  const flipped = new Set();
+  const taskKeys = new WeakMap();
+
+  const ownText = (li) => Array.from(li.childNodes)
+    .filter((n) => !(n.nodeType === 1 && (n.tagName === "UL" || n.tagName === "OL")))
+    .map((n) => n.textContent).join("").replace(/\s+/g, " ").trim();
+
+  const setTask = (li, done) => {
+    li.classList.toggle("done", done);
+    li.querySelector(":scope > .check")?.setAttribute("aria-checked", String(done));
+  };
+
+  /** Names the page's tasks and ticks again the ones ticked here before. */
+  const restoreTasks = (root) => {
+    const seen = new Map();
+    for (const li of root.querySelectorAll("li.task")) {
+      const base = (li.classList.contains("done") ? "x" : " ") + ownText(li);
+      const n = (seen.get(base) || 0) + 1;
+      seen.set(base, n);
+      const key = base + "\u0000" + n;
+      taskKeys.set(li, key);
+      if (flipped.has(key)) setTask(li, !li.classList.contains("done"));
+    }
+  };
+
+  const toggleTask = (check) => {
+    const li = check.parentElement;
+    if (!li || !li.classList.contains("task")) return;
+    setTask(li, !li.classList.contains("done"));
+    li.classList.add("ticked");
+    const key = taskKeys.get(li);
+    if (key === undefined) return;
+    if (flipped.has(key)) flipped.delete(key); else flipped.add(key);
+  };
+
+  const checkAt = (target) => (target instanceof Element ? target.closest("li.task > .check") : null);
+
+  document.addEventListener("click", (e) => {
+    const check = checkAt(e.target);
+    if (check) toggleTask(check);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== " " && e.key !== "Enter") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const check = checkAt(e.target);
+    if (!check) return;
+    e.preventDefault();
+    toggleTask(check);
+  });
+
   // MARK: Mermaid
 
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -237,6 +294,7 @@
         told = false;
         page.innerHTML = html;
         addCopyButtons(page);
+        restoreTasks(page);
       }
       scrollToLine(keep);
       if (window.mermaid && document.querySelector("figure.mermaid")) {

@@ -273,7 +273,7 @@ private struct HTMLWalker: MarkupWalker {
         if let checkbox = listItem.checkbox {
             let checked = checkbox == .checked
             result += "<li class=\"task\(checked ? " done" : "")\"\(line(listItem))>"
-            result += "<span class=\"check\" role=\"checkbox\" aria-checked=\"\(checked)\"></span>"
+            result += "<span class=\"check\" role=\"checkbox\" aria-checked=\"\(checked)\" tabindex=\"0\"></span>"
         } else {
             result += "<li\(line(listItem))>"
         }

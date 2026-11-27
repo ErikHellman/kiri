@@ -65,7 +65,7 @@ import Testing
             | 1 | ~~2~~ |
             """).html
         #expect(html.contains("<ul class=\"tasks\" data-line=\"1\">"))
-        #expect(html.contains("<li class=\"task done\" data-line=\"1\"><span class=\"check\" role=\"checkbox\" aria-checked=\"true\"></span>"))
+        #expect(html.contains("<li class=\"task done\" data-line=\"1\"><span class=\"check\" role=\"checkbox\" aria-checked=\"true\" tabindex=\"0\"></span>"))
         #expect(html.contains("<li class=\"task\" data-line=\"2\">"))
         #expect(html.contains("<th style=\"text-align: left\">a</th>"))
         #expect(html.contains("<td style=\"text-align: right\"><del>2</del></td>"))
