@@ -32,7 +32,8 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 APP="$ROOT/build/Kiri.app"
-DMGBUILD_VERSION=1.6.7
+# dmgbuild and its packages, pinned with their hashes.
+DMGBUILD_REQUIREMENTS="$ROOT/scripts/dmg/requirements.txt"
 # Finder's title bar, added to the window so the content is exactly the
 # picture's 660 x 392 points.
 WINDOW_CHROME=${WINDOW_CHROME:-32}
@@ -134,7 +135,8 @@ fi
 # --- dmgbuild in a venv of its own, pinned.
 
 VENV="$ROOT/build/dmg-venv"
-if [ ! -x "$VENV/bin/dmgbuild" ] || ! "$VENV/bin/python" -m pip show dmgbuild 2>/dev/null | grep -q "^Version: $DMGBUILD_VERSION$"; then
+# Made again when the requirements change (a copy of them stays in it).
+if [ ! -x "$VENV/bin/dmgbuild" ] || ! cmp -s "$DMGBUILD_REQUIREMENTS" "$VENV/requirements.txt"; then
     PYTHON=
     for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
         if command -v "$candidate" >/dev/null && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
@@ -143,10 +145,12 @@ if [ ! -x "$VENV/bin/dmgbuild" ] || ! "$VENV/bin/python" -m pip show dmgbuild 2>
         fi
     done
     [ -n "$PYTHON" ] || { echo "dmgbuild needs Python 3.10 or later (brew install python)" >&2; exit 1; }
-    echo "==> Installing dmgbuild $DMGBUILD_VERSION into build/dmg-venv"
+    echo "==> Installing dmgbuild into build/dmg-venv"
     rm -rf "$VENV"
     "$PYTHON" -m venv "$VENV"
-    "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check "dmgbuild==$DMGBUILD_VERSION"
+    "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary :all: \
+        -r "$DMGBUILD_REQUIREMENTS"
+    cp "$DMGBUILD_REQUIREMENTS" "$VENV/requirements.txt"
 fi
 
 # --- The disk image.
