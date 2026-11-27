@@ -123,7 +123,7 @@ struct EditorStatusBar: View {
                           onFocusChange: focusChanged) {
             model.palette.toggleLanguages()
         }
-        .help("Language (\(Keys.chooseLanguage.glyphs))")
+        .help(Keys.help("Language", .chooseLanguage))
         .accessibilityLabel("Language")
         .accessibilityValue(model.language.name)
         .accessibilityHint("Opens the language picker, to search for a language")
@@ -140,7 +140,7 @@ struct EditorStatusBar: View {
         .contentTransition(reduceMotion || appearance.motion != .full && appearance.motion != .system
             ? .opacity : .numericText())
         .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: text)
-        .help("Go to Line (\(Keys.goToLine.glyphs))")
+        .help(Keys.help("Go to Line", .goToLine))
         .accessibilityLabel("Go to Line")
         .accessibilityValue(StatusText.spokenPosition(line: model.line, lineCount: model.lineCount, column: model.column,
                                                       selected: model.selectedLength))
@@ -148,7 +148,7 @@ struct EditorStatusBar: View {
 
     private var indent: some View {
         HoneyStatusItem(model.indent.label, reserving: [IndentStyle.widestLabel])
-            .help("What Shift Right (\(Keys.shiftRight.glyphs)) indents with: the file's own indentation, or a tab when it has none")
+            .help("What \(Keys.help("Shift Right", .shiftRight)) indents with: the file's own indentation, or a tab when it has none")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Indentation, \(model.indent.spoken)")
             .accessibilityAddTraits(.isStaticText)

@@ -66,6 +66,23 @@ enum SelfTest {
             }
             return
         }
+        // -KiriShortcutsTest YES: Settings ▸ Shortcuts' checks alone
+        // (`ShortcutsSelfTest.swift`; part of -KiriBehaviorTest too).
+        if UserDefaults.standard.bool(forKey: "KiriShortcutsTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for the shortcuts checks"); quit(); return }
+                FrontEditor.shared.selfTestMain(window)
+                Task { @MainActor in
+                    await shortcutsStage(window)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE shortcuts")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // -KiriPositionTest YES: the kept file positions' checks alone
         // (part of -KiriBehaviorTest too).
         if UserDefaults.standard.bool(forKey: "KiriPositionTest"), !started {
@@ -463,7 +480,11 @@ enum SelfTest {
                 guard let w = NSApp.windows.first(where: { $0.identifier?.rawValue == SettingsView.windowID }) else {
                     report(false, "Settings window opened"); return
                 }
-                report(w.firstResponder === w, "Settings opens with no control focused (first responder \(w.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+                // (Shortcuts, chosen, puts the keyboard in its search field.)
+                if SettingsNavigation.shared.pane == .general {
+                    report(w.firstResponder === w, "Settings opens with no control focused (first responder \(w.firstResponder.map { "\(type(of: $0))" } ?? "nil"))")
+                }
+                shortcutsPictureFlags()
             }
         }
         // -KiriShowShortcuts YES (opened by EditorScreen) with -KiriShortcutsSize
@@ -846,6 +867,11 @@ enum SelfTest {
     /// arguments, which is where one given on the command line lives:
     /// `UserDefaults.standard` answers with it, and nothing is saved.
     static func setArgument(_ key: String, _ value: String?) {
+        setArgument(key, plist: value)
+    }
+
+    /// The same, for any property-list value (a dictionary of keys).
+    static func setArgument(_ key: String, plist value: Any?) {
         let domain = UserDefaults.argumentDomain
         var arguments = UserDefaults.standard.volatileDomain(forName: domain)
         arguments[key] = value
@@ -2040,7 +2066,7 @@ enum SelfTest {
 
         // Its lines, as VoiceOver is given them.
         let tool = CommandLineTool.shared.status
-        let expected = ["Open a file, \(Keys.open.spoken)", "Open a folder, \(Keys.openFolder.spoken)", "Everything else, \(Keys.palette.spoken)"]
+        let expected = ["Open a file, \(Keys.open!.spoken)", "Open a folder, \(Keys.openFolder!.spoken)", "Everything else, \(Keys.palette!.spoken)"]
             + (tool == .missing ? ["Install the kiri command"] : [])
         await wakeAccessibility()
         func hint(_ w: NSWindow) -> (group: AccessibilityElement?, lines: [AccessibilityElement]) {
@@ -2214,6 +2240,7 @@ enum SelfTest {
                         await themeFadeStage(window)
                         await themePreviewStage(window)
                         await settingsStage(window)
+                        await shortcutsStage(window)
                         await positionStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
@@ -2673,8 +2700,8 @@ enum SelfTest {
         // them elsewhere, and the menu then says where.
         let us = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "",
                                   charactersIgnoringModifiers: "", isARepeat: false, keyCode: 44)?.characters(byApplyingModifiers: []) == "/"
-        report(Keys.toggleComment.key == "/" && Keys.toggleComment.modifiers == .command && Keys.shortcuts.key == "?"
-               && Keys.shortcuts.modifiers == .command && toggle?.isEnabled == true && mask(toggle) == .command
+        report(Keys.toggleComment!.key == "/" && Keys.toggleComment!.modifiers == .command && Keys.shortcuts!.key == "?"
+               && Keys.shortcuts!.modifiers == .command && toggle?.isEnabled == true && mask(toggle) == .command
                && mask(shortcuts) == .command && (!us || toggle?.keyEquivalent == "/" && shortcuts?.keyEquivalent == "?")
                && toggle?.keyEquivalent.isEmpty == false && shortcuts?.keyEquivalent.isEmpty == false,
                "Format ▸ Toggle Comment is on ⌘/ and Help ▸ Keyboard Shortcuts on ⌘? (in the menus of this keyboard: ⌘\(toggle?.keyEquivalent ?? "none"), ⌘\(shortcuts?.keyEquivalent ?? "none"))")

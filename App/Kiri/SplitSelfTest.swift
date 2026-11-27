@@ -728,10 +728,10 @@ extension SelfTest {
     /// Keyboard Shortcuts lists them.
     private static func shortcutsChecks() {
         let group = ShortcutGroup.all.first { $0.title == "Side by side" }
-        report(group?.items.contains { $0.keys == Keys.splitEditor.glyphs } == true
-               && group?.items.contains { $0.keys == Keys.previewToSide.glyphs } == true
-               && Keys.splitEditor.spoken == "Command Backslash",
-               "Keyboard Shortcuts has a Side by side group with ⌘\\ and ⌥⌃⌘P (\(group?.items.count ?? 0) items, \(Keys.splitEditor.spoken))")
+        report(group?.items.contains { $0.keys == Keys.splitEditor!.glyphs } == true
+               && group?.items.contains { $0.keys == Keys.previewToSide!.glyphs } == true
+               && Keys.splitEditor!.spoken == "Command Backslash",
+               "Keyboard Shortcuts has a Side by side group with ⌘\\ and ⌥⌃⌘P (\(group?.items.count ?? 0) items, \(Keys.splitEditor!.spoken))")
     }
 }
 #endif

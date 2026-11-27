@@ -19,8 +19,12 @@ struct ShortcutsView: View {
     @State private var filter = ""
     #endif
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
+    /// Read so the window shows a key as soon as it is changed.
+    @State private var store = ShortcutStore.shared
 
     private var groups: [ShortcutGroup] {
+        _ = store.table
         let q = filter.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return ShortcutGroup.all }
         return ShortcutGroup.all.compactMap { g in
@@ -40,6 +44,13 @@ struct ShortcutsView: View {
                 }
                 Spacer(minLength: 16)
                 HoneySearchField("Filter", text: $filter).frame(width: 220)
+                // Settings ▸ Shortcuts, where the keys are changed.
+                Button("Customize…") {
+                    SettingsNavigation.shared.pane = .shortcuts
+                    openWindow(id: SettingsView.windowID)
+                }
+                .buttonStyle(.honeyGlass)
+                .help("Change the keys in Settings ▸ Shortcuts")
             }
             .padding(.top, 34) // clear of the traffic lights
             .padding(.horizontal, Self.margin)

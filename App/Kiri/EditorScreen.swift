@@ -154,7 +154,7 @@ private struct TabScreen: View {
                             Label(folder.sidebarVisible ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
                         }
                         .buttonStyle(.honeyIcon)
-                        .help(folder.sidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)")
+                        .help(Keys.help(folder.sidebarVisible ? "Hide Sidebar" : "Show Sidebar", .toggleSidebar))
                     }
                     if !tabs.items.isEmpty {
                         HoneyTabStrip(tabs.tabs,
@@ -171,7 +171,7 @@ private struct TabScreen: View {
                         Label("New Tab", systemImage: "plus")
                     }
                     .buttonStyle(.honeyIcon)
-                    .help("New tab (⌘T)")
+                    .help(Keys.help("New tab", .newTab))
                 }
             }
             Spacer(minLength: 0)
@@ -180,7 +180,7 @@ private struct TabScreen: View {
             }
             HoneyTaskButton("Save", systemImage: "square.and.arrow.down", state: saveState, pending: tabs.dirty, action: save)
                 .help(document.isLargeFile ? "Read-only: large files open for reading and searching"
-                      : document.isReadOnly ? "Read-only: Kiri shows this file, it doesn’t change it" : "Save (⌘S)")
+                      : document.isReadOnly ? "Read-only: Kiri shows this file, it doesn’t change it" : Keys.help("Save", .save))
                 .disabled(document.isReadOnly)
         }
         // The whole row moves with Save's outline, on the same spring: the
@@ -215,8 +215,7 @@ private struct MarkdownSwitch: View {
         HoneySegmentedPicker([(value: false, label: "Text"), (value: true, label: "Preview")],
                              selection: Binding(get: { tab.showsMarkdownPreview }, set: { tab.setMarkdownPreview($0) }))
             .accessibilityLabel(tab.isSVG ? "Show SVG as" : "Show Markdown as")
-            .help(tab.isSVG ? "Show the text or the picture (\(Keys.markdownPreview.glyphs))"
-                  : "Show the text or the rendered Markdown (\(Keys.markdownPreview.glyphs))")
+            .help(Keys.help(tab.isSVG ? "Show the text or the picture" : "Show the text or the rendered Markdown", .markdownPreview))
     }
 }
 
