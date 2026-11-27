@@ -428,6 +428,7 @@ struct FolderSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
+                        // swiftlint:disable:next redundant_discardable_let - a view builder takes no `_ =`
                         let _ = session.generation
                         let marks = tabs.openFiles
                         ForEach(session.root.children) { node in
@@ -796,6 +797,7 @@ private struct FileRow: View {
             }
 
             if node.isDirectory, expanded {
+                // swiftlint:disable:next redundant_discardable_let - a view builder takes no `_ =`
                 let _ = session.generation
                 if session.editing(in: tabs.window) == .newFile(in: node.url) {
                     NameRow(session: session, depth: depth + 1).id(NameRow.newFileID)

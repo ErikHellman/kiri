@@ -1,4 +1,5 @@
 #if DEBUG || KIRI_SELFTEST
+// swiftlint:disable force_unwrapping - in a self-test a nil is a failed test, and the crash says where
 import AppKit
 import KiriKit
 import SwiftUI
@@ -23,6 +24,7 @@ enum SelfTest {
 
     static var perf: Bool { UserDefaults.standard.bool(forKey: "KiriPerfTest") }
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length - a branch for each launch flag
     static func run(textView: NSTextView) {
         if isTestLaunch { closeDocumentsWhenStopped() }
         if UserDefaults.standard.bool(forKey: "KiriBehaviorTest"), !started {
@@ -1335,6 +1337,7 @@ enum SelfTest {
     /// Find keys pressed through the menu bar, the count, next and previous
     /// around the ends, the highlights, replace and Replace All with undo,
     /// and what the bar's own field does with Return, Tab and Escape.
+    // swiftlint:disable:next function_body_length - the find bar, step by step
     private static func findStage(_ ktv: KiriTextView, _ controller: EditorController) async {
         guard let window = ktv.window, let scroll = ktv.enclosingScrollView, let storage = ktv.textStorage,
               let edit = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu,

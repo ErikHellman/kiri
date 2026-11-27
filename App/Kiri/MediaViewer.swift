@@ -140,7 +140,7 @@ final class ViewerContainer: NSView {
         registerForDraggedTypes(FileDrop.types)
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     override var isFlipped: Bool { true }
 

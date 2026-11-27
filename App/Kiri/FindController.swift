@@ -488,6 +488,7 @@ import Observation
                 guard let self, !token.isCancelled, let storage = self.textView?.textStorage else { return }
                 self.work = nil
                 // An unchanging copy: the document goes on being edited.
+                // swiftlint:disable:next force_cast - an NSString's copy is one
                 let snapshot = (storage.string as NSString).copy() as! NSString as String
                 self.queue.async {
                     let found = search.matches(in: snapshot, isCancelled: { token.isCancelled })

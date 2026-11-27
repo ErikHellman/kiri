@@ -87,9 +87,10 @@ public final class LargeFile: @unchecked Sendable {
 
     /// Fills `buffer` from `offset` on; how many bytes there were.
     func read(into buffer: UnsafeMutableRawBufferPointer, at offset: Int) -> Int {
+        guard let start = buffer.baseAddress else { return 0 }
         var done = 0
         while done < buffer.count {
-            let n = pread(fd, buffer.baseAddress! + done, buffer.count - done, off_t(offset + done))
+            let n = pread(fd, start + done, buffer.count - done, off_t(offset + done))
             if n > 0 { done += n } else if n < 0 && errno == EINTR { continue } else { break }
         }
         return done
@@ -130,6 +131,7 @@ public final class LargeFile: @unchecked Sendable {
                     out.value[i] = self.count(blocks[i])
                 }
             }
+            // swiftlint:disable:next force_unwrapping - there is a block to count
             let reached = blocks.last!.upperBound
             let lines: Int = lock.withLock {
                 for c in counts {
@@ -164,6 +166,7 @@ public final class LargeFile: @unchecked Sendable {
         let spacing = Self.checkpointSpacing
         var next = spacing // the newline count that makes the next checkpoint
         let base = range.lowerBound
+        // swiftlint:disable:next force_unwrapping - a buffer that was allocated has an address
         let bytes = UnsafeRawPointer(buffer.baseAddress!)
         var i = 0
         while i < got {
@@ -249,6 +252,7 @@ public final class LargeFile: @unchecked Sendable {
             let bytes = read(offset..<min(offset + chunk, end))
             if bytes.isEmpty { break }
             bytes.withUnsafeBufferPointer { buf in
+                // swiftlint:disable:next force_unwrapping - the bytes are not empty
                 let base = buf.baseAddress!
                 var i = 0
                 while line < wanted.upperBound, i < buf.count,

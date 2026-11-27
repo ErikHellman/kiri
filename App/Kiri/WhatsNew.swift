@@ -222,7 +222,7 @@ import SwiftUI
         #endif
         let files = bundled
         let now = ReleaseVersion(current)
-        let versions = files.keys.compactMap(ReleaseVersion.init).filter { now == nil || $0 <= now! }
+        let versions = files.keys.compactMap(ReleaseVersion.init).filter { version in now.map { version <= $0 } ?? true }
         return versions.max().flatMap { files[$0.description] }
     }
 

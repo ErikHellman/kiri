@@ -129,8 +129,10 @@ enum MenuCommands {
         }
         let special: [Character: KeyEquivalent] = [
             "\r": .return, "\t": .tab, "\u{1B}": .escape, " ": .space, "\u{8}": .delete, "\u{7F}": .delete,
+            // swiftlint:disable force_unwrapping - AppKit's function keys are characters
             Character(UnicodeScalar(NSUpArrowFunctionKey)!): .upArrow, Character(UnicodeScalar(NSDownArrowFunctionKey)!): .downArrow,
             Character(UnicodeScalar(NSLeftArrowFunctionKey)!): .leftArrow, Character(UnicodeScalar(NSRightArrowFunctionKey)!): .rightArrow,
+            // swiftlint:enable force_unwrapping
         ]
         return KeyboardShortcut(special[key] ?? KeyEquivalent(key), modifiers: modifiers)
     }

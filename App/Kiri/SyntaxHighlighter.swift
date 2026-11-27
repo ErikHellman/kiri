@@ -105,6 +105,7 @@ final class SyntaxHighlighter {
     private func startParseIfNeeded(force: Bool = false) {
         guard let parser, !parsing, force || !pendingEdits.isEmpty, let storage = textView?.textStorage else { return }
         // Parse an immutable copy; later edits queue up for the next round.
+        // swiftlint:disable:next force_cast - an NSString's copy is one
         let text = storage.string.copy() as! NSString
         let edits = pendingEdits
         pendingEdits = []

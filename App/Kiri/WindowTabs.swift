@@ -955,7 +955,7 @@ struct WindowReader: NSViewRepresentable {
             self.onWindow = onWindow
             super.init(frame: .zero)
         }
-        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let window { onWindow(window) }

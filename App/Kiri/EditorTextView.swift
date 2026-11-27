@@ -445,7 +445,7 @@ final class EditorContainerView: NSView {
         #endif
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     /// Called when the visible part of the text changes.
     var onScroll: (() -> Void)?

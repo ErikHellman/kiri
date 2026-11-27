@@ -213,7 +213,7 @@ enum YAMLSubset {
                 i += 1
             }
             var trailing = 0
-            while body.last == "" {
+            while body.last?.isEmpty == true {
                 body.removeLast()
                 trailing += 1
             }

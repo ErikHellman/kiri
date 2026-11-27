@@ -134,7 +134,7 @@ final class TabEditorSlot: NSView {
     static var made = 0
     #endif
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     /// How a file that arrives comes in: its text fades in on the paper,
     /// 240 ms rising 4 pt; with reduced motion the 140 ms fade alone; with

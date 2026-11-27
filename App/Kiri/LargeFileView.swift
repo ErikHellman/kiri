@@ -78,7 +78,7 @@ final class LargeFileView: NSView, NSMenuItemValidation {
         })
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 

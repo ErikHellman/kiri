@@ -71,7 +71,7 @@ import SwiftUI
                 }
                 return nil
             }
-            if !modifiers.intersection([.command, .control]).isEmpty { MainActor.assumeIsolated { MainMenu.refresh() } }
+            if !modifiers.isDisjoint(with: [.command, .control]) { MainActor.assumeIsolated { MainMenu.refresh() } }
             return event
         }
     }

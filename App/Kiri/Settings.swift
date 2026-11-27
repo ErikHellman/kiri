@@ -29,8 +29,8 @@ enum Prefs {
     /// Editor text size steps for ⌘+ / ⌘- (the interface keeps its size).
     static let textScales: [Double] = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
 
-    static func bigger(_ s: Double) -> Double { textScales.first { $0 > s + 0.001 } ?? textScales.last! }
-    static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales.first! }
+    static func bigger(_ s: Double) -> Double { textScales.first { $0 > s + 0.001 } ?? textScales[textScales.count - 1] }
+    static func smaller(_ s: Double) -> Double { textScales.last { $0 < s - 0.001 } ?? textScales[0] }
 }
 
 /// Kiri ▸ Settings…, in six groups: Appearance (the color theme, light

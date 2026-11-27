@@ -312,7 +312,7 @@ private final class ImageCanvas: NSView {
         layer?.minificationFilter = .trilinear
     }
 
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() { layer?.contents = image }
