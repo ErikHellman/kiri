@@ -556,7 +556,7 @@ import SwiftUI
             : (tab.lastResponder.flatMap { tab.holds($0) ? $0 as? NSView : nil } ?? tab.container.textView)
         if let target, target.window === window {
             movingKeyboard = true
-            window.makeFirstResponder(target)
+            _ = window.makeFirstResponder(target)
             movingKeyboard = false
         } else if tries < 40 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self, weak tab] in

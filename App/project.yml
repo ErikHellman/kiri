@@ -10,6 +10,11 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    # CI builds with KIRI_WARNINGS_AS_ERRORS=YES, so a warning in Kiri's own
+    # code fails the build there (packages don't read this setting, so
+    # Sparkle's and Vaka's warnings can't). Local builds only warn.
+    KIRI_WARNINGS_AS_ERRORS: "NO"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: $(KIRI_WARNINGS_AS_ERRORS)
     # The release workflow sets both from the tag (v0.2.0 -> 0.2.0) and the
     # number of commits, so CURRENT_PROJECT_VERSION, which Sparkle compares,
     # only ever grows. These are what a local build gets.

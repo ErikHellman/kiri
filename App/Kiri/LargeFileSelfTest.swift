@@ -167,7 +167,7 @@ extension SelfTest {
         for _ in 0..<200 where find.isSearching { await settle(25) }
         let before = viewer.file.lineCount
         if let handle = try? FileHandle(forWritingTo: url) {
-            try? handle.seekToEnd()
+            _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: Data("added one needle\nadded two\n".utf8))
             try? handle.close()
         }
@@ -225,7 +225,7 @@ extension SelfTest {
             await settle(200)
             let wasEditor = growingTab.largeViewer == nil && !doc.isLargeFile
             if let handle = try? FileHandle(forWritingTo: growing) {
-                try? handle.seekToEnd()
+                _ = try? handle.seekToEnd()
                 try? handle.write(contentsOf: Data(String(repeating: "more\n", count: 2000).utf8))
                 try? handle.close()
             }
@@ -257,7 +257,7 @@ extension SelfTest {
         if let streamDoc, let streamTab = DocumentWindow.tab(of: streamDoc), let streamViewer = streamTab.largeViewer {
             await settle(200)
             if let handle = try? FileHandle(forWritingTo: streamFile) {
-                try? handle.seekToEnd()
+                _ = try? handle.seekToEnd()
                 for i in 0..<200 { try? handle.write(contentsOf: Data("streamed line \(i)\n".utf8)) }
                 try? handle.close()
             }

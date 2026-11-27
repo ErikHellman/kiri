@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Warnings in Kiri's own code fail the build (App/project.yml,
+  # KiriKit/Package.swift). Dependencies' warnings don't.
+  KIRI_WARNINGS_AS_ERRORS: "YES"
+
 jobs:
   # The token layer is plain Foundation, so its tests also run on Linux.
   linux:
@@ -41,7 +46,7 @@ jobs:
           xcodegen
           xcodebuild build -project Kiri.xcodeproj -scheme Kiri \
             -destination 'generic/platform=macOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO -quiet
+            CODE_SIGNING_ALLOWED=NO KIRI_WARNINGS_AS_ERRORS=YES -quiet
           # Fail if nothing was built (an empty scheme also "succeeds").
           test -x build/Build/Products/Debug/Kiri.app/Contents/MacOS/Kiri
           # Sparkle is embedded, for updates.

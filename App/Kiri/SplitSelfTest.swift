@@ -143,7 +143,7 @@ extension SelfTest {
         }
 
         func click(_ tab: DocumentTab) async {
-            window.makeFirstResponder(tab.container.textView)
+            _ = window.makeFirstResponder(tab.container.textView)
             await SelfTest.settle(150)
         }
     }
