@@ -1,5 +1,6 @@
 import AppKit
 import KiriKit
+import KiriMarkdown
 import SwiftUI
 
 /// One tab of a document window: a document and its editor. The editor
@@ -30,6 +31,10 @@ import SwiftUI
     var showsMarkdownPreview = false
     /// Made the first time the tab shows its Markdown rendered.
     @ObservationIgnored var markdownPreview: MarkdownPreview?
+    /// What the preview holds back until the person lets it load: pictures
+    /// and media from the internet or from outside the document's folder
+    /// (`PreviewExternalNotice`, at the top of the preview's panel).
+    var previewNotice: PreviewHeldBack?
     /// The file arrived (a new tab, or the preview tab taking another
     /// file) and its text is to fade in when it next shows
     /// (`TabEditorSlot.arrive`).

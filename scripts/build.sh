@@ -94,20 +94,27 @@ run_xcodebuild() {
 }
 
 (cd App && xcodegen --quiet)
+# The packages come at the commits the lockfile names, App/Package.resolved
+# (scripts/packages.sh), and the build fails if it would need any other.
+scripts/packages.sh lock
 
 # Fetching the Tree-sitter grammars is the slow part of a first build (about
 # 1.4 GB of git history), so it runs as its own step with progress shown.
 if [ -d "$DERIVED/SourcePackages/checkouts" ]; then
     echo "==> Checking Swift packages"
-    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED" -quiet
+    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED" \
+        -disableAutomaticPackageResolution -quiet
 else
     echo "==> Fetching Swift packages (the first build downloads about 1.4 GB)"
-    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED"
+    run_xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri -derivedDataPath "$DERIVED" \
+        -disableAutomaticPackageResolution
 fi
+scripts/packages.sh check
 
 echo "==> Building Kiri (Release, $ARCH)"
 run_xcodebuild build -project "$PROJECT" -scheme Kiri -configuration Release \
-    -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath "$DERIVED" -skipPackageUpdates \
+    -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath "$DERIVED" \
+    -skipPackageUpdates -disableAutomaticPackageResolution \
     ARCHS="$ARCH" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO $VERSION_SETTINGS \
     ${KIRI_WARNINGS_AS_ERRORS:+KIRI_WARNINGS_AS_ERRORS=$KIRI_WARNINGS_AS_ERRORS} -quiet
 

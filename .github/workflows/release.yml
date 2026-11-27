@@ -5,8 +5,11 @@ name: release
 #   git tag -a v0.3.2 -m "Kiri 0.3.2"
 #   git push origin v0.3.2
 #
-# The tagged commit must have the release notes, docs/release-notes/0.3.2.md
-# (scripts/release-notes.sh); without them the job stops before building.
+# The tag must be a version (vMAJOR.MINOR.PATCH) higher than every version
+# before it, on a commit of main that has the release notes,
+# docs/release-notes/0.3.2.md. scripts/check-release-tag.sh checks all of
+# that first; a tag that fails stops the job before anything is built or
+# signed.
 #
 # The job builds a universal Kiri.app with the tag's version, signs it with
 # the Developer ID, notarizes and staples the app and its disk image
@@ -70,10 +73,14 @@ jobs:
         id: version
         run: |
           TAG="$GITHUB_REF_NAME"
-          case "$TAG" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::Tags are vMAJOR.MINOR.PATCH, like v0.2.0, not $TAG"; exit 1 ;;
-          esac
+          # Before anything is built or signed: the tag is a version
+          # (vMAJOR.MINOR.PATCH), on a commit of main, higher than every
+          # version before it, and that commit has its release notes
+          # (scripts/check-release-tag.sh says all it checks).
+          if ! scripts/check-release-tag.sh "$TAG" HEAD 2> "$RUNNER_TEMP/tag-check.txt"; then
+            echo "::error::$(tr '\n' ' ' < "$RUNNER_TEMP/tag-check.txt")"
+            exit 1
+          fi
           VERSION="${TAG#v}"
           # Sparkle compares CFBundleVersion: the number of commits only grows.
           BUILD=$(git rev-list --count HEAD)

@@ -52,7 +52,10 @@ extension SelfTest {
     /// the page has the front matter as a table first, Nunito, colored
     /// code with a Copy button, GitHub's tables, tasks and alerts, the
     /// file's image, and its Mermaid diagrams drawn (a broken one says
-    /// so); links go to the app (recorded here, not opened); ⌃⌘P again
+    /// so); links go to the app (recorded here, not opened), and one that
+    /// would open another app or run one asks first; pictures from the
+    /// internet and from outside the file's folder wait for Accept
+    /// (`externalStage`); ⌃⌘P again
     /// brings the text back at the part the preview was scrolled to; dark
     /// restyles the page and the diagrams; another language leaves it.
     /// `-KiriMarkdownTest YES`, with a Markdown file like the one the
@@ -75,6 +78,9 @@ extension SelfTest {
         defer {
             MarkdownPreview.pasteboardForTests = nil
             MarkdownPreview.openedForTests = nil
+            MarkdownPreview.askedForTests = nil
+            MarkdownPreview.policyForTests = nil
+            MarkdownPreview.forgetAnswersForTests()
             board.releaseGlobally()
         }
 
@@ -260,6 +266,13 @@ extension SelfTest {
         ThemePreview.shared.end()
         await settle(800)
 
+        // Links that leave Kiri, and pictures from elsewhere.
+        if let inside = page["imageSrc"] as? String, !inside.isEmpty {
+            await externalStage(tab, preview, inside: inside) { opened.urls }
+        } else {
+            report(false, "an image next to the file, for the checks of pictures from elsewhere")
+        }
+
         // Another language leaves the preview, and the menu item is off.
         tab.model.language = .plainText
         await settle(400)
@@ -273,6 +286,160 @@ extension SelfTest {
         }
         tab.model.language = .markdown
         await settle(200)
+    }
+
+    /// What leaves Kiri from a preview. Links: one to an app, to a folder
+    /// and to another app's kind of link ask first (answered here, and
+    /// nothing is opened: `opened` is what would have been). Pictures: one
+    /// from the internet and one from outside the file's folder are held
+    /// back, with the tab's notice, until Accept; Deny leaves them out;
+    /// Always Deny and Always Allow do so without a notice. The setting
+    /// is the test's own (`policyForTests`), the saved one stays. The
+    /// preview shows a text of the test's own meanwhile, with the image
+    /// `inside` (a URL of the page, in the file's folder), and the file's
+    /// again afterwards.
+    private static func externalStage(_ tab: DocumentTab, _ preview: MarkdownPreview, inside: String,
+                                      opened: () -> [URL]) async {
+        let web = preview.webView
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("kiri-preview-outside-\(UUID().uuidString)")
+        let picture = folder.appendingPathComponent("outside.png")
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 120, pixelsHigh: 40, bitsPerSample: 8,
+                                      samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                      bytesPerRow: 0, bitsPerPixel: 0)
+        guard (try? files.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+              let png = bitmap?.representation(using: .png, properties: [:]), (try? png.write(to: picture)) != nil else {
+            report(false, "a picture outside the file's folder, for the checks of pictures from elsewhere")
+            return
+        }
+        defer { try? files.removeItem(at: folder) }
+
+        final class Asked {
+            var questions: [LinkQuestion] = []
+            var answer = false
+        }
+        let asked = Asked()
+        MarkdownPreview.askedForTests = { asked.questions.append($0); return asked.answer }
+        MarkdownPreview.policyForTests = .ask
+        MarkdownPreview.forgetAnswersForTests()
+        /// As the setting changing tells every preview.
+        func settingChanged() {
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        }
+        /// The pictures' widths (0: not loaded) and the page's policy.
+        func pictures() async -> [String: Any] {
+            await pageJSON(web, """
+                const width = (alt) => { const i = document.querySelector('img[alt="' + alt + '"]'); return i ? i.naturalWidth : -1; };
+                const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+                return { inside: width('inside'), outside: width('outside'), remote: width('remote'),
+                         policy: meta ? meta.content : '' };
+                """) ?? [:]
+        }
+        func until(_ done: @autoclosure () -> Bool) async {
+            for _ in 0..<60 where !done() { await settle(50) }
+        }
+        /// The width of the picture named `name`, once it is `width` (or
+        /// what it is after three seconds).
+        func width(of name: String, is width: Int) async -> Int {
+            var got = -2
+            for _ in 0..<60 {
+                got = await pictures()[name] as? Int ?? -2
+                if got == width { break }
+                await settle(50)
+            }
+            return got
+        }
+        let saved = UserDefaults.standard.string(forKey: Prefs.previewExternalKey)
+
+        // (127.0.0.1:9: nothing listens there, and nothing leaves this Mac.)
+        let text = """
+            # Elsewhere
+
+            ![inside](\(inside)) ![outside](<\(picture.path)>) ![remote](http://127.0.0.1:9/kiri-test.png)
+
+            [app](/System/Applications/Calculator.app) [folder](<\(folder.path)/>)
+            [settings](x-apple.systempreferences:com.apple.preference.security)
+            """
+        preview.show(text: text, file: tab.document.location, line: 1)
+        await until(tab.previewNotice != nil)
+        let insideWidth = await width(of: "inside", is: 240)
+
+        // Links.
+        func click(_ name: String) async {
+            _ = await pageJSON(web, "[...document.querySelectorAll('a')].find(a => a.textContent === '\(name)').click(); return {};")
+        }
+        let before = opened().count
+        await click("app")
+        await until(asked.questions.count == 1)
+        let app = asked.questions.last
+        report(asked.questions.count == 1 && app?.runs == true && app?.title == "Open the app “Calculator”?"
+               && opened().count == before,
+               "a link to an app asks first, says it runs, and opens nothing on Cancel (“\(app?.title ?? "no question")”, \(app?.runs ?? false))")
+        await click("folder")
+        await until(asked.questions.count == 2)
+        let inFinder = asked.questions.last
+        report(asked.questions.count == 2 && inFinder?.runs == false && opened().count == before,
+               "a link to a folder asks before another app shows it (“\(inFinder?.title ?? "no question")”)")
+        await click("settings")
+        await until(asked.questions.count == 3)
+        let other = asked.questions.last
+        report(asked.questions.count == 3 && other?.title.hasPrefix("Open this link in ") == true && opened().count == before,
+               "another app's kind of link asks first (“\(other?.title ?? "no question")”)")
+        asked.answer = true
+        await click("settings")
+        await until(opened().count == before + 1)
+        report(opened().last?.scheme == "x-apple.systempreferences" && asked.questions.count == 4,
+               "Open hands the link to its app (\(opened().last?.absoluteString ?? "nothing"))")
+        asked.answer = false
+
+        // Ask: held back, with the notice.
+        var shown = await pictures()
+        report(tab.previewNotice == PreviewHeldBack(remote: true, outside: true),
+               "a file with a picture from the internet and one from outside its folder shows the notice (\(String(describing: tab.previewNotice)))")
+        report(insideWidth == 240 && shown["outside"] as? Int == 0 && shown["remote"] as? Int == 0
+               && !(shown["policy"] as? String ?? "http").contains("http"),
+               "until then only the picture in the file's folder loads (\(shown))")
+
+        // Accept: the page loads them, and the notice goes.
+        preview.answerExternal(accept: true)
+        var outside = await width(of: "outside", is: 120)
+        shown = await pictures()
+        report(outside == 120 && tab.previewNotice == nil && (shown["policy"] as? String ?? "").contains("https:"),
+               "Accept loads them and takes the notice away (\(shown), \(String(describing: tab.previewNotice)))")
+
+        // Deny: nothing loads, and the notice goes.
+        MarkdownPreview.forgetAnswersForTests()
+        settingChanged()
+        await until(tab.previewNotice != nil)
+        let askedAgain = tab.previewNotice != nil
+        preview.answerExternal(accept: false)
+        await settle(300)
+        shown = await pictures()
+        report(askedAgain && tab.previewNotice == nil && shown["outside"] as? Int == 0
+               && !(shown["policy"] as? String ?? "http").contains("http"),
+               "Deny leaves them out and takes the notice away (asked \(askedAgain), \(shown))")
+
+        // Always Deny and Always Allow: no notice.
+        MarkdownPreview.forgetAnswersForTests()
+        MarkdownPreview.policyForTests = .deny
+        settingChanged()
+        await settle(400)
+        shown = await pictures()
+        report(tab.previewNotice == nil && shown["outside"] as? Int == 0 && shown["remote"] as? Int == 0,
+               "Always Deny loads none of them and shows no notice (\(shown))")
+        MarkdownPreview.policyForTests = .allow
+        settingChanged()
+        outside = await width(of: "outside", is: 120)
+        report(outside == 120 && tab.previewNotice == nil, "Always Allow loads them and shows no notice (\(outside))")
+        report(UserDefaults.standard.string(forKey: Prefs.previewExternalKey) == saved,
+               "none of it wrote the saved preference (\(saved ?? "not set"))")
+
+        // The file's own text again.
+        MarkdownPreview.policyForTests = nil
+        MarkdownPreview.forgetAnswersForTests()
+        settingChanged()
+        preview.show(text: tab.controller.textView?.string ?? tab.document.text, file: tab.document.location, line: nil)
+        await settle(400)
     }
 
     /// Runs `body` (a function body that returns something JSON can hold)
