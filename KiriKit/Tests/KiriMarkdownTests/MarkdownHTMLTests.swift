@@ -109,8 +109,8 @@ import Testing
         #expect(RawHTML.sanitize("<svg viewBox=\"0 0 1 1\"><style>*{}</style><rect /></svg>") == "<svg viewBox=\"0 0 1 1\"><rect /></svg>")
         // Forms, <base>, <meta refresh>, <link>, frames, popovers.
         #expect(RawHTML.sanitize("<form action=\"https://x\"><input name=a><button formaction=https://y>Go</button></form>") == "Go")
-        #expect(RawHTML.sanitize("<base href=\"https://x/\"><meta http-equiv=\"refresh\" content=\"0\"><link rel=stylesheet href=x>") == "")
-        #expect(RawHTML.sanitize("<iframe src=\"https://x\"></iframe>") == "")
+        #expect(RawHTML.sanitize("<base href=\"https://x/\"><meta http-equiv=\"refresh\" content=\"0\"><link rel=stylesheet href=x>").isEmpty)
+        #expect(RawHTML.sanitize("<iframe src=\"https://x\"></iframe>").isEmpty)
         #expect(RawHTML.sanitize("<div popover id=p>x</div><a popovertarget=p>o</a>") == "<div id=p>x</div><a>o</a>")
         // A script goes with its text, inline too.
         #expect(!MarkdownHTML.render("Hi <script>alert(1)</script> there").html.contains("<script"))
