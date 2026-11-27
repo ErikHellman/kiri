@@ -161,7 +161,7 @@ enum ShortcutCommand: String, CaseIterable, Identifiable, Sendable {
 /// dictionary of the changes alone (`ShortcutTable.stored`). The menus
 /// read their keys from here (`Keys`), so a change is in the menu bar,
 /// the palette and Help ▸ Keyboard Shortcuts at once.
-@MainActor @Observable final class ShortcutStore {
+@Observable final class ShortcutStore {
     static let shared = ShortcutStore()
     static let prefsKey = "keyboardShortcuts"
 
@@ -267,7 +267,7 @@ struct FixedKey: Identifiable, Equatable {
     /// macOS's items in the menu bar that have a key (Undo, Copy, Quit,
     /// Minimize, Enter Full Screen…): every item with a key that is not
     /// one of Kiri's commands.
-    @MainActor static func menuBar() -> [FixedKey] {
+    static func menuBar() -> [FixedKey] {
         guard let main = NSApp.mainMenu else { return [] }
         MainMenu.refresh()
         let ours = Set(ShortcutCommand.allCases.flatMap(\.info.titles))
@@ -308,7 +308,9 @@ extension KeyCombo {
         case .end: .end
         case .pageUp: .pageUp
         case .pageDown: .pageDown
-        case .function(let n): KeyEquivalent(Character(UnicodeScalar(UInt32(NSF1FunctionKey + n - 1))!))
+        // F1–F20 are AppKit's private-use characters from NSF1FunctionKey,
+        // always valid scalars.
+        case .function(let n): KeyEquivalent(Character(UnicodeScalar(UInt32(NSF1FunctionKey + n - 1)) ?? " "))
         }
     }
 

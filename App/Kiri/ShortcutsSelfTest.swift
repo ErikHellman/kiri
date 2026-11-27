@@ -99,7 +99,7 @@ extension SelfTest {
                "Help ▸ Keyboard Shortcuts says ⌃⌘9 for the palette, and a tooltip of a command with no key has no key in it (\(helpSays), “\(tooltip)”)")
         store.set(.palette, nil)
         await settle(150)
-        let none = item(.palette)?.keyEquivalent == ""
+        let none = item(.palette)?.keyEquivalent.isEmpty == true
         let noneKey = await press("9", [.control, .command], 25, in: original)
         if palette?.isOpen == true { palette?.toggle() }
         store.reset(.palette)

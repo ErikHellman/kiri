@@ -12,7 +12,7 @@ enum SettingsPane: String, CaseIterable, Sendable {
 
 /// Which pane Settings shows, so other windows can open it at one
 /// (Help ▸ Keyboard Shortcuts' Customize…).
-@MainActor @Observable final class SettingsNavigation {
+@Observable final class SettingsNavigation {
     static let shared = SettingsNavigation()
 
     var pane: SettingsPane = {
@@ -33,7 +33,7 @@ enum SettingsPane: String, CaseIterable, Sendable {
 /// is up, ahead of the menus: while a key is being recorded every key
 /// press is the new shortcut's, ⌘Q and ⌘W too, and Escape cancels the
 /// recording instead of closing the window.
-@MainActor @Observable final class ShortcutsPaneModel {
+@Observable final class ShortcutsPaneModel {
     static let shared = ShortcutsPaneModel()
 
     /// What is typed in the search field.

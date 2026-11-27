@@ -52,7 +52,8 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
             switch self {
             case .character(let c): String(c)
             case .function(let n): "f\(n)"
-            default: Self.names.first { $0.0 == self }!.name
+            // (Every other case is in `names`.)
+            default: Self.names.first { $0.0 == self }?.name ?? ""
             }
         }
 
@@ -60,7 +61,8 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
             switch self {
             case .character(let c): String(c).uppercased()
             case .function(let n): "F\(n)"
-            default: Self.names.first { $0.0 == self }!.glyph
+            // (Every other case is in `names`.)
+            default: Self.names.first { $0.0 == self }?.glyph ?? ""
             }
         }
 
@@ -68,7 +70,8 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
             switch self {
             case .character(let c): Self.characterWords[c] ?? String(c).uppercased()
             case .function(let n): "F\(n)"
-            default: Self.names.first { $0.0 == self }!.word
+            // (Every other case is in `names`.)
+            default: Self.names.first { $0.0 == self }?.word ?? ""
             }
         }
 

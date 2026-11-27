@@ -5,7 +5,7 @@ import SwiftUI
 /// (`ShortcutStore`). The menus, the tooltips and the Keyboard Shortcuts
 /// window all read them here, so they can't drift apart. Nil: the command
 /// has no key.
-@MainActor enum Keys {
+enum Keys {
     static var settings: KeyboardShortcut? { ShortcutStore.shared.shortcut(.settings) }
     static var installCommandLineTool: KeyboardShortcut? { ShortcutStore.shared.shortcut(.installCommandLineTool) }
     static var checkForUpdates: KeyboardShortcut? { ShortcutStore.shared.shortcut(.checkForUpdates) }
@@ -164,7 +164,7 @@ struct ShortcutGroup: Identifiable {
     var id: String { title }
 
     /// Built when asked, from the keys as they are now.
-    @MainActor static var all: [ShortcutGroup] {
+    static var all: [ShortcutGroup] {
         [
         ShortcutGroup(title: "Files", systemImage: "doc", items: [
             Item("New document", Keys.new),
@@ -280,5 +280,5 @@ struct ShortcutGroup: Identifiable {
     }
 
     /// A key in a line with others: "—" for one that has none.
-    @MainActor private static func g(_ shortcut: KeyboardShortcut?) -> String { shortcut?.glyphs ?? "—" }
+    private static func g(_ shortcut: KeyboardShortcut?) -> String { shortcut?.glyphs ?? "—" }
 }
