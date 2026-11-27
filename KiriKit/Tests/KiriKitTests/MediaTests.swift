@@ -239,27 +239,38 @@ import Testing
         (0..<count).map { UInt8(truncatingIfNeeded: value >> (8 * UInt64($0))) }
     }
 
+    /// A record: its signature, then each (value, byte count) little-endian.
+    /// (Built a field at a time: one long `+` chain takes the Linux compiler too long.)
+    static func record(_ signature: [UInt8], _ fields: [(UInt64, Int)]) -> [UInt8] {
+        var bytes = signature
+        for (value, count) in fields { bytes.append(contentsOf: le(value, count)) }
+        return bytes
+    }
+
     /// A zip's end record: `count` files, a list of `size` bytes at `offset`.
     static func endRecord(count: UInt64, size: UInt64, offset: UInt64) -> [UInt8] {
-        [0x50, 0x4B, 0x05, 0x06] + le(0, 4) + le(count, 2) + le(count, 2) + le(size, 4) + le(offset, 4) + le(0, 2)
+        record([0x50, 0x4B, 0x05, 0x06], [(0, 4), (count, 2), (count, 2), (size, 4), (offset, 4), (0, 2)])
     }
 
     /// The ZIP64 locator: where the ZIP64 end record is.
     static func locator(_ recordOffset: UInt64) -> [UInt8] {
-        [0x50, 0x4B, 0x06, 0x07] + le(0, 4) + le(recordOffset, 8) + le(1, 4)
+        record([0x50, 0x4B, 0x06, 0x07], [(0, 4), (recordOffset, 8), (1, 4)])
     }
 
     static func zip64Record(count: UInt64, size: UInt64, offset: UInt64) -> [UInt8] {
-        [0x50, 0x4B, 0x06, 0x06] + le(44, 8) + le(0x2D, 2) + le(0x2D, 2) + le(0, 8)
-            + le(count, 8) + le(count, 8) + le(size, 8) + le(offset, 8)
+        record([0x50, 0x4B, 0x06, 0x06], [(44, 8), (0x2D, 2), (0x2D, 2), (0, 8), (count, 8), (count, 8), (size, 8), (offset, 8)])
     }
 
     /// A central directory entry whose size is in a ZIP64 extra field.
     static func centralEntry(_ name: String, zip64Size: UInt64) -> [UInt8] {
-        let extra = le(1, 2) + le(16, 2) + le(zip64Size, 8) + le(0, 8)
-        return [0x50, 0x4B, 0x01, 0x02] + le(0x31E, 2) + le(0x2D, 2) + le(0, 2) + le(0, 2) + le(0, 4) + le(0, 4)
-            + le(0xFFFF_FFFF, 4) + le(0xFFFF_FFFF, 4) + le(UInt64(name.utf8.count), 2) + le(UInt64(extra.count), 2)
-            + le(0, 2) + le(0, 2) + le(0, 2) + le(0, 4) + le(0, 4) + Array(name.utf8) + extra
+        let extra = record([], [(1, 2), (16, 2), (zip64Size, 8), (0, 8)])
+        let fields: [(UInt64, Int)] = [
+            (0x31E, 2), (0x2D, 2), (0, 2), (0, 2), (0, 4), (0, 4), // made by, needed, flags, method, time, CRC
+            (0xFFFF_FFFF, 4), (0xFFFF_FFFF, 4), // sizes: in the extra field
+            (UInt64(name.utf8.count), 2), (UInt64(extra.count), 2),
+            (0, 2), (0, 2), (0, 2), (0, 4), (0, 4), // comment, disk, attributes, offset
+        ]
+        return record([0x50, 0x4B, 0x01, 0x02], fields) + Array(name.utf8) + extra
     }
 
     func zipListing(_ zip: [UInt8]) throws -> ArchiveListing {
