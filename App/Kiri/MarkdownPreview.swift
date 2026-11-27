@@ -569,6 +569,7 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
         guard let url = task.request.url else { return fail(task) }
         let file: URL
         let mime: String
+        var outside = false
         if url.host == "app" {
             let name = url.lastPathComponent
             guard url.path.hasPrefix("/fonts/"), let font = Honey.fontURLs.first(where: { $0.lastPathComponent == name }) else {
@@ -581,16 +582,28 @@ final class PreviewFiles: NSObject, WKURLSchemeHandler {
                   let size = (try? local.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= Self.limit {
             file = local
             mime = type.preferredMIMEType ?? "application/octet-stream"
+            outside = !MarkdownPage.isInside(local, folder: folder)
         } else {
             return fail(task)
         }
         guard let data = try? Data(contentsOf: file) else { return fail(task) }
-        task.didReceive(URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: nil))
+        task.didReceive(response(url, mime: mime, length: data.count, kept: !outside))
         task.didReceive(data)
         task.didFinish()
     }
 
     func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {}
+
+    /// A file outside the folder isn't `kept`: WebKit keeps a picture it
+    /// has loaded in memory and would show it again, without asking here,
+    /// on a page loaded again after the person took the permission back.
+    private func response(_ url: URL, mime: String, length: Int, kept: Bool) -> URLResponse {
+        let headers = ["Content-Type": mime, "Content-Length": String(length), "Cache-Control": "no-store"]
+        guard !kept, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else {
+            return URLResponse(url: url, mimeType: mime, expectedContentLength: length, textEncodingName: nil)
+        }
+        return response
+    }
 
     /// Whether `file` may be read: it is in the document's folder, or the
     /// person has let files outside it. A refusal is told to the preview,

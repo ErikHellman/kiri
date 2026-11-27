@@ -99,11 +99,15 @@ case "${1:-}" in
         (cd KiriKit && swift package resolve)
         # The app's: from the lockfile as it is (packages whose version
         # didn't change keep their commit), resolved for what did change.
+        # The first time, from KiriKit's: with no lockfile in the project,
+        # Xcode writes the app's pins into KiriKit's instead.
         mkdir -p "$(dirname "$IN_PROJECT")"
-        if [ -f "$LOCK" ]; then cp "$LOCK" "$IN_PROJECT"; else rm -f "$IN_PROJECT"; fi
+        if [ -f "$LOCK" ]; then cp "$LOCK" "$IN_PROJECT"; else cp "$KIT" "$IN_PROJECT"; fi
+        kit_before=$(shasum "$KIT")
         xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme Kiri \
             -derivedDataPath build/DerivedData
         [ -f "$IN_PROJECT" ] || { echo "xcodebuild wrote no $IN_PROJECT" >&2; exit 1; }
+        [ "$(shasum "$KIT")" = "$kit_before" ] || { echo "xcodebuild changed $KIT: look before committing it" >&2; exit 1; }
         cp "$IN_PROJECT" "$LOCK"
         if ! compare "$LOCK" "$KIT" within; then
             echo "$KIT and $LOCK name different commits for the packages above." >&2
