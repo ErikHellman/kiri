@@ -55,6 +55,7 @@ extension SelfTest {
         await edgeChecks(first, f)
         await menuChecks(first, f)
         await findChecks(first, f)
+        await outsideChecks(first, f)
 
         // Everything of the folder window closes; nothing is unsaved.
         first.performClose(nil)
@@ -736,6 +737,37 @@ extension SelfTest {
     /// gestures call: no pointer is moved), that every tab has it, that it
     /// is remembered without the person's preferences being written, and
     /// that a narrow window keeps the editor its minimum.
+    /// Files made, renamed and deleted outside Kiri show in the sidebar
+    /// without View ▸ Refresh Folder: at the top and in an open folder
+    /// (the test's folder is in the temporary directory, which the disk
+    /// has under /private), and in find's index.
+    private static func outsideChecks(_ first: NSWindow, _ f: SidebarFixture) async {
+        guard let session = FolderSessions.session(for: first) else {
+            report(false, "the folder window's session for the outside-change checks"); return
+        }
+        if !session.expanded.contains(f.file("sub")), let sub = session.root.children.first(where: { $0.name == "sub" }) { session.toggle(sub) }
+        func shows(_ name: String) -> Bool { session.visibleRows().contains { $0.node.url == f.file(name) } }
+        defer {
+            for name in ["outside-top.txt", "outside-renamed.txt", "sub/outside-in.txt"] { try? FileManager.default.removeItem(at: f.file(name)) }
+            session.refresh()
+        }
+        // What the tree has read stays as it was until something says otherwise.
+        _ = session.visibleRows()
+        let generation = session.generation
+        try? "top\n".write(to: f.file("outside-top.txt"), atomically: true, encoding: .utf8)
+        try? "in\n".write(to: f.file("sub/outside-in.txt"), atomically: true, encoding: .utf8)
+        let made = await f.wait(4) { shows("outside-top.txt") && shows("sub/outside-in.txt") && session.generation != generation }
+        report(made, "files made outside Kiri show in the sidebar, at the top and in an open folder (top \(shows("outside-top.txt")), "
+               + "in sub \(shows("sub/outside-in.txt")), redrawn \(session.generation != generation))")
+        try? FileManager.default.moveItem(at: f.file("outside-top.txt"), to: f.file("outside-renamed.txt"))
+        try? FileManager.default.removeItem(at: f.file("sub/outside-in.txt"))
+        let followed = await f.wait(4) { shows("outside-renamed.txt") && !shows("outside-top.txt") && !shows("sub/outside-in.txt") }
+        report(followed, "a file renamed and one deleted outside Kiri follow in the sidebar")
+        // Find's index, read for the find checks, reads the folder again.
+        let indexed = await f.wait(5) { session.index.paths.contains("outside-renamed.txt") && !session.index.paths.contains("sub/outside-in.txt") }
+        report(indexed, "find's index follows files renamed and deleted outside Kiri")
+    }
+
     private static func edgeChecks(_ first: NSWindow, _ f: SidebarFixture) async {
         let store = SidebarWidth.shared
         guard let shownTab = WindowTabs.model(for: first)?.selectedTab, let other = f.group(first).first(where: { $0 !== shownTab }) else {
