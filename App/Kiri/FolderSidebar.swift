@@ -27,10 +27,18 @@ import SwiftUI
     /// Find in the sidebar (⌘F while it has the keyboard).
     @ObservationIgnored private(set) var find: SidebarFind!
 
+    /// Files made, renamed and deleted outside Kiri: the folders the tree
+    /// shows read again, and the index too (`changed(_:root:)`).
+    // periphery:ignore - kept for as long as the session: letting it go stops the watching
+    @ObservationIgnored private var watcher: FolderWatcher?
+    /// The index is to read the folder again shortly (`indexSoon()`).
+    @ObservationIgnored private var indexPending = false
+
     init(root url: URL) {
         root = FileNode(url: url.standardizedFileURL, isDirectory: true)
         index = FolderIndex(root: url)
         find = SidebarFind(session: self)
+        watch()
         Telemetry.track("folder_open")
     }
 
@@ -49,6 +57,59 @@ import SwiftUI
         root.reload()
         generation += 1
         index.refreshIfInUse()
+    }
+
+    // MARK: Changes outside Kiri
+
+    private func watch() {
+        let path = root.url.path
+        // FSEvents names folders as they are on disk, past any link
+        // (/private/var for /var); the tree has them as they were opened.
+        let real = realpath(path, nil).map { pointer in
+            defer { free(pointer) }
+            return String(cString: pointer)
+        }
+        let watched = real ?? path
+        watcher = FolderWatcher(path: watched) { [weak self] folders in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.changed(folders, root: watched) }
+            }
+        }
+    }
+
+    /// Something changed in `folders` (paths on disk, under `real`), or
+    /// anywhere (nil). The folders the tree has read, the ones that show
+    /// among them, are read again and show what is there now; one that
+    /// is yet to be read will be read when it opens.
+    private func changed(_ folders: [String]?, root real: String) {
+        guard let folders else { refresh(); return }
+        var reread = false
+        var reachesIndex = false
+        for folder in folders {
+            guard let names = FolderChanges.names(of: folder, under: real) ?? FolderChanges.names(of: folder, under: root.url.path) else { continue }
+            if FolderChanges.reachesIndex(names, skipping: FolderIndex.skippedFolders) { reachesIndex = true }
+            if let node = root.readFolder(at: names) {
+                node.reload()
+                reread = true
+            }
+        }
+        if reread { generation += 1 }
+        if reachesIndex { indexSoon() }
+    }
+
+    /// The index reads the whole folder, so it reads it once for the
+    /// changes of a second, however many there are (a checkout, a build).
+    private func indexSoon() {
+        guard !indexPending else { return }
+        indexPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.indexPending = false
+                self.index.refreshIfInUse()
+            }
+        }
     }
 
     // MARK: Names typed in place
@@ -330,6 +391,20 @@ final class FileNode: Identifiable {
     }
 
     func reload() { loaded = nil }
+
+    /// The folder `names` down from this one, if it has been read, and
+    /// every folder on the way: what the tree may be showing of it. A
+    /// folder the tree hides (`hidden`) is never among them.
+    func readFolder(at names: [String]) -> FileNode? {
+        var node = self
+        for name in names {
+            let folders = node.loaded?.filter(\.isDirectory) ?? []
+            guard let next = folders.first(where: { $0.name == name })
+                ?? folders.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+            node = next
+        }
+        return node.loaded == nil ? nil : node
+    }
 
     /// Hidden files show (quick edits often target dotfiles), except the
     /// noise nobody edits by hand.
