@@ -187,8 +187,8 @@ import Testing
         print("FUZZY 20 000 paths: six letters typical \(typical), worst \(worst); one letter \(one); no match \(none)")
         // A debug build, as `swift test` makes (a release build is several
         // times faster), on a Mac that may be saving power.
-        #expect(worst < .milliseconds(33), "six letters, worst \(worst)")
-        #expect(one < .milliseconds(66), "one letter \(one)")
+        #expect(worst < timeLimit(.milliseconds(33)), "six letters, worst \(worst)")
+        #expect(one < timeLimit(.milliseconds(66)), "one letter \(one)")
         #expect(noRows == 0)
     }
 }
