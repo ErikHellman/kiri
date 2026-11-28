@@ -10,6 +10,8 @@ struct PaletteRow: Equatable, Identifiable {
         case tab(Int)
         /// A file opens in a tab of this window, to stay.
         case file(URL)
+        /// A recent folder opens in a window of its own.
+        case folder(URL)
         /// A menu item is chosen.
         case command(MenuCommand)
         /// The document gets this language (the language picker).
@@ -37,6 +39,7 @@ struct PaletteRow: Equatable, Identifiable {
         switch action {
         case .tab(let id): "tab:\(id)"
         case .file(let url): "file:" + url.path
+        case .folder(let url): "folder:" + url.path
         case .command(let command): "command:" + command.id
         case .language(let language): "language:" + language.id
         }
@@ -48,7 +51,7 @@ struct PaletteRow: Equatable, Identifiable {
     var shortDetail: String? {
         switch action {
         case .command, .language: return nil
-        case .tab, .file:
+        case .tab, .file, .folder:
             guard let slash = detail.lastIndex(of: "/"), detail.index(after: slash) < detail.endIndex else { return nil }
             return "…" + detail[slash...]
         }
@@ -61,6 +64,7 @@ struct PaletteRow: Equatable, Identifiable {
         switch action {
         case .tab: parts.append("tab")
         case .file: break
+        case .folder: parts.append("folder")
         case .command(let command): if command.isOn { parts.append("checked") }
         case .language: if isCurrent { parts.append("current") }
         }
@@ -73,13 +77,16 @@ struct PaletteRow: Equatable, Identifiable {
     /// from the folder, or from the home folder): the name is the title
     /// and the folders the detail, each with its share of the marks.
     static func file(_ action: Action, path: String, marks: [Range<Int>] = [], tab: Bool = false) -> PaletteRow {
+        var isFolder: Bool { if case .folder = action { true } else { false } }
         let units = path.utf16
         let nameStart = (units.lastIndex(of: 0x2F).map { units.distance(from: units.startIndex, to: $0) + 1 }) ?? 0
         let name = String(path[String.Index(utf16Offset: nameStart, in: path)...])
         let folder = nameStart > 1 ? String(path[..<String.Index(utf16Offset: nameStart - 1, in: path)]) : nameStart == 1 ? "/" : ""
         let match = FuzzyMatch(score: 0, ranges: marks)
         let icon = FileIcon.forFile(named: name)
-        return PaletteRow(action: action, symbol: tab ? "rectangle.stack" : icon.symbol, tint: tab ? nil : icon.tint, title: name,
+        let plain = tab || isFolder
+        return PaletteRow(action: action, symbol: tab ? "rectangle.stack" : isFolder ? "folder" : icon.symbol, tint: plain ? nil : icon.tint,
+                          title: name,
                           titleMarks: match.ranges(in: nameStart..<units.count), detail: folder,
                           detailMarks: nameStart > 1 ? match.ranges(in: 0..<(nameStart - 1)) : [])
     }
@@ -547,7 +554,9 @@ struct PaletteRow: Equatable, Identifiable {
         // A recent file that is in a tab already is listed as the tab,
         // and the file this window shows is not somewhere to go.
         let current = (NSDocumentController.shared.document(for: window)?.fileURL).map { $0.standardizedFileURL }
-        let open = Set(tabs.compactMap(\.url) + [current].compactMap { $0 })
+        // (Nor is the window's own folder.)
+        let here = session.map { URL(fileURLWithPath: $0.root.url.path, isDirectory: true).standardizedFileURL }
+        let open = Set(tabs.compactMap(\.url) + [current, here].compactMap { $0 })
         recents = RecentDocuments.shared.urls.map(\.standardizedFileURL).filter { !open.contains($0) }.map { ($0, shown($0)) }
         recentCandidates = recents.map { FuzzyCandidate($0.path, isPath: true) }
         // The folder is read again for what has changed in it; until
@@ -643,6 +652,8 @@ struct PaletteRow: Equatable, Identifiable {
             if let window {
                 SidebarOpen.open(url, keep: true, from: window, keyboard: .editor, toSide: side ? .palette : nil)
             }
+        case .folder(let url):
+            RecentDocuments.open(url)
         case .command(let command):
             MenuCommands.perform(command)
         case .language(let language):
@@ -693,7 +704,7 @@ struct PaletteRow: Equatable, Identifiable {
         if fuzzy.isEmpty {
             if mode == .everything {
                 found += tabs.map { tabRow($0) }
-                found += recents.map { .file(.file($0.url), path: $0.path) }
+                found += recents.map { Self.recentRow($0) }
             }
             // The app menu's commands (About, Settings, Install) last: a
             // list that opens on "About Kiri" puts the least used first.
@@ -722,7 +733,7 @@ struct PaletteRow: Equatable, Identifiable {
                 for entry in fuzzy.rank(recentCandidates, limit: limit) ?? [] {
                     let recent = recents[entry.index]
                     guard listed.insert(recent.url).inserted else { continue }
-                    ranked.append((entry.match.score, 1, .file(.file(recent.url), path: recent.path, marks: entry.match.ranges)))
+                    ranked.append((entry.match.score, 1, Self.recentRow(recent, marks: entry.match.ranges)))
                 }
             }
             for entry in fuzzy.rank(commandCandidates, limit: limit) ?? [] {
@@ -761,6 +772,11 @@ struct PaletteRow: Equatable, Identifiable {
         selection = query.isEmpty ? rows.firstIndex { $0.isCurrent } ?? 0 : 0
         updatePreview()
         announce(rowsChanged: true)
+    }
+
+    /// A recent file, or a recent folder.
+    private static func recentRow(_ recent: (url: URL, path: String), marks: [Range<Int>] = []) -> PaletteRow {
+        .file(recent.url.hasDirectoryPath ? .folder(recent.url) : .file(recent.url), path: recent.path, marks: marks)
     }
 
     private func tabRow(_ tab: (id: Int, path: String, url: URL?), marks: [Range<Int>] = []) -> PaletteRow {

@@ -99,6 +99,22 @@ enum SelfTest {
             }
             return
         }
+        // -KiriReopenTest YES: what a plain launch reopens, and the recent
+        // folders (`ReopenSelfTest.swift`; part of -KiriBehaviorTest too).
+        if UserDefaults.standard.bool(forKey: "KiriReopenTest"), !started {
+            started = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard let window = textView.window else { report(false, "a window for the reopen checks"); quit(); return }
+                Task { @MainActor in
+                    await reopenStage(window)
+                    reportStayedInTheBackground()
+                    print("SELFTEST DONE reopen")
+                    fflush(stdout)
+                    quit()
+                }
+            }
+            return
+        }
         // -KiriWhatsNewTest YES (with -KiriShowWhatsNew <notes>): What's
         // new's checks alone (`WhatsNewSelfTest.swift`).
         if UserDefaults.standard.bool(forKey: "KiriWhatsNewTest"), !started {
@@ -2242,6 +2258,7 @@ enum SelfTest {
                         await settingsStage(window)
                         await shortcutsStage(window)
                         await positionStage(window)
+                        await reopenStage(window)
                         await manyFiles(window)
                         await crowdedStrip(window)
                         await startHintStage(window)
@@ -3343,7 +3360,13 @@ private enum StartHintSample {
     static func sheet(_ scheme: ColorScheme) -> some View {
         let empty = StatusBarSample.model(line: 1, column: 1, lineCount: 1, longestLine: 0, length: 0, language: .plainText,
                                           indent: .tabs)
-        func panel(_ caption: String, width: CGFloat, height: CGFloat, _ tool: CLIInstaller.Status, hovered: Int? = nil) -> some View {
+        let home = NSHomeDirectory()
+        let recent = [URL(fileURLWithPath: home + "/Sources/kiri", isDirectory: true),
+                      URL(fileURLWithPath: home + "/Notes/a/notes.md"), URL(fileURLWithPath: home + "/Notes/b/notes.md"),
+                      URL(fileURLWithPath: home + "/Sources/kiri/deployment-configuration-production.yaml"),
+                      URL(fileURLWithPath: home + "/Sources/tidepool", isDirectory: true)]
+        func panel(_ caption: String, width: CGFloat, height: CGFloat, _ tool: CLIInstaller.Status, hovered: Int? = nil,
+                   recent: [URL] = []) -> some View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(caption).font(.system(size: 10)).foregroundStyle(Color.honeyMuted)
                 // Line 1 and its number, where the editor draws them.
@@ -3355,22 +3378,23 @@ private enum StartHintSample {
                 .padding(.top, 14)
                 .frame(width: width, height: height, alignment: .topLeading)
                 .overlay {
-                    StartHint(commandLineTool: tool, hovered: hovered).padding(.bottom, StartHint.bottomClearance)
+                    StartHint(commandLineTool: tool, hovered: hovered, recent: recent).padding(.bottom, StartHint.bottomClearance)
                 }
                 .overlay(alignment: .bottom) { StatusBarSample.bar(empty) }
                 .background(Color.honeySurface, in: RoundedRectangle(cornerRadius: Honey.Radius.panel.value, style: .continuous))
             }
         }
         return VStack(alignment: .leading, spacing: 14) {
-            panel("a 900 × 640 window: the kiri command not installed", width: 880, height: 578, .missing)
+            panel("a 900 × 640 window: the kiri command not installed, five recent items", width: 880, height: 578, .missing,
+                  recent: recent)
             HStack(alignment: .top, spacing: 14) {
-                panel("480 pt wide: installed, three lines", width: 460, height: 340, .installed)
+                panel("480 pt wide: installed, three lines and the recent items", width: 460, height: 340, .installed, recent: recent)
                 panel("the pointer on a line", width: 460, height: 340, .missing, hovered: 1)
             }
             HStack(alignment: .top, spacing: 14) {
                 panel("the pointer on the link", width: 460, height: 260, .missing, hovered: 3)
                 panel("a folder window at 480 pt: 220 pt of paper", width: 220, height: 260, .missing)
-                panel("the smallest window: 480 × 280", width: 220, height: 218, .missing)
+                panel("the smallest window: 480 × 280, no room for the recent items", width: 220, height: 218, .missing, recent: recent)
             }
         }
         .padding(16)

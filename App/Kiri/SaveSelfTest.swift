@@ -458,7 +458,8 @@ extension SelfTest {
     }
 
     /// File ▸ Open Recent is Kiri's own menu over AppKit's list. (A test
-    /// launch adds nothing to that list, which is the person's.)
+    /// launch adds nothing to that list, which is the person's, and shows
+    /// none of it: its own list starts empty.)
     private static func openRecent(_ dir: URL) async {
         guard let main = NSApp.mainMenu, let menu = main.item(withTitle: "File")?.submenu?.item(withTitle: "Open Recent")?.submenu else {
             report(false, "File ▸ Open Recent exists"); return
@@ -468,8 +469,9 @@ extension SelfTest {
         await settle(250)
         updateMenu(main)
         let listed = menu.items.filter { !$0.isSeparatorItem && $0.title != "Clear Menu" }
-        report(listed.count == recent.count && menu.items.last?.title == "Clear Menu" && menu.items.last?.isEnabled == !recent.isEmpty,
-               "File ▸ Open Recent lists the \(recent.count) documents AppKit remembers, then Clear Menu")
+        report(listed.isEmpty && RecentDocuments.shared.urls.isEmpty && menu.items.last?.title == "Clear Menu"
+               && menu.items.last?.isEnabled == false,
+               "a test launch's File ▸ Open Recent lists none of the person's \(recent.count) recent items, then Clear Menu, off")
         report(!recent.contains { $0.path.hasPrefix(dir.path) || $0.path.hasPrefix(dir.resolvingSymlinksInPath().path) },
                "the test's own files are not in Open Recent")
 

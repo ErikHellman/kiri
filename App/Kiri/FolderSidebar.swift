@@ -219,9 +219,12 @@ enum FolderSessions {
     /// Posted when a window gets a folder, so its tabs show the sidebar.
     static let didChange = Notification.Name("KiriFolderSessionsDidChange")
 
+    /// `window` shows `session`'s folder from now on, which is a recent
+    /// item (as it is again when the window closes).
     static func set(_ session: FolderSession, for window: NSWindow) {
         observe()
         byWindow[ObjectIdentifier(window)] = (WeakWindow(window: window), session)
+        (NSDocumentController.shared as? KiriDocumentController)?.noteFolder(session.root.url)
         NotificationCenter.default.post(name: didChange, object: nil)
     }
 
@@ -238,7 +241,11 @@ enum FolderSessions {
                                                queue: .main) { note in
             guard let window = note.object as? NSWindow else { return }
             let id = ObjectIdentifier(window)
-            MainActor.assumeIsolated { _ = byWindow.removeValue(forKey: id) }
+            MainActor.assumeIsolated {
+                if let session = byWindow.removeValue(forKey: id)?.session {
+                    (NSDocumentController.shared as? KiriDocumentController)?.noteFolder(session.root.url)
+                }
+            }
         }
     }
 

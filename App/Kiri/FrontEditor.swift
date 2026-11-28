@@ -91,6 +91,8 @@ import SwiftUI
         if editor !== tab?.model { editor = tab?.model }
         if self.tabs !== tabs { self.tabs = tabs }
         if document !== tab?.document { document = tab?.document }
+        // What a plain launch reopens next time.
+        if let window = window as? DocumentNSWindow { LastOpened.note(window) }
     }
 
     private func windowResignedMain(_ window: NSWindow) {

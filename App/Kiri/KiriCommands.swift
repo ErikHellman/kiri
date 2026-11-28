@@ -109,22 +109,18 @@ struct KiriCommands: Commands {
                 .keyboardShortcut(Keys.goToFile)
                 .disabled(editor == nil)
             Menu("Open Recent", systemImage: "clock") {
-                let recent = RecentDocuments.shared.urls
-                let folders = TabNames.details(titles: recent.map(\.lastPathComponent), paths: recent.map(\.path))
-                ForEach(Array(zip(recent, folders)), id: \.0) { url, folder in
-                    // Two of a name are told apart by their folders, as tabs are.
-                    Button(folder.map { "\(url.lastPathComponent) — \($0)" } ?? url.lastPathComponent) {
-                        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
-                            MainActor.assumeIsolated {
-                                // (Not Cancel on "Open it read-only?".)
-                                if let error, (error as? CocoaError)?.code != .userCancelled { _ = NSApp.presentError(error) }
-                            }
-                        }
+                // The last five files and folders, newest first: a file
+                // opens in a tab, a folder in a window of its own.
+                let recent = RecentDocuments.shared.latest
+                // Two of a name are told apart by their folders, as tabs are.
+                ForEach(Array(zip(recent, RecentDocuments.titles(recent))), id: \.0) { url, title in
+                    Button(title, systemImage: url.hasDirectoryPath ? "folder" : "doc") {
+                        RecentDocuments.open(url)
                     }
                 }
                 Divider()
                 Button("Clear Menu") { NSDocumentController.shared.clearRecentDocuments(nil) }
-                    .disabled(recent.isEmpty)
+                    .disabled(RecentDocuments.shared.urls.isEmpty)
             }
         }
         CommandGroup(replacing: .saveItem) {
