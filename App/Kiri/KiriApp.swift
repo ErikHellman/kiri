@@ -29,6 +29,10 @@ struct KiriApp: App {
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+        // Files and folders sent to Kiri are the document controller's
+        // and the delegate's (`application(_:open:)`): without this,
+        // SwiftUI also showed Settings for a folder from the Dock's menu.
+        .handlesExternalEvents(matching: [])
         // No "Settings" entry in the Window menu: it lives in the app menu.
         .commandsRemoved()
         // The app's menus hang on its first scene.
@@ -41,6 +45,7 @@ struct KiriApp: App {
         .defaultSize(width: 760, height: 640)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+        .handlesExternalEvents(matching: [])
 
         // Help ▸ Command Line Tool: the `kiri` command's options and examples.
         Window("Command Line Tool", id: CommandLineHelpView.windowID) {
@@ -50,6 +55,7 @@ struct KiriApp: App {
         .defaultSize(width: 720, height: 700)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+        .handlesExternalEvents(matching: [])
 
         // The component gallery is a development tool: Debug builds only,
         // so Release has neither the window nor its Window-menu entry.
@@ -60,6 +66,7 @@ struct KiriApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
         .defaultLaunchBehavior(.suppressed)
+        .handlesExternalEvents(matching: [])
         #endif
     }
 }
@@ -100,6 +107,15 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
         LaunchDocument.finishedLaunching(simplyOpened: simplyOpened)
         // Sparkle: a check once a day, the first a moment after launch.
         Updater.start()
+    }
+
+    /// What is sent to Kiri (Finder, the Dock's recent items, `open -a
+    /// Kiri`) that the document controller wasn't given: a folder, which
+    /// opens in a folder window, as Open Folder… does (by way of the
+    /// controller, `KiriDocumentController.openDocument`). Files go
+    /// straight to the controller and never come here.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { RecentDocuments.open(url) }
     }
 
     /// A click on the Dock icon with no window open: a new document.
