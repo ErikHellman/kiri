@@ -371,6 +371,11 @@ final class Waits {
         check()
     }
 
+    /// A `kiri -w` request is waiting for `document` to close.
+    func isWaiting(on document: NSDocument) -> Bool {
+        waits.contains { $0.documents.contains { $0.doc === document } }
+    }
+
     func check() {
         let open = NSDocumentController.shared.documents
         waits.removeAll { w in

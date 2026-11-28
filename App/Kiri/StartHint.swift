@@ -7,6 +7,8 @@ import SwiftUI
 /// quiet lines, each a button with the key that does the same: open a file,
 /// open a folder, the command palette for everything else (every command
 /// is in it, with its key), and the `kiri` command until it is installed.
+/// Under them, the recent files and folders, as File ▸ Open Recent lists
+/// them (`RecentDocuments`): a click opens one.
 ///
 /// Only the lines take clicks. Everything around them is the text view's,
 /// which keeps the keyboard: the caret is on line 1 and typing starts the
@@ -15,6 +17,8 @@ struct StartHint: View {
     let commandLineTool: CLIInstaller.Status
     /// Draws that line as hovered, for pictures.
     var hovered: Int?
+    /// The recent files and folders it lists; nil for File ▸ Open Recent's.
+    var recent: [URL]?
     /// Opens this window's command palette.
     var openPalette: () -> Void = {}
 
@@ -22,15 +26,17 @@ struct StartHint: View {
     static let bottomClearance = EditorStatusBar.bottomPadding + HoneyStatusMetrics.barHeight
 
     var body: some View {
-        // In a panel too small for it, nothing: never cut-off lines.
+        // In a panel too small for it, the lines without the recent
+        // items, or nothing: never cut-off lines.
         ViewThatFits {
-            lines
+            lines(recent: recent ?? RecentDocuments.shared.latest)
+            lines(recent: [])
             Color.clear.frame(width: 0, height: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var lines: some View {
+    private func lines(recent: [URL]) -> some View {
         VStack(spacing: 2) {
             StartHintLine("Open a file", shortcut: Keys.open, hovered: hovered == 0) {
                 NSDocumentController.shared.openDocument(nil)
@@ -43,6 +49,25 @@ struct StartHint: View {
             if commandLineTool == .missing {
                 StartHintLine("Install the kiri command", shortcut: nil, link: true, hovered: hovered == 3) {
                     CLIInstaller.install()
+                }
+            }
+            if !recent.isEmpty {
+                Text("Recent".localizedUppercase)
+                    .font(.honeySectionLabel)
+                    .tracking(0.7)
+                    .foregroundStyle(Color.honeyMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 12)
+                    .padding(.bottom, 2)
+                    .accessibilityHidden(true)
+                let titles = RecentDocuments.titles(recent)
+                ForEach(Array(zip(recent, titles)), id: \.0) { url, title in
+                    let folder = url.hasDirectoryPath
+                    StartHintLine(title, shortcut: nil, symbol: folder ? "folder" : "doc",
+                                  spoken: "\(title), recent \(folder ? "folder" : "file")", hovered: false) {
+                        RecentDocuments.open(url)
+                    }
                 }
             }
         }
@@ -61,6 +86,11 @@ struct StartHintLine: View {
     let shortcut: KeyboardShortcut?
     /// A link to a page or a setup step, not a command: no key, the accent's ink.
     let link: Bool
+    /// A symbol before the words (a recent file's or folder's), whose
+    /// words then shorten in the middle to fit.
+    let symbol: String?
+    /// What VoiceOver hears, when not the words and the key.
+    let spoken: String?
     let hovered: Bool
     let action: () -> Void
     @State private var hovering = false
@@ -68,8 +98,11 @@ struct StartHintLine: View {
     @Environment(\.honeyAppearance) private var appearance
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ title: String, shortcut: KeyboardShortcut?, link: Bool = false, hovered: Bool, action: @escaping () -> Void) {
+    init(_ title: String, shortcut: KeyboardShortcut?, link: Bool = false, symbol: String? = nil, spoken: String? = nil,
+         hovered: Bool, action: @escaping () -> Void) {
         self.link = link
+        self.symbol = symbol
+        self.spoken = spoken
         self.title = title
         self.shortcut = shortcut
         self.hovered = hovered
@@ -81,12 +114,26 @@ struct StartHintLine: View {
         let shape = RoundedRectangle(cornerRadius: Honey.Radius.small.value, style: .continuous)
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(title)
-                    .font(.honey(.subheadline, weight: .semibold))
-                    .foregroundStyle(link ? Color.honeyAccentInk : active ? Color.honeyFg : Color.honeyMuted)
-                    .underline(link && active)
-                    .lineLimit(1)
-                    .fixedSize()
+                if let symbol {
+                    HStack(spacing: 6) {
+                        Image(systemName: symbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.honeyMuted)
+                            .frame(width: 14)
+                        Text(title)
+                            .font(.honey(.subheadline, weight: .semibold))
+                            .foregroundStyle(active ? Color.honeyFg : Color.honeyMuted)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                } else {
+                    Text(title)
+                        .font(.honey(.subheadline, weight: .semibold))
+                        .foregroundStyle(link ? Color.honeyAccentInk : active ? Color.honeyFg : Color.honeyMuted)
+                        .underline(link && active)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 Spacer(minLength: 0)
                 if let shortcut { KeyCaps(shortcut.glyphs) }
             }
@@ -102,7 +149,7 @@ struct StartHintLine: View {
         .onHover { hovering = $0 }
         .animation(HoneyMotion(appearance, systemReduced: reduceMotion).quick, value: active)
         // "Open a file, Command O, button"
-        .accessibilityLabel(shortcut.map { "\(title), \($0.spoken)" } ?? title)
+        .accessibilityLabel(spoken ?? shortcut.map { "\(title), \($0.spoken)" } ?? title)
     }
 }
 

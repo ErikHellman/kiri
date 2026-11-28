@@ -25,6 +25,9 @@ enum Prefs {
     /// from outside the document's folder (`PreviewExternalContent`);
     /// absent means ask.
     static let previewExternalKey = "previewExternalContent"
+    /// A plain launch reopens the last file or folder (`LastOpened`);
+    /// absent means on.
+    static let reopenAtLaunchKey = "reopenAtLaunch"
     /// What's new after an update (`WhatsNew`); absent means on.
     static let whatsNewKey = "whatsNewAfterUpdates"
     /// The version whose notes What's new last showed, or that last
@@ -39,9 +42,10 @@ enum Prefs {
 }
 
 /// Kiri ▸ Settings…, in two panes. General has six groups: Appearance
-/// (the color theme, light or dark), Editor (font, text size, wrapping),
-/// Motion, Updates, Privacy (crash reports, analytics, what previews load
-/// from elsewhere, feedback) and the command line tool. Shortcuts has
+/// (the color theme, light or dark), Editor (font, text size, wrapping,
+/// reopening at launch), Motion, Updates, Privacy (crash reports,
+/// analytics, what previews load from elsewhere, feedback) and the
+/// command line tool. Shortcuts has
 /// every command's key (`ShortcutsPane`).
 struct SettingsView: View {
     static let windowID = "settings"
@@ -56,6 +60,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.analyticsKey) private var analytics = true
     @AppStorage(Prefs.previewExternalKey) private var previewExternal = PreviewExternalContent.ask
     @AppStorage(Prefs.whatsNewKey) private var whatsNew = true
+    @AppStorage(Prefs.reopenAtLaunchKey) private var reopenAtLaunch = true
     @State private var commandLineTool = CommandLineTool.shared
     @State private var editorFont = EditorFont.shared
     @State private var updater = Updater.shared
@@ -225,6 +230,9 @@ struct SettingsView: View {
             }
             row("Wrap lines", detail: nil) {
                 Toggle("Wrap lines", isOn: $wrapLines).toggleStyle(.switch).labelsHidden()
+            }
+            row("Reopen at launch", detail: "Started without a file or folder, Kiri opens the last one it showed.") {
+                Toggle("Reopen the last file or folder at launch", isOn: $reopenAtLaunch).toggleStyle(.switch).labelsHidden()
             }
         }
     }

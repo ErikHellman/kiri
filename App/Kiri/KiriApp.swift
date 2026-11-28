@@ -83,6 +83,7 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
         // after an edit (AppKit's default is never).
         NSDocumentController.shared.autosavingDelay = KiriDocumentController.recoveryDelay
         LaunchDocument.watchRestoration()
+        LastOpened.start()
         // Before Sparkle starts (it leaves keys of its own behind).
         WhatsNew.launch()
     }
@@ -110,10 +111,11 @@ final class KiriAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Launching into an empty editor. SwiftUI's app delegate, which is in front
-/// of Kiri's, never asks for an untitled document, so it is done here: when
-/// Kiri was simply opened and, once launching and window restoration are
-/// both over, nothing else is open. Files named on the command line,
+/// Launching into the last file or folder (`LastOpened`), or an empty
+/// editor. SwiftUI's app delegate, which is in front of Kiri's, never asks
+/// for an untitled document, so it is done here: when Kiri was simply
+/// opened and, once launching and window restoration are both over,
+/// nothing else is open. Files named on the command line,
 /// restored windows and the unsaved documents AppKit brings back after a
 /// crash are all there by then. (AppKit's "default launch" flag is no
 /// guide: it is off after a crash or a forced quit even when there is
@@ -144,7 +146,7 @@ enum LaunchDocument {
         wanted = false
         DispatchQueue.main.async {
             guard NSDocumentController.shared.documents.isEmpty, !KiriCLI.hasOpenedSomething else { return }
-            NSDocumentController.shared.newDocument(nil)
+            LastOpened.reopen { NSDocumentController.shared.newDocument(nil) }
         }
     }
 }
@@ -179,7 +181,27 @@ final class KiriDocumentController: NSDocumentController {
     /// brought back at launch).
     func opensQuietly(_ url: URL) -> Bool {
         let url = url.standardizedFileURL
-        return reopening.contains(url) || glanced.contains(url) || streams.contains(url)
+        return reopening.contains(url) || glanced.contains(url) || streams.contains(url) || launching.contains(url)
+    }
+
+    /// The file a launch reopens (`LastOpened`), until it has opened.
+    private var launching: Set<URL> = []
+
+    func reopensQuietly(_ url: URL) { launching.insert(url.standardizedFileURL) }
+    func reopened(_ url: URL) { launching.remove(url.standardizedFileURL) }
+
+    /// A folder is a recent item too, noted when its window opens and
+    /// when it closes, as a document is: Open Recent, the command palette
+    /// and the Dock's menu reopen it in a folder window.
+    func noteFolder(_ url: URL) {
+        noteNewRecentDocumentURL(URL(fileURLWithPath: url.path, isDirectory: true))
+    }
+
+    /// A recent item that is a folder (Open Recent, the Dock's menu).
+    static func isFolder(_ url: URL) -> Bool {
+        if url.hasDirectoryPath { return true }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
     /// Piped input that goes on (`adb logcat | kiri -`), copied into a
@@ -245,6 +267,13 @@ final class KiriDocumentController: NSDocumentController {
     /// files without a window first, and says itself what is kept.)
     override func openDocument(withContentsOf url: URL, display displayDocument: Bool,
                                completionHandler: @escaping (NSDocument?, Bool, (any Error)?) -> Void) {
+        // A recent folder (Open Recent, the Dock's menu) opens as Open
+        // Folder… does: in a window of its own, with its sidebar.
+        if displayDocument, Self.isFolder(url) {
+            KiriCLI.open(KiriCLI.Request(entries: [.folder(url)]))
+            completionHandler(nil, false, nil)
+            return
+        }
         super.openDocument(withContentsOf: url, display: displayDocument) { document, alreadyOpen, error in
             // (Asked for by name while it is still opening for the preview
             // tab, it is no longer only being looked at.)
@@ -263,12 +292,46 @@ final class KiriDocumentController: NSDocumentController {
     }
 }
 
-/// File ▸ Open Recent's list.
+/// The recent files and folders, newest first: File ▸ Open Recent shows
+/// the first `menuCount`, the empty editor's first-run hint the same
+/// (`StartHint`), and the command palette all of them.
 @Observable final class RecentDocuments {
     static let shared = RecentDocuments()
+    static let menuCount = 5
+    #if DEBUG || KIRI_SELFTEST
+    // A test launch starts with none (its own files never go in the
+    // list, and the person's aren't shown): `selfTestShow` sets some.
+    private(set) var urls: [URL] = SelfTest.isTestLaunch ? [] : NSDocumentController.shared.recentDocumentURLs
+    #else
     private(set) var urls: [URL] = NSDocumentController.shared.recentDocumentURLs
+    #endif
+
+    /// What Open Recent and the hint list.
+    var latest: [URL] { Array(urls.prefix(Self.menuCount)) }
+
+    /// How `urls` are listed: by name, two of a name with their folders
+    /// ("notes.md — a"), as tabs are told apart.
+    static func titles(_ urls: [URL]) -> [String] {
+        let folders = TabNames.details(titles: urls.map(\.lastPathComponent), paths: urls.map(\.path))
+        return zip(urls, folders).map { url, folder in folder.map { "\(url.lastPathComponent) — \($0)" } ?? url.lastPathComponent }
+    }
+
+    /// Opens a recent file in a tab of the front window, or a recent
+    /// folder in a window of its own.
+    static func open(_ url: URL) {
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+            MainActor.assumeIsolated {
+                // (Not Cancel on "Open it read-only?".)
+                if let error, (error as? CocoaError)?.code != .userCancelled { _ = NSApp.presentError(error) }
+            }
+        }
+    }
 
     func refresh() {
+        #if DEBUG || KIRI_SELFTEST
+        // (A test launch's own list, which is empty.)
+        if SelfTest.isTestLaunch { if !urls.isEmpty { urls = [] }; return }
+        #endif
         let now = NSDocumentController.shared.recentDocumentURLs
         if now != urls { urls = now }
     }
